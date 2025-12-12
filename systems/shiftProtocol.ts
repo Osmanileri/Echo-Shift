@@ -6,8 +6,8 @@
  * to activate Overdrive mode with invulnerability and destruction powers.
  */
 
-import { ShiftProtocolState } from '../types';
 import { SHIFT_CONFIG } from '../constants';
+import { ShiftProtocolState } from '../types';
 
 // ============================================================================
 // Constants
@@ -147,23 +147,27 @@ export function selectNextLetter(collectedMask: boolean[]): number {
 /**
  * Checks if an orb collides with a collectible letter
  * Requirements 9.1: Mark letter as collected when orb overlaps hitbox
- * Requirements 9.2: Use circular hitbox with 20px radius
+ * Requirements 9.2: Use circular hitbox with combined radius (orb + letter)
  * 
  * @param orb - The orb position {x, y}
  * @param collectible - The collectible to check collision against
+ * @param orbRadius - The radius of the orb (default 7px)
  * @returns true if collision detected, false otherwise
  */
 export function checkCollectibleCollision(
   orb: { x: number; y: number },
-  collectible: { x: number; y: number }
+  collectible: { x: number; y: number },
+  orbRadius: number = 7
 ): boolean {
   // Calculate distance between orb center and collectible center
   const dx = orb.x - collectible.x;
   const dy = orb.y - collectible.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
   
-  // Collision occurs if distance is within the hitbox radius (20px)
-  return distance <= SHIFT_CONFIG.letterHitboxRadius;
+  // Collision occurs if distance is within combined radius (orb + letter hitbox)
+  // This makes collection feel more generous and responsive
+  const combinedRadius = SHIFT_CONFIG.letterHitboxRadius + orbRadius;
+  return distance <= combinedRadius;
 }
 
 /**

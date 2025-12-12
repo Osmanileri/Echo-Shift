@@ -5,28 +5,27 @@
  * Requirements: 1.3, 1.4, 3.1, 3.2, 3.4
  */
 
-import { describe, test } from 'vitest';
 import * as fc from 'fast-check';
-import { 
-  initializeShiftState, 
-  TARGET_WORD, 
-  calculateReachableY, 
-  calculateSpawnProbability,
-  calculateOscillationY,
-  selectNextLetter,
-  checkCollectibleCollision,
-  collectLetter,
-  removeCollectedLetter,
-  awardCollectionReward,
-  checkOverdriveActivation,
-  activateOverdrive,
-  updateOverdrive,
-  deactivateOverdrive,
-  isInvulnerableDuringOverdrive,
-  handleOverdriveCollision,
-  applyMagnetEffect
-} from './shiftProtocol';
+import { describe, test } from 'vitest';
 import { SHIFT_CONFIG } from '../constants';
+import {
+    activateOverdrive,
+    applyMagnetEffect,
+    awardCollectionReward,
+    calculateOscillationY,
+    calculateReachableY,
+    calculateSpawnProbability,
+    checkCollectibleCollision,
+    checkOverdriveActivation,
+    collectLetter,
+    handleOverdriveCollision,
+    initializeShiftState,
+    isInvulnerableDuringOverdrive,
+    removeCollectedLetter,
+    selectNextLetter,
+    TARGET_WORD,
+    updateOverdrive
+} from './shiftProtocol';
 
 describe('S.H.I.F.T. Protocol Initial State Properties', () => {
   /**
@@ -516,16 +515,17 @@ describe('S.H.I.F.T. Protocol Collision Detection Properties', () => {
    * **Feature: echo-shift-v2-mechanics, Property 25: Letter Collision Detection (No Collision)**
    * **Validates: Requirements 9.1, 9.2**
    *
-   * For any orb position more than 20 pixels from a letter's center,
+   * For any orb position more than combined radius (orb + letter = 7 + 20 = 27px) from a letter's center,
    * no collision SHALL be detected.
    */
-  test('Orb beyond 20px radius does not detect collision', () => {
+  test('Orb beyond combined radius does not detect collision', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 50, max: 750 }),  // collectible X
         fc.integer({ min: 50, max: 750 }),  // collectible Y
-        // Generate orb offset beyond collision radius (21+ pixels)
-        fc.integer({ min: 21, max: 200 }),  // distance from center
+        // Generate orb offset beyond combined collision radius (28+ pixels)
+        // Combined radius = letterHitboxRadius (20) + orbRadius (7) = 27
+        fc.integer({ min: 28, max: 200 }),  // distance from center
         fc.integer({ min: 0, max: 360 }),   // angle in degrees
         (collectibleX, collectibleY, distance, angleDeg) => {
           // Convert angle to radians
@@ -537,8 +537,9 @@ describe('S.H.I.F.T. Protocol Collision Detection Properties', () => {
           const orb = { x: orbX, y: orbY };
           const collectible = { x: collectibleX, y: collectibleY };
           
-          // Should NOT detect collision when beyond 20px radius
-          return checkCollectibleCollision(orb, collectible) === false;
+          // Should NOT detect collision when beyond combined radius (27px)
+          // Using default orbRadius of 7
+          return checkCollectibleCollision(orb, collectible, 7) === false;
         }
       ),
       { numRuns: 100 }

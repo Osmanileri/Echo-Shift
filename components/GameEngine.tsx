@@ -1,16 +1,14 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { GameState, Obstacle, Particle, NearMissState, ScorePopup, VisualEffect, SnapshotBuffer, GameSnapshot as TypesGameSnapshot, EnhancedResonanceState } from '../types';
-import { COLORS, INITIAL_CONFIG, GRAVITY_CONFIG } from '../constants';
-import { checkCollision, randomRange, checkNearMiss, updateNearMissState, createInitialNearMissState, createInitialGravityState, shouldTriggerFlip, mirrorPlayerPosition, getFlippedLane } from '../utils/gameMath';
-import { createInitialRhythmState, checkRhythmTiming, updateRhythmState, calculateExpectedInterval } from '../utils/rhythmSystem';
-import { createInitialMidlineState, calculateMidlineY, calculateDynamicAmplitude, calculateDynamicFrequency, calculateNormalizedOffset, getOrbZone, shouldApplyMicroPhasing, calculateMovementBounds, isCriticalSpace, calculateNormalBounds, calculateTensionIntensity, predictPeakTime, isAtPeak } from '../utils/midlineSystem';
-import { shouldSpawnAsPhantom, createPhantomObstacle, calculatePhantomOpacity, getEffectiveOpacity, calculatePhantomBonus } from '../utils/phantomSystem';
-import { RhythmState, GravityState, MidlineState, MidlineConfig } from '../types';
-import { MIDLINE_CONFIG, PHANTOM_CONFIG } from '../constants';
-import { getCurrentTheme, getColor, hasEffect, applyTheme } from '../systems/themeSystem';
-import { useGameStore } from '../store/gameStore';
-import { renderOrb } from '../utils/skinRenderer';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { GRAVITY_CONFIG, INITIAL_CONFIG, MIDLINE_CONFIG, PHANTOM_CONFIG } from '../constants';
 import { getSkinById } from '../data/skins';
+import { useGameStore } from '../store/gameStore';
+import { applyTheme, getColor, hasEffect } from '../systems/themeSystem';
+import { EnhancedResonanceState, GameState, GravityState, MidlineConfig, MidlineState, NearMissState, Obstacle, Particle, RhythmState, ScorePopup, SnapshotBuffer, VisualEffect } from '../types';
+import { checkCollision, checkNearMiss, createInitialGravityState, createInitialNearMissState, getFlippedLane, mirrorPlayerPosition, randomRange, shouldTriggerFlip, updateNearMissState } from '../utils/gameMath';
+import { calculateDynamicAmplitude, calculateDynamicFrequency, calculateMidlineY, calculateMovementBounds, calculateNormalBounds, calculateNormalizedOffset, calculateTensionIntensity, createInitialMidlineState, getOrbZone, isAtPeak, isCriticalSpace, predictPeakTime, shouldApplyMicroPhasing } from '../utils/midlineSystem';
+import { calculatePhantomBonus, calculatePhantomOpacity, createPhantomObstacle, getEffectiveOpacity, shouldSpawnAsPhantom } from '../utils/phantomSystem';
+import { calculateExpectedInterval, checkRhythmTiming, createInitialRhythmState, updateRhythmState } from '../utils/rhythmSystem';
+import { renderOrb } from '../utils/skinRenderer';
 // Particle System Integration - Requirements 12.1, 12.2, 12.3
 import * as ParticleSystem from '../systems/particleSystem';
 // Screen Shake System Integration - Requirements 10.1, 10.2, 10.3, 10.4
@@ -36,9 +34,20 @@ import * as RestoreSystem from '../systems/restoreSystem';
 // Haptic Feedback System Integration - Requirements 4.1, 4.2, 4.3, 4.4
 import { getHapticSystem } from '../systems/hapticSystem';
 // S.H.I.F.T. Protocol System Integration - Requirements 3.2, 3.3, 9.1
+import { SHIFT_CONFIG } from '../constants';
 import * as ShiftProtocol from '../systems/shiftProtocol';
 import { Collectible, ShiftProtocolState } from '../types';
-import { SHIFT_CONFIG } from '../constants';
+// Flow Curve System Integration - Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6
+import * as FlowCurve from '../systems/flowCurve';
+// Pattern Manager System Integration - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
+import { Lane, PATTERNS } from '../data/patterns';
+import * as PatternManager from '../systems/patternManager';
+// Difficulty Progression System Integration - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
+import * as DifficultyProgression from '../systems/difficultyProgression';
+// Object Pool System Integration - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
+import * as ObjectPool from '../systems/objectPool';
+// Shard Placement System Integration - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
+import * as ShardPlacement from '../systems/shardPlacement';
 
 // Campaign mode configuration for mechanics enable/disable
 export interface CampaignModeConfig {
@@ -210,6 +219,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const collectibles = useRef<Collectible[]>([]);
   const framesSinceCollectibleSpawn = useRef<number>(0);
 
+  // Pattern Manager State - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
+  const patternManagerState = useRef<PatternManager.PatternManagerState>(PatternManager.createPatternManagerState());
+  const patternStartTime = useRef<number>(0);
+  const usePatternBasedSpawning = useRef<boolean>(true); // Enable pattern-based spawning
+  
+  // Object Pool State - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
+  const obstaclePool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledObstacle>>(ObjectPool.createObstaclePool());
+  const shardPool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledShard>>(ObjectPool.createShardPool());
+  
+  // Active Shards from Pattern System - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
+  const activeShards = useRef<ShardPlacement.PlacedShard[]>([]);
+
   // Restore System State - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
   const restoreState = useRef<RestoreSystem.RestoreState>(RestoreSystem.createInitialRestoreState());
   const pendingRestore = useRef<boolean>(false);
@@ -370,6 +391,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
     collectibles.current = [];
     framesSinceCollectibleSpawn.current = 0;
     
+    // Reset Pattern Manager State - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
+    patternManagerState.current = PatternManager.createPatternManagerState();
+    patternStartTime.current = 0;
+    
+    // Reset Object Pools - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
+    obstaclePool.current.reset();
+    shardPool.current.reset();
+    
+    // Reset Active Shards - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
+    activeShards.current = [];
+    
     // Reset Restore State - Requirements 2.1, 2.8
     restoreState.current = RestoreSystem.createInitialRestoreState();
     pendingRestore.current = false;
@@ -386,130 +418,233 @@ const GameEngine: React.FC<GameEngineProps> = ({
     onRestoreStateUpdate?.(true, false);
   }, [onScoreUpdate, setGameSpeedDisplay, onRhythmStateUpdate, onNearMissStateUpdate, onSlowMotionStateUpdate, campaignMode, dailyChallengeMode, zenMode, ghostRacerMode, onRestoreStateUpdate]);
 
-  // Spawn Logic - Both blocks spawn, considering SWAP mechanic
-  // After swap: positions flip (white goes to bottom position, black goes to top position)
+  // ============================================================================
+  // BLOK SPAWN SİSTEMİ - KRİTİK KURALLAR:
+  // 1. Bloklar SIFIR ÇİZGİSİNİ (midY) GEÇMELİ
+  // 2. Üst blok BEYAZ ise alt blok SİYAH olmalı (ZIT RENKLER)
+  // 3. Aralarındaki boşluk = oyuncunun max uzanabileceği mesafe (connectorLength)
+  // ============================================================================
+  
   const spawnObstacle = (canvasHeight: number, canvasWidth: number) => {
-    console.log('[spawnObstacle] Called with canvasHeight:', canvasHeight, 'canvasWidth:', canvasWidth);
     const obsWidth = INITIAL_CONFIG.obstacleWidth;
-    const radius = INITIAL_CONFIG.orbRadius;
-    const L = currentConnectorLength.current;
-    const halfLen = L / 2;
-    const halfHeight = canvasHeight / 2;
     const spawnX = canvasWidth + 50;
-    const safeMargin = 15;
+    const midY = canvasHeight / 2; // Merkez çizgi (SIFIR NOKTASI)
+    const orbRadius = INITIAL_CONFIG.orbRadius;
+    const connectorLen = currentConnectorLength.current;
     
-    // Player CENTER movement range
-    const playerMinY = halfLen + radius + 5;
-    const playerMaxY = canvasHeight - halfLen - radius - 5;
+    // Geçiş boşluğu = connector uzunluğu + orb çapı + küçük güvenlik payı
+    // Bu, oyuncunun TAM OLARAK sığabileceği minimum boşluk
+    const passableGap = connectorLen + (orbRadius * 2) + 10;
     
-    // After SWAP, orb positions flip:
-    // Normal: White=top, Black=bottom
-    // Swapped: Black=top, White=bottom
-    
-    // TOP position orb range (whoever is on top after potential swap)
-    const topOrbHighest = playerMinY - halfLen;  // Top orb en yukarı
-    const topOrbLowest = playerMaxY - halfLen;   // Top orb en aşağı
-    
-    // BOTTOM position orb range (whoever is on bottom after potential swap)
-    const bottomOrbHighest = playerMinY + halfLen;  // Bottom orb en yukarı
-    const bottomOrbLowest = playerMaxY + halfLen;   // Bottom orb en aşağı
-    
-    // Polarities
+    // Polarities - ZIT RENKLER (üst beyazsa alt siyah)
     const topPolarity: 'white' | 'black' = Math.random() > 0.5 ? 'white' : 'black';
     const bottomPolarity: 'white' | 'black' = topPolarity === 'white' ? 'black' : 'white';
     
-    // === TOP BLOCK (yukarıdan aşağı uzanır, SIFIR ÇİZGİSİNİ GEÇMELİ) ===
-    // Blok rengi ne olursa olsun, SWAP sonrası zıt renk orb ALTTA olacak
-    // Alt orb, bloğun ALTINDAN geçmeli
-    // Alt orbun en YUKARI çıkabileceği nokta = bottomOrbHighest
-    // Blok alt ucu < bottomOrbHighest - radius - margin olmalı
-    const topBlockMaxHeight = bottomOrbHighest - radius - safeMargin;
-    // Minimum: SIFIR ÇİZGİSİNİ DAHA FAZLA GEÇMELİ (halfHeight + 80-120 arası)
-    const topBlockMinHeight = halfHeight + 42;
-    const topBlockHeight = randomRange(
-      Math.min(topBlockMinHeight, topBlockMaxHeight),
-      Math.max(topBlockMinHeight, topBlockMaxHeight)
-    );
-    
-    // === BOTTOM BLOCK (aşağıdan yukarı uzanır, SIFIR ÇİZGİSİNİ GEÇMELİ) ===
-    // Blok rengi ne olursa olsun, SWAP sonrası zıt renk orb ÜSTTE olacak
-    // Üst orb, bloğun ÜSTÜNDEN geçmeli
-    // Üst orbun en AŞAĞI inebileceği nokta = topOrbLowest
-    // Blok üst ucu > topOrbLowest + radius + margin olmalı
-    const bottomBlockMinTop = topOrbLowest + radius + safeMargin;
-    const bottomBlockMaxHeight = canvasHeight - bottomBlockMinTop;
-    // Minimum: SIFIR ÇİZGİSİNİ DAHA FAZLA GEÇMELİ
-    const bottomBlockMinHeight = halfHeight + 42;
-    const bottomBlockHeight = randomRange(
-      Math.min(bottomBlockMinHeight, bottomBlockMaxHeight),
-      Math.max(bottomBlockMinHeight, bottomBlockMaxHeight)
-    );
-    const bottomBlockTargetY = canvasHeight - bottomBlockHeight;
-    
-    // --- LANE INVERSION FOR GRAVITY FLIP - Requirements 2.4 ---
-    // When gravity is flipped, invert lane assignments
+    // --- LANE INVERSION FOR GRAVITY FLIP ---
     const isGravityFlipped = gravityState.current.isFlipped;
     const topLane: 'top' | 'bottom' = isGravityFlipped ? getFlippedLane('top') : 'top';
     const bottomLane: 'top' | 'bottom' = isGravityFlipped ? getFlippedLane('bottom') : 'bottom';
     
-    // --- TOP BLOCK - Requirements 5.1, 5.2, 5.8 ---
-    console.log('[spawnObstacle] topBlockHeight:', topBlockHeight, 'bottomBlockHeight:', bottomBlockHeight);
-    if (topBlockHeight > 30) {
-      let topObstacle: Obstacle = {
-        id: Math.random().toString(36).substring(2, 11),
-        x: spawnX,
-        y: -topBlockHeight,
-        targetY: 0,
-        width: obsWidth,
-        height: topBlockHeight,
-        lane: topLane,
-        polarity: topPolarity,
-        passed: false
-      };
+    // === BLOK HESAPLAMASI - SIFIRI GEÇEN BLOKLAR ===
+    // Boşluk merkezi rastgele: midY'nin ÜSTÜNDE veya ALTINDA
+    // Bu sayede bloklar sıfır çizgisini GEÇİYOR!
+    const halfGap = passableGap / 2;
+    
+    // Boşluk merkezi: midY'den -halfGap*2 ile +halfGap*2 arası kaydır
+    // Bu sayede bloklar KESİNLİKLE sıfır çizgisini geçiyor!
+    // Örnek: halfGap=35 ise, gapOffset = -70 ile +70 arası
+    // gapCenter = midY - 70 olduğunda, topBlockBottom = midY - 70 - 35 = midY - 105
+    // Yani üst blok midY'nin 105px ALTINA kadar iniyor (sıfırı geçiyor!)
+    const maxOffset = halfGap * 2; // Boşluğun tam genişliği kadar kayma
+    const gapOffset = (Math.random() - 0.5) * maxOffset * 2; // -maxOffset ile +maxOffset arası
+    const gapCenter = midY + gapOffset;
+    
+    // Üst blok: 0'dan (gapCenter - halfGap)'a kadar uzanır
+    // Eğer gapCenter midY'nin altındaysa, üst blok sıfırı GEÇİYOR!
+    const topBlockBottom = gapCenter - halfGap;
+    const topBlockHeight = Math.max(30, topBlockBottom);
+    
+    // Alt blok: (gapCenter + halfGap)'dan canvasHeight'a kadar uzanır
+    // Eğer gapCenter midY'nin üstündeyse, alt blok sıfırı GEÇİYOR!
+    const bottomBlockTop = gapCenter + halfGap;
+    const bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
+    const bottomBlockTargetY = bottomBlockTop;
+    
+    let topObstacle: Obstacle = {
+      id: Math.random().toString(36).substring(2, 11),
+      x: spawnX,
+      y: -topBlockHeight,
+      targetY: 0,
+      width: obsWidth,
+      height: topBlockHeight,
+      lane: topLane,
+      polarity: topPolarity,
+      passed: false
+    };
+    
+    // Phantom check
+    const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+    const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
+    if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+      topObstacle = createPhantomObstacle(topObstacle, spawnX, PHANTOM_CONFIG);
+    }
+    obstacles.current.push(topObstacle);
+    
+    let bottomObstacle: Obstacle = {
+      id: Math.random().toString(36).substring(2, 11),
+      x: spawnX,
+      y: canvasHeight,
+      targetY: bottomBlockTargetY,
+      width: obsWidth,
+      height: bottomBlockHeight,
+      lane: bottomLane,
+      polarity: bottomPolarity,
+      passed: false
+    };
+    
+    // Phantom check
+    if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+      bottomObstacle = createPhantomObstacle(bottomObstacle, spawnX, PHANTOM_CONFIG);
+    }
+    obstacles.current.push(bottomObstacle);
+  };
+
+  // Son spawn edilen bloğun polaritesini ve boşluk bilgisini takip et
+  const lastSpawnedPolarity = useRef<'white' | 'black' | null>(null);
+  const lastGapCenter = useRef<number>(0);
+  
+  // Pattern-Based Obstacle Spawn
+  // KRİTİK: Bloklar SIFIRI GEÇMELİ - boşluk merkezi rastgele kaydırılır
+  const spawnPatternObstacle = (lane: Lane, heightRatio: number, canvasHeight: number, canvasWidth: number) => {
+    const obsWidth = INITIAL_CONFIG.obstacleWidth;
+    const spawnX = canvasWidth + 50;
+    const midY = canvasHeight / 2;
+    const orbRadius = INITIAL_CONFIG.orbRadius;
+    const connectorLen = currentConnectorLength.current;
+    
+    // Geçiş boşluğu = connector uzunluğu + orb çapı + güvenlik payı
+    const passableGap = connectorLen + (orbRadius * 2) + 10;
+    const halfGap = passableGap / 2;
+    
+    // Polarity: Üst blok için rastgele, alt blok için ZIT
+    let polarity: 'white' | 'black';
+    let gapCenter: number;
+    
+    if (lane === 'TOP') {
+      // Üst blok: rastgele renk seç ve boşluk merkezi hesapla
+      polarity = Math.random() > 0.5 ? 'white' : 'black';
+      lastSpawnedPolarity.current = polarity;
       
-      // Check if this obstacle should spawn as phantom - Requirements 5.1, 5.8, 7.5
-      // Campaign Mode: Only spawn phantoms if phantom mechanic is enabled
-      // Daily Challenge Mode: Apply phantomOnly modifier - Requirements 8.2
-      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
-      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
-      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        topObstacle = createPhantomObstacle(topObstacle, spawnX, PHANTOM_CONFIG);
-      }
-      
-      console.log('[spawnObstacle] Pushing TOP obstacle:', topObstacle);
-      obstacles.current.push(topObstacle);
+      // Boşluk merkezi: midY'den -halfGap*2 ile +halfGap*2 arası kaydır
+      // Bu sayede bloklar KESİNLİKLE sıfır çizgisini geçiyor!
+      const maxOffset = halfGap * 2;
+      const gapOffset = (Math.random() - 0.5) * maxOffset * 2;
+      gapCenter = midY + gapOffset;
+      lastGapCenter.current = gapCenter;
     } else {
-      console.log('[spawnObstacle] TOP block skipped - height too small:', topBlockHeight);
+      // Alt blok: üst bloğun ZIT rengi ve aynı boşluk merkezi
+      polarity = lastSpawnedPolarity.current === 'white' ? 'black' : 'white';
+      gapCenter = lastGapCenter.current || midY;
     }
     
-    // --- BOTTOM BLOCK - Requirements 5.1, 5.2, 5.8 ---
-    if (bottomBlockHeight > 30) {
-      let bottomObstacle: Obstacle = {
+    // Apply gravity flip to lane
+    const isGravityFlipped = gravityState.current.isFlipped;
+    const effectiveLane: 'top' | 'bottom' = isGravityFlipped ? 
+      (lane === 'TOP' ? 'bottom' : 'top') : 
+      (lane === 'TOP' ? 'top' : 'bottom');
+    
+    let obstacle: Obstacle;
+    
+    if (lane === 'TOP') {
+      // TOP block - 0'dan (gapCenter - halfGap)'a kadar uzanır
+      const blockBottom = gapCenter - halfGap;
+      const blockHeight = Math.max(30, blockBottom);
+      
+      obstacle = {
+        id: Math.random().toString(36).substring(2, 11),
+        x: spawnX,
+        y: -blockHeight,
+        targetY: 0,
+        width: obsWidth,
+        height: blockHeight,
+        lane: effectiveLane,
+        polarity,
+        passed: false
+      };
+    } else {
+      // BOTTOM block - (gapCenter + halfGap)'dan canvasHeight'a kadar uzanır
+      const blockTop = gapCenter + halfGap;
+      const blockHeight = Math.max(30, canvasHeight - blockTop);
+      
+      obstacle = {
         id: Math.random().toString(36).substring(2, 11),
         x: spawnX,
         y: canvasHeight,
-        targetY: bottomBlockTargetY,
+        targetY: blockTop,
         width: obsWidth,
-        height: bottomBlockHeight,
-        lane: bottomLane,
-        polarity: bottomPolarity,
+        height: blockHeight,
+        lane: effectiveLane,
+        polarity,
         passed: false
       };
-      
-      // Check if this obstacle should spawn as phantom - Requirements 5.1, 5.8, 7.5
-      // Campaign Mode: Only spawn phantoms if phantom mechanic is enabled
-      // Daily Challenge Mode: Apply phantomOnly modifier - Requirements 8.2
-      const phantomEnabledBottom = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
-      const forcePhantomBottom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
-      if (forcePhantomBottom || (phantomEnabledBottom && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        bottomObstacle = createPhantomObstacle(bottomObstacle, spawnX, PHANTOM_CONFIG);
-      }
-      
-      console.log('[spawnObstacle] Pushing BOTTOM obstacle:', bottomObstacle);
-      obstacles.current.push(bottomObstacle);
-    } else {
-      console.log('[spawnObstacle] BOTTOM block skipped - height too small:', bottomBlockHeight);
     }
+    
+    // Phantom check
+    const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+    const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
+    if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+      obstacle = createPhantomObstacle(obstacle, spawnX, PHANTOM_CONFIG);
+    }
+    
+    obstacles.current.push(obstacle);
+  };
+
+  // Pattern-Based Shard Spawn - Requirements 5.1, 5.2, 5.3
+  // DÜZELTME: midlineY tabanlı "Erişilebilirlik Alanı" hesaplaması
+  // DİNAMİK HAREKET: Elmaslar yukarı-aşağı ve ileri-geri hareket eder
+  const spawnPatternShard = (lane: Lane, type: 'safe' | 'risky', canvasHeight: number, canvasWidth: number) => {
+    const spawnX = canvasWidth + 50;
+    const maxLen = INITIAL_CONFIG.maxConnectorLength; // Oyuncunun maksimum çubuk uzunluğu
+    const midY = canvasHeight / 2; // Merkez çizgi (midlineY)
+    
+    // Güvenli erişim mesafesi: maxConnectorLength - padding
+    const safeReach = maxLen - 20;
+    
+    // Elmaslar merkeze 50px ile safeReach arasında olmalı
+    // Çok kolay olmaması için minimum 50px uzaklık
+    const minDistance = 50;
+    const randomDistance = minDistance + Math.random() * (safeReach - minDistance);
+    
+    let y: number;
+    if (lane === 'TOP') {
+      // Üst şerit: Merkezden YUKARI git (Y azalır)
+      y = midY - randomDistance;
+    } else {
+      // Alt şerit: Merkezden AŞAĞI git (Y artar)
+      y = midY + randomDistance;
+    }
+    
+    // Ekran sınırlarını kontrol et
+    y = Math.max(20, Math.min(canvasHeight - 20, y));
+    
+    // Dinamik hareket parametreleri oluştur
+    const movement = ShardPlacement.generateShardMovement(type);
+    
+    const shard: ShardPlacement.PlacedShard = {
+      id: Math.random().toString(36).substring(2, 11),
+      x: spawnX,
+      y,
+      baseX: spawnX,  // Hareket merkezi
+      baseY: y,       // Hareket merkezi
+      lane,
+      type,
+      value: ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue,
+      collected: false,
+      movement,       // Dinamik hareket parametreleri
+      spawnTime: Date.now()
+    };
+    
+    activeShards.current.push(shard);
   };
 
   const createExplosion = (x: number, y: number, color: string) => {
@@ -1053,22 +1188,58 @@ const GameEngine: React.FC<GameEngineProps> = ({
           rotationAngle.current = targetRotation.current;
       }
 
-      // Spawning
-      framesSinceSpawn.current++;
-      if (framesSinceSpawn.current >= currentSpawnRate.current) {
-        console.log('[SPAWN] Spawning obstacle, obstacles count before:', obstacles.current.length, 'height:', height, 'width:', width);
-        spawnObstacle(height, width);
-        console.log('[SPAWN] After spawn, obstacles count:', obstacles.current.length);
-        framesSinceSpawn.current = 0;
-        
-        if (currentSpawnRate.current > INITIAL_CONFIG.minSpawnRate) {
-            currentSpawnRate.current -= 1.2; // Faster spawn rate increase (was 0.8)
+      // Spawning - Pattern-Based System - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
+      const spawnTime = Date.now();
+      
+      if (usePatternBasedSpawning.current) {
+        // Pattern-Based Spawning
+        // Check if we need to select a new pattern
+        if (!patternManagerState.current.currentPattern || 
+            PatternManager.isPatternComplete(patternManagerState.current, spawnTime)) {
+          // Select new pattern based on difficulty progression - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
+          const selectedPattern = DifficultyProgression.selectPatternForScore(score.current, PATTERNS);
+          patternManagerState.current = PatternManager.startPattern(
+            patternManagerState.current,
+            selectedPattern,
+            spawnTime
+          );
+          patternStartTime.current = spawnTime;
         }
-        if (speed.current < INITIAL_CONFIG.maxSpeed) {
-            speed.current += INITIAL_CONFIG.speedIncreaseAmount || 0.15; // Much faster speed increase (was 0.025)
+        
+        // Update pattern spawn - spawn obstacles and shards based on time
+        patternManagerState.current = PatternManager.updatePatternSpawn(
+          patternManagerState.current,
+          spawnTime,
+          (lane: Lane, heightRatio: number) => spawnPatternObstacle(lane, heightRatio, height, width),
+          (lane: Lane, type: 'safe' | 'risky') => spawnPatternShard(lane, type, height, width)
+        );
+        
+        // Update speed using Flow Curve - Requirements 1.2, 1.3, 1.4, 1.5, 1.6
+        speed.current = FlowCurve.calculateGameSpeed(score.current);
+        
+        // Update spawn rate based on speed for UI display
+        const spawnInterval = PatternManager.calculateSpawnInterval(speed.current);
+        if (currentSpawnRate.current !== spawnInterval / 16.67) { // Convert ms to frames
+          currentSpawnRate.current = Math.max(INITIAL_CONFIG.minSpawnRate, spawnInterval / 16.67);
         }
         
         if (framesSinceSpawn.current % 30 === 0) setGameSpeedDisplay(speed.current);
+        framesSinceSpawn.current++;
+      } else {
+        // Legacy Random Spawning (fallback)
+        framesSinceSpawn.current++;
+        if (framesSinceSpawn.current >= currentSpawnRate.current) {
+          spawnObstacle(height, width);
+          framesSinceSpawn.current = 0;
+          
+          if (currentSpawnRate.current > INITIAL_CONFIG.minSpawnRate) {
+              currentSpawnRate.current -= 1.2;
+          }
+          
+          speed.current = FlowCurve.calculateGameSpeed(score.current);
+          
+          if (framesSinceSpawn.current % 30 === 0) setGameSpeedDisplay(speed.current);
+        }
       }
 
       // --- S.H.I.F.T. PROTOCOL SPAWN LOGIC - Requirements 3.2, 3.3, 3.4, 3.5 ---
@@ -1245,19 +1416,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ParticleSystem.emitTrail(blackOrbX - 5, blackOrbY, speed.current, [blackOrb.color, getColor('accent')]);
 
       // --- S.H.I.F.T. COLLECTIBLE COLLISION DETECTION - Requirements 9.1, 9.2, 9.3, 9.4 ---
+      const orbCollisionRadius = INITIAL_CONFIG.orbRadius;
       collectibles.current = collectibles.current.filter(collectible => {
         if (collectible.isCollected) return false;
         
         // Check collision with white orb - Requirements 9.1, 9.2
         const whiteCollision = ShiftProtocol.checkCollectibleCollision(
           { x: whiteOrbX, y: whiteOrbY },
-          { x: collectible.x, y: collectible.y }
+          { x: collectible.x, y: collectible.y },
+          orbCollisionRadius
         );
         
         // Check collision with black orb - Requirements 9.1, 9.2
         const blackCollision = ShiftProtocol.checkCollectibleCollision(
           { x: blackOrbX, y: blackOrbY },
-          { x: collectible.x, y: collectible.y }
+          { x: collectible.x, y: collectible.y },
+          orbCollisionRadius
         );
         
         if (whiteCollision || blackCollision) {
@@ -1273,29 +1447,35 @@ const GameEngine: React.FC<GameEngineProps> = ({
             const newShards = ShiftProtocol.awardCollectionReward(currentShards);
             useGameStore.getState().addEchoShards(SHIFT_CONFIG.collectionReward);
             
-            // Visual feedback - collection particle burst
+            // Visual feedback - collection particle burst with golden/purple colors
             const collisionX = whiteCollision ? whiteOrbX : blackOrbX;
             const collisionY = whiteCollision ? whiteOrbY : blackOrbY;
-            ParticleSystem.emitBurst(collectible.x, collectible.y, ['#00F0FF', '#FFFFFF', '#FF00FF']);
             
-            // Score popup for letter collection
+            // Dramatic collection animation - multiple bursts
+            ParticleSystem.emitBurst(collectible.x, collectible.y, ['#FFD700', '#FF00FF', '#FFFFFF']);
+            ParticleSystem.emitBurst(collisionX, collisionY, ['#FFD700', '#FF00FF', '#FFFFFF']);
+            
+            // Screen shake for satisfying feedback
+            ScreenShake.triggerNearMiss();
+            
+            // Score popup for letter collection - golden color
             scorePopups.current.push({
               x: collectible.x,
               y: collectible.y - 20,
               text: `+${SHIFT_CONFIG.collectionReward} ⚡`,
-              color: '#00F0FF',
-              life: 1.2,
-              vy: -2
+              color: '#FFD700',
+              life: 1.5,
+              vy: -2.5
             });
             
-            // Show letter collected popup
+            // Show letter collected popup - larger and more visible
             scorePopups.current.push({
               x: collectible.x,
               y: collectible.y - 50,
-              text: collectible.value,
-              color: '#00F0FF',
-              life: 1.5,
-              vy: -1
+              text: `✦ ${collectible.value} ✦`,
+              color: '#FFD700',
+              life: 2.0,
+              vy: -1.5
             });
             
             // Haptic feedback for collection
@@ -1337,8 +1517,59 @@ const GameEngine: React.FC<GameEngineProps> = ({
         return true;
       });
 
-      // Filter Obstacles
+      // Filter Obstacles - Release back to pool if using object pooling
       obstacles.current = obstacles.current.filter(obs => obs.x + obs.width > -100);
+
+      // --- SHARD MOVEMENT AND COLLECTION - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
+      // Move shards with game speed + dynamic oscillation
+      // Note: currentTime is already defined above in gravity flip logic
+      activeShards.current = activeShards.current.filter(shard => {
+        if (shard.collected) return false;
+        
+        // Move base position left with game speed
+        shard.baseX -= speed.current * slowMotionMultiplier;
+        
+        // Calculate dynamic position with oscillation (yukarı-aşağı + ileri-geri)
+        const dynamicPos = ShardPlacement.calculateShardPosition(shard, currentTime);
+        shard.x = dynamicPos.x;
+        shard.y = dynamicPos.y;
+        
+        // Check collection with both orbs
+        const playerX = width / 4;
+        const whiteOrbY = (playerY.current * height) - Math.cos(rotationAngle.current) * (currentConnectorLength.current / 2);
+        const blackOrbY = (playerY.current * height) + Math.cos(rotationAngle.current) * (currentConnectorLength.current / 2);
+        
+        const canCollectWhite = ShardPlacement.canCollectShard(playerX, whiteOrbY, shard, 30);
+        const canCollectBlack = ShardPlacement.canCollectShard(playerX, blackOrbY, shard, 30);
+        
+        if (canCollectWhite || canCollectBlack) {
+          // Check for near miss bonus - Requirements 5.5
+          const isNearMiss = nearMissState.current.streakCount > 0;
+          const awardedValue = ShardPlacement.collectShard(shard, isNearMiss);
+          
+          // Award Echo Shards
+          useGameStore.getState().addEchoShards(awardedValue);
+          
+          // Visual feedback
+          ParticleSystem.emitBurst(shard.x, shard.y, ['#00F0FF', '#FFD700', '#FFFFFF']);
+          scorePopups.current.push({
+            x: shard.x,
+            y: shard.y - 20,
+            text: `+${awardedValue} ⚡`,
+            color: shard.type === 'risky' ? '#FFD700' : '#00F0FF',
+            life: 1.0,
+            vy: -2
+          });
+          
+          // Haptic feedback
+          getHapticSystem().trigger('light');
+          
+          return false; // Remove collected shard
+        }
+        
+        // Remove if off-screen
+        return shard.x > -50;
+      });
 
       // Restore System: Record snapshot every frame (60fps) - Requirements 7.1, 7.2
       // Capture snapshot for potential rewind using circular buffer
@@ -1406,7 +1637,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         if (!obs.passed && obs.x + obs.width < playerX - INITIAL_CONFIG.orbRadius) {
           obs.passed = true;
           if (obs.lane === 'top') {
-              const currentTime = Date.now();
+              // Note: currentTime is already defined above in gravity flip logic
               
               // Calculate expected interval based on current speed - Requirements 1.6
               const expectedInterval = calculateExpectedInterval(speed.current, currentSpawnRate.current);
@@ -2255,6 +2486,49 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.globalAlpha = 1.0;
       });
 
+      // --- PATTERN SHARD RENDERING - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
+      activeShards.current.forEach(shard => {
+        if (shard.collected) return;
+        
+        const shardTime = Date.now() * 0.003;
+        const pulseScale = 1 + Math.sin(shardTime) * 0.1;
+        const shardSize = 12 * pulseScale;
+        
+        ctx.save();
+        ctx.translate(shard.x, shard.y);
+        
+        // Draw outer glow
+        ctx.shadowColor = shard.type === 'risky' ? '#FFD700' : '#00F0FF';
+        ctx.shadowBlur = 15;
+        
+        // Draw diamond shape
+        ctx.beginPath();
+        ctx.moveTo(0, -shardSize);
+        ctx.lineTo(shardSize, 0);
+        ctx.lineTo(0, shardSize);
+        ctx.lineTo(-shardSize, 0);
+        ctx.closePath();
+        
+        // Fill with gradient
+        const gradient = ctx.createLinearGradient(-shardSize, -shardSize, shardSize, shardSize);
+        if (shard.type === 'risky') {
+          gradient.addColorStop(0, '#FFD700');
+          gradient.addColorStop(1, '#FFA500');
+        } else {
+          gradient.addColorStop(0, '#00F0FF');
+          gradient.addColorStop(1, '#00BFFF');
+        }
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        // Draw border
+        ctx.strokeStyle = shard.type === 'risky' ? '#FFFFFF' : '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.restore();
+      });
+
       // --- S.H.I.F.T. COLLECTIBLE RENDERING - Requirements 2.1, 2.2, 2.3, 2.4 ---
       const collectibleTime = Date.now() * 0.001;
       collectibles.current.forEach(collectible => {
@@ -2263,29 +2537,41 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Calculate rotation for wireframe border - Requirements 2.2
         const rotation = collectibleTime * 2; // 2 rad/s rotation speed
         
-        // Draw outer glow
+        // Pulsing glow effect
+        const pulseIntensity = 0.5 + 0.5 * Math.sin(collectibleTime * 4);
+        const glowSize = 15 + pulseIntensity * 10;
+        
+        // Draw outer glow - Golden/Purple gradient feel
         ctx.save();
-        ctx.shadowColor = '#00F0FF';
-        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = glowSize;
         
         // Draw rotating wireframe border - Requirements 2.2
         ctx.translate(collectible.x, collectible.y);
         ctx.rotate(rotation);
         
-        // Wireframe square border
-        const borderSize = 25;
-        ctx.strokeStyle = '#00F0FF';
-        ctx.lineWidth = 2;
+        // Wireframe diamond border (rotated square looks like diamond)
+        const borderSize = 28;
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 2.5;
         ctx.strokeRect(-borderSize / 2, -borderSize / 2, borderSize, borderSize);
+        
+        // Inner border with different color
+        ctx.strokeStyle = `rgba(255, 0, 255, ${0.5 + pulseIntensity * 0.5})`;
+        ctx.lineWidth = 1.5;
+        const innerSize = 20;
+        ctx.strokeRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
         
         ctx.rotate(-rotation);
         ctx.translate(-collectible.x, -collectible.y);
         
-        // Draw letter with Neon Cyan fill - Requirements 2.1
-        ctx.font = 'bold 18px Arial';
-        ctx.fillStyle = '#00F0FF';
+        // Draw letter with Golden fill - Requirements 2.1
+        ctx.font = 'bold 20px Arial';
+        ctx.fillStyle = '#FFD700';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#FF00FF';
+        ctx.shadowBlur = 8;
         ctx.fillText(collectible.value, collectible.x, collectible.y);
         
         ctx.restore();
@@ -2308,12 +2594,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         
         // Requirements 2.3: Full opacity for collected, 30% for uncollected
         ctx.globalAlpha = isCollected ? 1.0 : 0.3;
-        ctx.fillStyle = '#00F0FF';
+        ctx.fillStyle = '#FFD700'; // Golden color
         
         // Add glow for collected letters
         if (isCollected) {
-          ctx.shadowColor = '#00F0FF';
-          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 12;
         } else {
           ctx.shadowBlur = 0;
         }

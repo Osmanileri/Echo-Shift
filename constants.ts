@@ -13,15 +13,15 @@ export const COLORS = {
 };
 
 export const INITIAL_CONFIG = {
-  // Speed - starts at 30 km/h (3.0), MUCH faster acceleration
-  baseSpeed: 3.3, 
-  maxSpeed: 16, 
-  speedIncreaseInterval: 600, // Was 1200 - now increases every 600ms (2x faster)
-  speedIncreaseAmount: 0.20, // Speed increase per interval
+  // Speed - starts at 30 km/h (3.0), VERY gradual acceleration
+  baseSpeed: 3.0,  // 30km/h starting speed
+  maxSpeed: 14,    // 140km/h max speed (düşürüldü)
+  speedIncreaseInterval: 2000, // DAHA YAVAŞ artış (was 1000)
+  speedIncreaseAmount: 0.08, // DAHA KÜÇÜK artış (was 0.15)
   
-  // Spawn rate
-  spawnRate: 120, // Was 140 - faster obstacle spawning
-  minSpawnRate: 40, // Was 50 - can get more intense
+  // Spawn rate - faster obstacle spawning for more action
+  spawnRate: 80,  // Faster spawning (was 120)
+  minSpawnRate: 35, // Can get more intense (was 40)
   
   // MOBILE OPTIMIZED - Zoomed out view for better visibility
   orbRadius: 7,      // Smaller orbs for zoom out effect
