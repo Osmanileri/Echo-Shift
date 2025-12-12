@@ -1,0 +1,28 @@
+{
+  "name": "shadow-sync",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "lucide-react": "^0.556.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.2",
+    "@vitejs/plugin-react": "^5.0.0",
+    "fast-check": "^4.4.0",
+    "sharp": "^0.34.5",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.0.15"
+  }
+}

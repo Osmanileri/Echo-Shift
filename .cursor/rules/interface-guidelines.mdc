@@ -1,0 +1,110 @@
+---
+alwaysApply: true
+---
+
+## Touch Interactions
+
+- **Minimum touch targets.** All interactive elements have a minimum touch target of 44px (iOS) / 48dp (Android). Use `hitSlop` for smaller visual elements.
+- **Touch feedback.** Provide immediate visual feedback for all touch interactions using `Pressable` with proper opacity/color changes.
+- **Haptic feedback.** Use `Haptics` from `expo-haptics` for important interactions like button presses, switches, and confirmations.
+- **Gesture recognition.** Implement intuitive gestures like swipe-to-delete, pull-to-refresh, and pinch-to-zoom where appropriate using `react-native-gesture-handler`.
+- **Safe touch areas.** Ensure touch targets don't overlap with system UI elements (status bar, home indicator, navigation gestures).
+- **Loading states.** Show loading indicators during async operations. Use `ActivityIndicator` or custom skeletons with proper accessibility labels.
+- **Optimistic updates.** Update UI immediately for likely-successful operations; roll back on failure with clear error messaging.
+- **Confirmation dialogs.** Use `Alert.alert()` for destructive actions with clear "Cancel" and "Confirm" options.
+- **No dead zones.** Every visual element that appears interactive should respond to touch appropriately.
+- **Deep linking.** Implement deep linking with Expo Router for navigation state persistence and shareable URLs.
+- **Accessibility announcements.** Use `AccessibilityInfo.announceForAccessibility()` for important status updates.
+
+## Animations
+
+- **Honor reduced motion.** Check `AccessibilityInfo.isReduceMotionEnabled()` and provide reduced-motion variants.
+- **Implementation preference.** Use `react-native-reanimated` for animations; use `react-native-gesture-handler` only when gestures are needed.
+  - Preference: Reanimated 3 > Animated API > JavaScript-driven animations.
+  - Gesture Handler: Use only for touch interactions, swipes, and complex gestures.
+- **Reanimated worklets.** Use `worklet` directive for animations that run on the UI thread for optimal performance.
+- **Gesture-driven animations.** Use `react-native-gesture-handler` only when you need touch interactions, swipes, and complex gestures.
+- **Shared values.** Use `useSharedValue()` for animated values that can be accessed from both JS and UI threads.
+- **Animated styles.** Use `useAnimatedStyle()` to create animated styles that respond to shared values.
+- **Gesture animations.** Combine gestures with animations using `useAnimatedGestureHandler()` and `runOnJS()` for callbacks.
+- **Performance-first.** Prioritize `transform` and `opacity` properties; avoid animating layout properties like `width`, `height`, `top`, `left`.
+- **Meaningful animations.** Only animate when it clarifies cause & effect or adds deliberate delight.
+- **Platform-appropriate easing.** Use `Easing.bezier()` for custom curves, `Easing.out()` for entrances, `Easing.in()` for exits.
+- **Interruptible animations.** Use `cancelAnimation()` and proper cleanup to cancel animations on user input.
+- **Input-driven.** Avoid autoplay; animate in response to user actions and state changes.
+- **Animation cleanup.** Always clean up shared values and gesture handlers in `useEffect` cleanup functions.
+
+## Layout
+
+- **Safe area handling.** Use `useSafeAreaInsets()` from `react-native-safe-area-context` to handle notches, status bars, and home indicators.
+- **Flexbox-first.** Use `flexDirection`, `justifyContent`, `alignItems`, and `flex` for responsive layouts across different screen sizes.
+- **Platform-specific layouts.** Use `Platform.OS` to adjust layouts for iOS vs Android differences (status bar height, navigation patterns).
+- **Responsive design.** Test on various screen sizes using `Dimensions` API and `useWindowDimensions()` hook.
+- **Consistent spacing.** Use a spacing scale (4, 8, 16, 24, 32px) and create reusable spacing constants.
+- **Orientation support.** Handle both portrait and landscape orientations with `useDeviceOrientation()` or `Dimensions` listeners.
+- **Keyboard avoidance.** Use `KeyboardAvoidingView` or `react-native-keyboard-aware-scroll-view` to prevent keyboard overlap.
+- **Scroll view optimization.** Use `FlatList` for large lists, `ScrollView` for small content, and `SectionList` for grouped data.
+- **Layout measurements.** Use `onLayout` callback when you need to measure components dynamically.
+- **Performance considerations.** Avoid complex nested layouts that cause layout thrashing; prefer flat component hierarchies.
+
+## Content & Accessibility
+
+- **Focus management.** Use `accessibilityFocus()` to programmatically focus elements when needed.
+- **Semantic elements.** Prefer semantic components (`Pressable`, `TextInput`, `Switch`) over generic `View` and `Text` when appropriate.
+- **Typography consistency.** Use consistent font families, sizes, and weights across the app with proper line heights.
+- **Content truncation.** Use `numberOfLines` and `ellipsizeMode` appropriately for text overflow.
+- **Icon accessibility.** Always provide `accessibilityLabel` for icon-only buttons and decorative icons should have `accessibilityHidden={true}`.
+- **Color contrast.** Ensure sufficient contrast ratios for text and interactive elements (WCAG AA minimum).
+- **Dynamic Type support.** Respect system font size preferences on iOS using `allowFontScaling` appropriately.
+- **High contrast mode.** Test and support high contrast mode on both platforms.
+
+## Forms & Input
+
+- **Keyboard types.** Use appropriate `keyboardType` props (`email-address`, `numeric`, `phone-pad`, `url`) for better mobile keyboards.
+- **Input modes.** Use `returnKeyType` (`done`, `next`, `search`, `send`) to guide user behavior.
+- **Auto-focus management.** Use `autoFocus` sparingly and manage focus programmatically with `ref.focus()`.
+- **Form validation.** Implement real-time validation with clear error messages using `onChangeText` and state management.
+- **Submission handling.** Disable submit buttons during submission and show loading states with `ActivityIndicator`.
+- **Placeholder text.** Use descriptive placeholders that end with ellipsis and provide example formats.
+- **Secure text entry.** Use `secureTextEntry` for passwords and sensitive data.
+- **Multiline inputs.** Use `multiline` and `numberOfLines` for text areas with proper keyboard handling.
+- **Input formatting.** Use libraries like `react-native-masked-text` for phone numbers, credit cards, etc.
+- **Form persistence.** Save form data locally to prevent data loss on app backgrounding.
+- **Error handling.** Show inline validation errors with proper accessibility announcements.
+- **Platform differences.** Handle iOS vs Android input behavior differences (keyboard appearance, return key behavior).
+- **Input accessories.** Use `inputAccessoryViewID` on iOS for custom keyboard toolbars.
+- **Text selection.** Allow proper text selection and copying with `selectTextOnFocus` when appropriate.
+
+## Performance
+
+- **Device testing matrix.** Test on various devices (iPhone SE, iPhone Pro Max, Android phones) and in Low Power Mode.
+- **Bundle optimization.** Use `expo-optimize` and analyze bundle size with `expo bundle-analyzer`.
+- **Image optimization.** Use `expo-image` for better performance, lazy loading, and caching.
+- **List virtualization.** Use `FlatList` with `getItemLayout` for known item sizes, `windowSize` for memory optimization.
+- **Memory management.** Monitor memory usage with Flipper or React Native Debugger; clean up listeners and timers.
+- **Network optimization.** Implement request caching, retry logic, and offline support with `@react-native-async-storage/async-storage`.
+- **Render optimization.** Use `React.memo`, `useMemo`, and `useCallback` to prevent unnecessary re-renders.
+- **Native modules.** Use native modules for CPU-intensive tasks; consider `react-native-background-job` for background processing.
+- **Animation performance.** Use `useNativeDriver: true` for transform and opacity animations.
+- **Font loading.** Preload custom fonts and use system fonts when possible to reduce bundle size.
+- **Code splitting.** Use dynamic imports and lazy loading for screens and heavy components.
+- **Background processing.** Handle app state changes properly; pause/resume animations and network requests.
+- **Debugging tools.** Use React DevTools, Flipper, and React Native Debugger for performance profiling.
+- **Hermes engine.** Enable Hermes for better JavaScript performance on Android.
+
+## Design & Theming
+
+- **Platform design guidelines.** Follow iOS Human Interface Guidelines and Material Design principles for native feel.
+- **Dark mode support.** Implement proper dark mode with `useColorScheme()` and theme switching.
+- **Color system.** Use a consistent color palette with semantic naming (primary, secondary, error, success, warning).
+- **Typography scale.** Implement a consistent typography scale with proper line heights and letter spacing.
+- **Spacing system.** Use consistent spacing values (4, 8, 16, 24, 32px) throughout the app.
+- **Border radius consistency.** Use consistent border radius values that align with platform conventions.
+- **Shadow system.** Use platform-appropriate shadows (`shadowColor`, `shadowOffset`, `shadowOpacity`, `shadowRadius` for iOS; `elevation` for Android).
+- **Icon consistency.** Use consistent icon libraries (`@expo/vector-icons`, `react-native-vector-icons`) with proper sizing.
+- **Status bar styling.** Use `StatusBar` component to match app theme and handle light/dark content.
+- **Navigation styling.** Style navigation bars and tab bars to match app theme using `NavigationBar` and `TabBar`.
+- **Loading states.** Design consistent loading states, skeletons, and empty states.
+- **Error states.** Design clear error states with actionable messaging and recovery options.
+- **Accessibility in design.** Ensure sufficient color contrast and don't rely solely on color for information.
+- **Platform-specific elements.** Use platform-specific components (`Switch` vs `SwitchIOS`) when appropriate.
