@@ -41,6 +41,8 @@ import { setupRitualAnalytics } from "./systems/dailyRituals";
 import RatePrompt from "./components/RateUs/RatePrompt";
 import ThemeCreatorModal from "./components/ThemeCreator/ThemeCreatorModal";
 import { createRateUsSystem, RateUsSystem } from "./systems/rateUsSystem";
+// Audio System - Phase 4 Launch Polish
+import * as AudioSystem from "./systems/audioSystem";
 
 // Global analytics system instance
 let analyticsSystemInstance: AnalyticsSystem | null = null;
@@ -156,6 +158,10 @@ const App: React.FC = () => {
   }, [gameState]);
 
   const handleStart = () => {
+    // Audio: Initialize and play game start sound - Phase 4
+    AudioSystem.initialize();
+    AudioSystem.playGameStart();
+    
     setGameState(GameState.PLAYING);
     setScore(0);
     setEarnedShards(0);
@@ -283,6 +289,9 @@ const App: React.FC = () => {
       if (finalScore > highScore) {
         setHighScore(finalScore);
         localStorage.setItem(STORAGE_KEYS.HIGH_SCORE, finalScore.toString());
+
+        // Audio: New high score celebration - Phase 4
+        AudioSystem.playNewHighScore();
 
         // Rate Us: Record positive moment for new high score - Requirements 6.1
         getRateUsSystem().recordPositiveMoment();

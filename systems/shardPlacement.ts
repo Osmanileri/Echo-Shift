@@ -100,15 +100,17 @@ export const SHARD_MOVEMENT_CONFIG = {
   safe: {
     // Mobile readability: reduce motion so shards are "trackable", not distracting
     verticalAmplitude: { min: 6, max: 12 },
-    verticalFrequency: { min: 0.8, max: 1.4 },
+    // NOTE: Frequency is in rad/s (used directly in sin()).
+    // Old values made movement almost imperceptible frame-to-frame; bump for visible motion.
+    verticalFrequency: { min: 4.0, max: 6.5 },
     horizontalAmplitude: { min: 4, max: 10 },
-    horizontalFrequency: { min: 0.6, max: 1.2 },
+    horizontalFrequency: { min: 3.0, max: 5.5 },
   },
   risky: {
     verticalAmplitude: { min: 12, max: 20 },
-    verticalFrequency: { min: 1.2, max: 2.0 },
+    verticalFrequency: { min: 5.5, max: 8.5 },
     horizontalAmplitude: { min: 8, max: 16 },
-    horizontalFrequency: { min: 1.0, max: 1.8 },
+    horizontalFrequency: { min: 4.5, max: 7.5 },
   },
 };
 

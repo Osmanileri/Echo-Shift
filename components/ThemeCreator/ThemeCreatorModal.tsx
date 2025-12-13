@@ -1,4 +1,4 @@
-import { Copy, Palette, Save, X } from "lucide-react";
+import { AlertTriangle, Copy, Palette, Save, X } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import type { ThemeColors } from "../../data/themes";
 import { useGameStore } from "../../store/gameStore";
@@ -10,30 +10,37 @@ interface ThemeCreatorModalProps {
   onClose: () => void;
 }
 
-const DEFAULT_CUSTOM_COLORS: ThemeColors = {
-  topBg: "#000000",
-  bottomBg: "#FFFFFF",
-  topOrb: "#FFFFFF",
-  bottomOrb: "#000000",
+/**
+ * Sadeleştirilmiş Tema Sistemi:
+ * - Kullanıcı sadece TOP BG ve BOTTOM BG seçer
+ * - Diğer tüm renkler otomatik türetilir:
+ *   - topOrb = bottomBg (zıt arka plana karşı görünür)
+ *   - bottomOrb = topBg (zıt arka plana karşı görünür)
+ *   - topObstacle = bottomBg (orb ile aynı)
+ *   - bottomObstacle = topBg (orb ile aynı)
+ *   - connector = gri
+ *   - accent = cyan
+ *   - accentSecondary = kırmızı
+ */
+const deriveFullTheme = (topBg: string, bottomBg: string): ThemeColors => ({
+  topBg,
+  bottomBg,
+  topOrb: bottomBg,      // Üst top = alt arka plan rengi (zıt)
+  bottomOrb: topBg,      // Alt top = üst arka plan rengi (zıt)
   connector: "#888888",
   accent: "#00F0FF",
   accentSecondary: "#FF2A2A",
-  topObstacle: "#FFFFFF",
-  bottomObstacle: "#000000",
-};
+  topObstacle: bottomBg, // Üst engel = üst orb ile aynı
+  bottomObstacle: topBg, // Alt engel = alt orb ile aynı
+});
 
-type ColorKey = keyof ThemeColors;
+const DEFAULT_CUSTOM_COLORS: ThemeColors = deriveFullTheme("#000000", "#FFFFFF");
 
-const COLOR_FIELDS: Array<{ key: ColorKey; label: string }> = [
-  { key: "topBg", label: "Top BG" },
-  { key: "bottomBg", label: "Bottom BG" },
-  { key: "topOrb", label: "Top Orb" },
-  { key: "bottomOrb", label: "Bottom Orb" },
-  { key: "connector", label: "Connector" },
-  { key: "accent", label: "Accent" },
-  { key: "accentSecondary", label: "Accent 2" },
-  { key: "topObstacle", label: "Top Obstacle" },
-  { key: "bottomObstacle", label: "Bottom Obstacle" },
+type EditableColorKey = "topBg" | "bottomBg";
+
+const COLOR_FIELDS: Array<{ key: EditableColorKey; label: string }> = [
+  { key: "topBg", label: "Üst Alan" },
+  { key: "bottomBg", label: "Alt Alan" },
 ];
 
 export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
@@ -42,8 +49,6 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
 }) => {
   const customThemeColors = useGameStore((s) => s.customThemeColors);
   const setCustomThemeColors = useGameStore((s) => s.setCustomThemeColors);
-  const hollowModeEnabled = useGameStore((s) => s.hollowModeEnabled);
-  const setHollowModeEnabled = useGameStore((s) => s.setHollowModeEnabled);
 
   const [draft, setDraft] = useState<ThemeColors>(
     customThemeColors ?? DEFAULT_CUSTOM_COLORS
@@ -62,24 +67,25 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
 
   const warnings = useMemo(() => {
     const warn: string[] = [];
-    const r1 = contrastRatio(draft.topOrb, draft.topBg);
-    const r2 = contrastRatio(draft.bottomOrb, draft.bottomBg);
-    const r3 = contrastRatio(draft.accent, draft.topBg);
-    const r4 = contrastRatio(draft.accent, draft.bottomBg);
-    const min = 3.0; // arcade UI + shapes (non-text) baseline
-    if (r1 !== null && r1 < min) warn.push("Top orb ↔ top bg kontrastı düşük.");
-    if (r2 !== null && r2 < min)
-      warn.push("Bottom orb ↔ bottom bg kontrastı düşük.");
-    if (r3 !== null && r3 < min && r4 !== null && r4 < min)
-      warn.push("Accent her iki arka planda da zayıf kalıyor.");
+    // İki arka plan rengi birbirine çok benziyorsa uyar
+    const bgContrast = contrastRatio(draft.topBg, draft.bottomBg);
+    const min = 2.5; // İki alan arasında minimum kontrast
+    if (bgContrast !== null && bgContrast < min) {
+      warn.push("Üst ve alt alan renkleri birbirine çok yakın. Daha zıt renkler seçin.");
+    }
     return warn;
   }, [draft]);
 
   if (!isOpen) return null;
 
-  const setColor = (key: ColorKey, value: string) => {
+  const setColor = (key: EditableColorKey, value: string) => {
     const v = value.startsWith("#") ? value : `#${value}`;
-    setDraft((d) => ({ ...d, [key]: v }));
+    // Sadece topBg veya bottomBg değiştiğinde tüm temayı yeniden türet
+    setDraft((d) => {
+      const newTopBg = key === "topBg" ? v : d.topBg;
+      const newBottomBg = key === "bottomBg" ? v : d.bottomBg;
+      return deriveFullTheme(newTopBg, newBottomBg);
+    });
   };
 
   const handleCopy = async () => {
@@ -110,20 +116,20 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3">
-      <div className="relative w-full max-w-md max-h-[92vh] bg-gradient-to-b from-gray-900 to-black rounded-2xl border border-white/10 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 sm:p-4 animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 to-black sm:rounded-2xl rounded-t-2xl border-t sm:border border-white/10 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+          <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
               <Palette className="w-5 h-5 text-cyan-400" />
             </div>
             <div>
               <p className="text-[10px] text-white/50 tracking-[0.25em] uppercase">
-                Echo Studio
+                Customize
               </p>
               <h2 className="text-sm font-bold text-white tracking-wider">
-                Theme Creator
+                ECHO STUDIO
               </h2>
             </div>
           </div>
@@ -136,176 +142,188 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-4 overflow-y-auto">
-          {/* Preview */}
-          <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/20">
-            <div className="relative h-28">
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Live Preview Card */}
+          <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/40 shadow-2xl relative group">
+            <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded-md bg-black/50 backdrop-blur text-[10px] text-white/50 uppercase tracking-wider font-bold">
+              Preview
+            </div>
+            <div className="relative h-40">
+              {/* Backgrounds */}
               <div
                 className="absolute inset-0"
                 style={{
                   background: `linear-gradient(180deg, ${draft.topBg} 0%, ${draft.topBg} 50%, ${draft.bottomBg} 50%, ${draft.bottomBg} 100%)`,
                 }}
               />
+
+              {/* Center Connector */}
               <div
                 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-                style={{ width: 2, height: 52, background: draft.connector }}
+                style={{ width: 2, height: 80, background: draft.connector }}
               />
+
+              {/* Top Orb - üst alanda olduğu için solid (farklı renk) */}
               <div
-                className="absolute left-1/2 top-1/2 -translate-x-1/2"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 transition-all duration-300"
                 style={{
-                  transform: "translate(-50%, -42px)",
-                  width: 22,
-                  height: 22,
+                  transform: "translate(-50%, -50px)",
+                  width: 28,
+                  height: 28,
                   borderRadius: 9999,
-                  background: hollowModeEnabled ? draft.topBg : draft.topOrb,
-                  border: `2px solid ${draft.topOrb}`,
+                  background: draft.topOrb,
+                  boxShadow: `0 0 15px ${draft.topOrb}40`,
                 }}
               />
+
+              {/* Bottom Orb - alt alanda olduğu için solid (farklı renk) */}
               <div
-                className="absolute left-1/2 top-1/2 -translate-x-1/2"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 transition-all duration-300"
                 style={{
-                  transform: "translate(-50%, 20px)",
-                  width: 22,
-                  height: 22,
+                  transform: "translate(-50%, 22px)",
+                  width: 28,
+                  height: 28,
                   borderRadius: 9999,
-                  background: hollowModeEnabled
-                    ? draft.bottomBg
-                    : draft.bottomOrb,
-                  border: `2px solid ${draft.bottomOrb}`,
+                  background: draft.bottomOrb,
+                  boxShadow: `0 0 15px ${draft.bottomOrb}40`,
                 }}
               />
+
+              {/* Obstacles */}
               <div
-                className="absolute right-3 top-3 w-6 h-10 rounded"
+                className="absolute right-8 top-6 w-8 h-12 rounded-sm"
                 style={{
-                  background: hollowModeEnabled
-                    ? "transparent"
-                    : draft.topObstacle,
+                  background: draft.topObstacle,
                   border: `2px solid ${draft.topObstacle}`,
                 }}
               />
               <div
-                className="absolute right-3 bottom-3 w-6 h-8 rounded"
+                className="absolute right-8 bottom-6 w-8 h-10 rounded-sm"
                 style={{
-                  background: hollowModeEnabled
-                    ? "transparent"
-                    : draft.bottomObstacle,
+                  background: draft.bottomObstacle,
                   border: `2px solid ${draft.bottomObstacle}`,
                 }}
               />
             </div>
-            <div className="p-3 flex items-center justify-between border-t border-white/10">
+
+            {/* Accent Color Indicator */}
+            <div className="p-3 bg-white/5 border-t border-white/10 flex items-center justify-center">
               <div className="flex items-center gap-2">
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ background: draft.accent }}
+                <div
+                  className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]"
+                  style={{ color: draft.accent, backgroundColor: draft.accent }}
                 />
-                <span className="text-[10px] text-white/60 tracking-wider uppercase">
-                  Live Preview
+                <span className="text-[10px] text-white/60 tracking-wider uppercase font-medium">
+                  Accent Color
                 </span>
               </div>
-              <label className="flex items-center gap-2 text-[10px] text-white/70 tracking-wider uppercase">
-                Hollow
-                <input
-                  type="checkbox"
-                  checked={hollowModeEnabled}
-                  onChange={(e) => setHollowModeEnabled(e.target.checked)}
-                  className="accent-cyan-400"
-                />
-              </label>
             </div>
           </div>
 
           {/* Warnings */}
           {warnings.length > 0 && (
-            <div className="mt-3 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10">
-              <p className="text-[10px] text-amber-300 tracking-wider uppercase font-bold">
-                Kontrast Uyarısı
-              </p>
-              <ul className="mt-1 space-y-1">
-                {warnings.map((w) => (
-                  <li key={w} className="text-xs text-amber-200/80">
-                    - {w}
-                  </li>
-                ))}
-              </ul>
+            <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+              <div>
+                <p className="text-[11px] text-amber-200 font-bold tracking-wide uppercase mb-1">
+                  Görünürlük Sorunu
+                </p>
+                <ul className="space-y-1">
+                  {warnings.map((w) => (
+                    <li key={w} className="text-[10px] text-amber-200/70">
+                      • {w}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
 
-          {/* Fields */}
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          {/* Color Pickers */}
+          <div className="grid grid-cols-2 gap-3">
             {COLOR_FIELDS.map(({ key, label }) => (
               <div
                 key={key}
-                className="p-3 rounded-xl border border-white/10 bg-white/5"
+                className="group p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] text-white/50 tracking-wider uppercase">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[10px] text-white/40 tracking-wider uppercase font-medium group-hover:text-white/60 transition-colors">
                     {label}
                   </p>
-                  <input
-                    type="color"
-                    value={draft[key]}
-                    onChange={(e) => setColor(key, e.target.value)}
-                    className="w-8 h-6 bg-transparent border border-white/10 rounded"
-                  />
+                  <div className="relative w-6 h-6 rounded-full overflow-hidden border border-white/20 shadow-sm">
+                    <input
+                      type="color"
+                      value={draft[key]}
+                      onChange={(e) => setColor(key, e.target.value)}
+                      className="absolute -top-2 -left-2 w-10 h-10 p-0 border-0 cursor-pointer"
+                    />
+                  </div>
                 </div>
                 <input
                   value={draft[key]}
                   onChange={(e) => setColor(key, e.target.value)}
-                  className="mt-2 w-full bg-black/30 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/80 font-mono"
+                  className="w-full bg-black/20 border border-white/5 rounded-lg px-2 py-1.5 text-[10px] text-white/60 font-mono focus:outline-none focus:border-cyan-500/50 transition-colors"
                 />
               </div>
             ))}
           </div>
 
-          {/* Code */}
-          <div className="mt-4 p-3 rounded-2xl border border-white/10 bg-white/5">
+          {/* Share Section */}
+          <div className="p-4 rounded-2xl border border-white/10 bg-white/5 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-[10px] text-white/50 tracking-wider uppercase">
-                Share Code
-              </p>
+              <div className="flex items-center gap-2">
+                <Copy className="w-4 h-4 text-white/40" />
+                <p className="text-[10px] text-white/40 tracking-wider uppercase font-bold">
+                  Share Theme
+                </p>
+              </div>
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/25 text-cyan-400 text-xs font-bold tracking-wider hover:bg-cyan-500/25 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold tracking-wider hover:bg-cyan-500/20 transition-colors"
               >
-                <Copy className="w-4 h-4" />
-                {copied ? "COPIED" : "COPY"}
+                {copied ? "COPIED!" : "COPY CODE"}
               </button>
             </div>
-            <textarea
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="ECHO-... (paste here)"
-              className="mt-2 w-full h-20 bg-black/30 border border-white/10 rounded-xl p-2 text-xs text-white/80 font-mono resize-none"
-            />
+
+            <div className="relative">
+              <textarea
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="Paste theme code (ECHO-...)"
+                className="w-full h-20 bg-black/30 border border-white/10 rounded-xl p-3 text-[10px] text-white/70 font-mono resize-none focus:outline-none focus:border-cyan-500/30 transition-colors placeholder:text-white/20"
+              />
+              <div className="absolute bottom-2 right-2">
+                <button
+                  onClick={handleApplyCode}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/10 text-white/80 text-[10px] font-bold tracking-wider hover:bg-white/20 transition-colors"
+                >
+                  APPLY
+                </button>
+              </div>
+            </div>
+
             {codeError && (
-              <p className="mt-2 text-xs text-red-400">{codeError}</p>
+              <p className="text-[10px] text-red-400 font-medium pl-1">
+                {codeError}
+              </p>
             )}
-            <button
-              onClick={handleApplyCode}
-              className="mt-2 w-full py-2 rounded-xl border border-white/15 text-white/80 font-bold text-xs tracking-widest hover:bg-white/5 transition-colors"
-            >
-              APPLY CODE
-            </button>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10 flex gap-2">
+        <div className="p-4 border-t border-white/10 bg-black/40 flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-white/15 text-white/70 font-bold text-xs tracking-widest hover:bg-white/5 transition-colors"
+            className="flex-1 py-3.5 rounded-xl border border-white/10 text-white/60 font-bold text-xs tracking-widest hover:bg-white/5 transition-colors uppercase"
           >
-            KAPAT
+            Vazgeç
           </button>
           <button
             onClick={handleSaveEquip}
-            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-black text-xs tracking-[0.2em] active:scale-[0.98] transition-all shadow-[0_0_25px_rgba(0,240,255,0.25)]"
+            className="flex-[2] py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-black text-xs tracking-[0.2em] active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(0,240,255,0.2)] hover:shadow-[0_0_30px_rgba(0,240,255,0.3)] uppercase flex items-center justify-center gap-2"
           >
-            <span className="inline-flex items-center justify-center gap-2">
-              <Save className="w-4 h-4" />
-              SAVE
-            </span>
+            <Save className="w-4 h-4" />
+            Kaydet & Kullan
           </button>
         </div>
       </div>
