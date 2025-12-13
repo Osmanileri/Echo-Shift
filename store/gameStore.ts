@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
 import { initializeShiftState } from "../systems/shiftProtocol";
 import {
@@ -106,6 +107,8 @@ export interface GameStore {
   soundEnabled: boolean;
   musicEnabled: boolean;
   hapticEnabled: boolean;
+  hollowModeEnabled: boolean;
+  customThemeColors: ThemeColors | null;
 
   // Actions
   purchaseItem: (
@@ -140,6 +143,8 @@ export interface GameStore {
   setSoundEnabled: (enabled: boolean) => void;
   setMusicEnabled: (enabled: boolean) => void;
   setHapticEnabled: (enabled: boolean) => void;
+  setHollowModeEnabled: (enabled: boolean) => void;
+  setCustomThemeColors: (colors: ThemeColors | null) => void;
 
   // Persistence
   loadFromStorage: () => void;
@@ -173,6 +178,8 @@ const DEFAULT_STATE = {
   soundEnabled: true,
   musicEnabled: true,
   hapticEnabled: true,
+  hollowModeEnabled: false,
+  customThemeColors: null as ThemeColors | null,
 };
 
 // Persisted state interface (subset of GameStore that gets saved)
@@ -197,6 +204,8 @@ interface PersistedState {
   soundEnabled: boolean;
   musicEnabled: boolean;
   hapticEnabled: boolean;
+  hollowModeEnabled: boolean;
+  customThemeColors: ThemeColors | null;
 }
 
 // Create the store
@@ -428,6 +437,26 @@ export const useGameStore = create<GameStore>()(
       get().saveToStorage();
     },
 
+    setHollowModeEnabled: (enabled: boolean) => {
+      set({ hollowModeEnabled: enabled });
+      get().saveToStorage();
+    },
+
+    setCustomThemeColors: (colors: ThemeColors | null) => {
+      set((state) => {
+        const nextOwnedThemes =
+          colors && !state.ownedThemes.includes("custom")
+            ? [...state.ownedThemes, "custom"]
+            : state.ownedThemes;
+        return {
+          customThemeColors: colors,
+          ownedThemes: nextOwnedThemes,
+          equippedTheme: colors ? "custom" : state.equippedTheme,
+        };
+      });
+      get().saveToStorage();
+    },
+
     // Persistence Actions
     loadFromStorage: () => {
       const savedState = safeLoad<Partial<PersistedState>>(
@@ -467,6 +496,10 @@ export const useGameStore = create<GameStore>()(
         soundEnabled: savedState.soundEnabled ?? DEFAULT_STATE.soundEnabled,
         musicEnabled: savedState.musicEnabled ?? DEFAULT_STATE.musicEnabled,
         hapticEnabled: savedState.hapticEnabled ?? DEFAULT_STATE.hapticEnabled,
+        hollowModeEnabled:
+          savedState.hollowModeEnabled ?? DEFAULT_STATE.hollowModeEnabled,
+        customThemeColors:
+          savedState.customThemeColors ?? DEFAULT_STATE.customThemeColors,
       });
 
       // Load ghost data separately (can be large)
@@ -499,6 +532,8 @@ export const useGameStore = create<GameStore>()(
         soundEnabled: state.soundEnabled,
         musicEnabled: state.musicEnabled,
         hapticEnabled: state.hapticEnabled,
+        hollowModeEnabled: state.hollowModeEnabled,
+        customThemeColors: state.customThemeColors,
       };
 
       safePersist(STORAGE_KEYS.GAME_STATE, stateToSave);

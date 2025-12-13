@@ -33,6 +33,20 @@
     - Magnet çekimi: radius içinde shard base pozisyonunu orb’a doğru lerp’ler (deterministik)
     - Shield: collision’da charge harcar, 2sn invincibility + VFX, engeli temizler
 
+## Son Eklenen / Güncellenen (Phase 3 Milestone)
+
+- **Echo Studio / Theme Creator**:
+  - `components/ThemeCreator/ThemeCreatorModal.tsx`: renk seçimi + canlı preview + kod kopyala/yapıştır
+  - `utils/themeCode.ts`: `ECHO-...` tema kodu encode/decode
+  - `utils/colorContrast.ts`: kontrast oranı hesapları (anti-blindness warning)
+- **Hollow Design Rendering**:
+  - `store/gameStore.ts`: `hollowModeEnabled` persisted
+  - `components/GameEngine.tsx`: hollow orb + wireframe obstacles
+- **Custom Theme persist + runtime apply**:
+  - `store/gameStore.ts`: `customThemeColors` persisted + `setCustomThemeColors`
+  - `systems/themeSystem.ts`: `custom` tema desteği
+  - `components/GameUI.tsx` + `App.tsx`: `STUDIO` butonu + modal orchestration
+
 ## Kalanlar / Belirsizler
 
 - Dokümantasyonun konsolidasyonu:
@@ -42,7 +56,6 @@
 - Phase 1 polish:
   - Pattern authoring için `PatternChunk` → `Pattern` compile helper
   - Shard placement’ı `positionOffset` ile “riskli köşe/iki blok arası” şeklinde daha net bağlamak
-  
 - Phase 2 polish (opsiyonel):
   - Shield charge ve magnet radius değerlerinin UX tuning’i (mobil denge)
   - HUD üzerinde shield charge göstergesi (isteğe bağlı)
@@ -55,10 +68,16 @@
 ## Son Milestone
 
 - Phase 1’de motorun temel taşları güçlendirildi:
+
   - Pattern spawn deterministik hale getirildi
   - Object pooling GameEngine’e entegre edildi
   - Shard’lar pattern geometrisine bağlandı (random mesafe yerine)
 
 - Phase 2’de roguelite loop başlatıldı:
+
   - Zone selector + unlock/persist
   - Magnet + Shield upgrades gameplay’e entegre
+
+- Phase 3’te özelleştirme katmanı başlatıldı:
+  - Echo Studio (Theme Creator) + paylaşılabilir tema kodu
+  - Hollow render modu + custom theme persist

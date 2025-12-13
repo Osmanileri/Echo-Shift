@@ -102,6 +102,7 @@ import * as ObjectPool from "../systems/objectPool";
 // Shard Placement System Integration - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
 import type { ZoneConfig } from "../data/zones";
 import * as ShardPlacement from "../systems/shardPlacement";
+import { setCustomThemeColors } from "../systems/themeSystem";
 
 // Campaign mode configuration for mechanics enable/disable
 export interface CampaignModeConfig {
@@ -199,6 +200,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Theme System Integration - Requirements 5.1, 5.2, 5.3
   const equippedTheme = useGameStore((state) => state.equippedTheme);
+  const customThemeColors = useGameStore((state) => state.customThemeColors);
+  const hollowModeEnabled = useGameStore((state) => state.hollowModeEnabled);
 
   // Skin System Integration - Requirements 3.1, 3.2
   const equippedSkin = useGameStore((state) => state.equippedSkin);
@@ -207,6 +210,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
   useEffect(() => {
     applyTheme(equippedTheme);
   }, [equippedTheme]);
+
+  // Keep ThemeSystem in sync with custom theme payload
+  useEffect(() => {
+    setCustomThemeColors(customThemeColors);
+  }, [customThemeColors]);
 
   // Mutable Game State
   const frameId = useRef<number>(0);
@@ -3264,15 +3272,28 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.globalAlpha = obstacleOpacity;
 
         // Draw the block body - Theme System Integration
-        // Use polarity-based coloring: white obstacles match white orb, black obstacles match black orb
-        ctx.fillStyle = obstacleColor;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        // Hollow Mode (Phase 3): wireframe obstacles for clarity
+        if (!hollowModeEnabled) {
+          // Use polarity-based coloring: white obstacles match white orb, black obstacles match black orb
+          ctx.fillStyle = obstacleColor;
+          ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        }
 
-        // Draw High Contrast Border
-        // Border uses opposite polarity's color for contrast
-        ctx.lineWidth = 2; // Thinner border (2px)
-        ctx.strokeStyle = oppositeColor;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+        // Border
+        if (hollowModeEnabled) {
+          // Primary outline uses obstacleColor; secondary inner uses oppositeColor
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = obstacleColor;
+          ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = oppositeColor;
+          ctx.strokeRect(obs.x + 2, obs.y + 2, obs.width - 4, obs.height - 4);
+        } else {
+          // High contrast border uses opposite polarity's color
+          ctx.lineWidth = 2; // Thinner border (2px)
+          ctx.strokeStyle = oppositeColor;
+          ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+        }
 
         // Theme Effects - Requirements 5.4: Cyberpunk glowing edges
         if (hasEffect("glowEdges")) {
@@ -3569,11 +3590,29 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.stroke();
           ctx.shadowBlur = 0;
         } else {
-          // Normal rendering - Use skin renderer for equipped skin - Requirements 3.1, 3.2
-          renderOrb(
-            { ctx, x: orb.x, y: orb.y, radius: orb.radius, isTopOrb },
-            skin
-          );
+          // Phase 3: Hollow rendering (fill = local bg, stroke = identity color)
+          if (hollowModeEnabled) {
+            const orbBg = orb.y < currentMidlineY ? topBgColor : bottomBgColor;
+            const identityStroke = isWhite
+              ? getColor("topOrb")
+              : getColor("bottomOrb");
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+            ctx.fillStyle = orbBg;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = identityStroke;
+            ctx.stroke();
+            ctx.restore();
+          } else {
+            // Normal rendering - Use skin renderer for equipped skin - Requirements 3.1, 3.2
+            renderOrb(
+              { ctx, x: orb.x, y: orb.y, radius: orb.radius, isTopOrb },
+              skin
+            );
+          }
 
           // Border - use opposite orb color for contrast
           ctx.beginPath();
