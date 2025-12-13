@@ -35,6 +35,28 @@ export interface PatternShard {
 }
 
 /**
+ * PatternChunk - higher level building block for patterns.
+ *
+ * This is a convenience structure for authoring: a chunk represents a short,
+ * learnable sequence (e.g. Gate, Stairs, ZigZag). Chunks can be compiled into a
+ * `Pattern` by converting `beat` offsets into `timeOffset` values.
+ *
+ * NOTE: The engine currently consumes `Pattern` directly; Chunk support exists
+ * for tooling/authoring and future refactors.
+ */
+export interface PatternChunk {
+  id: string;
+  name: string;
+  difficulty: PatternDifficulty;
+  beatMs: number; // duration of one beat in ms (authoring resolution)
+  steps: Array<{
+    beat: number;
+    heightRatio?: number;
+    shard?: { lane: Lane; type: 'safe' | 'risky' };
+  }>;
+}
+
+/**
  * Complete pattern configuration
  * Requirements: 2.1, 2.6, 2.7
  */
@@ -168,24 +190,140 @@ const GAUNTLET_PATTERN: Pattern = {
   difficulty: 'expert',
   duration: 1500,  // Faster (was 2000)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 },
-    { lane: 'TOP', timeOffset: 250 },
-    { lane: 'BOTTOM', timeOffset: 250 },
-    { lane: 'TOP', timeOffset: 500 },
-    { lane: 'BOTTOM', timeOffset: 500 },
-    { lane: 'TOP', timeOffset: 750 },
-    { lane: 'BOTTOM', timeOffset: 750 },
-    { lane: 'TOP', timeOffset: 1000 },
-    { lane: 'BOTTOM', timeOffset: 1000 },
-    { lane: 'TOP', timeOffset: 1250 },
-    { lane: 'BOTTOM', timeOffset: 1250 }
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.75 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.75 },
+    { lane: 'TOP', timeOffset: 250, heightRatio: 0.25 },
+    { lane: 'BOTTOM', timeOffset: 250, heightRatio: 0.25 },
+    { lane: 'TOP', timeOffset: 500, heightRatio: 0.8 },
+    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.8 },
+    { lane: 'TOP', timeOffset: 750, heightRatio: 0.2 },
+    { lane: 'BOTTOM', timeOffset: 750, heightRatio: 0.2 },
+    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.7 },
+    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.7 },
+    { lane: 'TOP', timeOffset: 1250, heightRatio: 0.3 },
+    { lane: 'BOTTOM', timeOffset: 1250, heightRatio: 0.3 }
   ],
   shards: [
     { lane: 'BOTTOM', timeOffset: 125, type: 'risky' },
     { lane: 'TOP', timeOffset: 375, type: 'risky' },
     { lane: 'BOTTOM', timeOffset: 625, type: 'risky' },
     { lane: 'TOP', timeOffset: 875, type: 'risky' }
+  ]
+};
+
+/**
+ * Stairs Pattern - Gap center climbs steadily (learnable "stairs" motion)
+ */
+const STAIRS_PATTERN: Pattern = {
+  id: 'stairs',
+  name: 'Stairs',
+  difficulty: 'intermediate',
+  duration: 1600,
+  obstacles: [
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.25 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.25 },
+    { lane: 'TOP', timeOffset: 400, heightRatio: 0.35 },
+    { lane: 'BOTTOM', timeOffset: 400, heightRatio: 0.35 },
+    { lane: 'TOP', timeOffset: 800, heightRatio: 0.5 },
+    { lane: 'BOTTOM', timeOffset: 800, heightRatio: 0.5 },
+    { lane: 'TOP', timeOffset: 1200, heightRatio: 0.65 },
+    { lane: 'BOTTOM', timeOffset: 1200, heightRatio: 0.65 }
+  ],
+  shards: [
+    { lane: 'TOP', timeOffset: 200, type: 'safe' },
+    { lane: 'BOTTOM', timeOffset: 1000, type: 'safe' }
+  ]
+};
+
+/**
+ * Switchback Pattern - Alternates high/low gap center, forcing quick re-centering
+ */
+const SWITCHBACK_PATTERN: Pattern = {
+  id: 'switchback',
+  name: 'Switchback',
+  difficulty: 'intermediate',
+  duration: 1500,
+  obstacles: [
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.2 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.2 },
+    { lane: 'TOP', timeOffset: 500, heightRatio: 0.8 },
+    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.8 },
+    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.25 },
+    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.25 }
+  ],
+  shards: [
+    { lane: 'BOTTOM', timeOffset: 250, type: 'risky' },
+    { lane: 'TOP', timeOffset: 750, type: 'risky' }
+  ]
+};
+
+/**
+ * Pulse Pattern - Repeated center-ish gates with slight offset pulses
+ */
+const PULSE_PATTERN: Pattern = {
+  id: 'pulse',
+  name: 'Pulse',
+  difficulty: 'basic',
+  duration: 1500,
+  obstacles: [
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.45 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.45 },
+    { lane: 'TOP', timeOffset: 500, heightRatio: 0.55 },
+    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.55 },
+    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.5 },
+    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.5 }
+  ],
+  shards: [
+    { lane: 'TOP', timeOffset: 250, type: 'safe' },
+    { lane: 'BOTTOM', timeOffset: 1250, type: 'safe' }
+  ]
+};
+
+/**
+ * Chicane Pattern - Quick left/right (high/low) with short cadence
+ */
+const CHICANE_PATTERN: Pattern = {
+  id: 'chicane',
+  name: 'Chicane',
+  difficulty: 'advanced',
+  duration: 1400,
+  obstacles: [
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.7 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.7 },
+    { lane: 'TOP', timeOffset: 350, heightRatio: 0.3 },
+    { lane: 'BOTTOM', timeOffset: 350, heightRatio: 0.3 },
+    { lane: 'TOP', timeOffset: 700, heightRatio: 0.75 },
+    { lane: 'BOTTOM', timeOffset: 700, heightRatio: 0.75 },
+    { lane: 'TOP', timeOffset: 1050, heightRatio: 0.35 },
+    { lane: 'BOTTOM', timeOffset: 1050, heightRatio: 0.35 }
+  ],
+  shards: [
+    { lane: 'TOP', timeOffset: 175, type: 'safe' },
+    { lane: 'BOTTOM', timeOffset: 875, type: 'risky' }
+  ]
+};
+
+/**
+ * Squeeze Pattern - Narrow-ish, consistent bias to one side
+ */
+const SQUEEZE_PATTERN: Pattern = {
+  id: 'squeeze',
+  name: 'Squeeze',
+  difficulty: 'advanced',
+  duration: 1600,
+  obstacles: [
+    { lane: 'TOP', timeOffset: 0, heightRatio: 0.2 },
+    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.2 },
+    { lane: 'TOP', timeOffset: 400, heightRatio: 0.25 },
+    { lane: 'BOTTOM', timeOffset: 400, heightRatio: 0.25 },
+    { lane: 'TOP', timeOffset: 800, heightRatio: 0.3 },
+    { lane: 'BOTTOM', timeOffset: 800, heightRatio: 0.3 },
+    { lane: 'TOP', timeOffset: 1200, heightRatio: 0.25 },
+    { lane: 'BOTTOM', timeOffset: 1200, heightRatio: 0.25 }
+  ],
+  shards: [
+    { lane: 'BOTTOM', timeOffset: 600, type: 'safe' },
+    { lane: 'TOP', timeOffset: 1000, type: 'risky' }
   ]
 };
 
@@ -199,8 +337,13 @@ export const PATTERNS: Pattern[] = [
   GATE_PATTERN,      // Duplicate for higher weight
   DOUBLE_GATE_PATTERN,
   BREATHER_PATTERN,
+  PULSE_PATTERN,
   ZIGZAG_PATTERN,
+  STAIRS_PATTERN,
+  SWITCHBACK_PATTERN,
   TUNNEL_PATTERN,
+  CHICANE_PATTERN,
+  SQUEEZE_PATTERN,
   GAUNTLET_PATTERN
 ];
 
