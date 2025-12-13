@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
 import { Copy, Palette, Save, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { ThemeColors } from "../../data/themes";
 import { useGameStore } from "../../store/gameStore";
 import { contrastRatio } from "../../utils/colorContrast";
@@ -168,21 +168,27 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                   width: 22,
                   height: 22,
                   borderRadius: 9999,
-                  background: hollowModeEnabled ? draft.bottomBg : draft.bottomOrb,
+                  background: hollowModeEnabled
+                    ? draft.bottomBg
+                    : draft.bottomOrb,
                   border: `2px solid ${draft.bottomOrb}`,
                 }}
               />
               <div
                 className="absolute right-3 top-3 w-6 h-10 rounded"
                 style={{
-                  background: hollowModeEnabled ? "transparent" : draft.topObstacle,
+                  background: hollowModeEnabled
+                    ? "transparent"
+                    : draft.topObstacle,
                   border: `2px solid ${draft.topObstacle}`,
                 }}
               />
               <div
                 className="absolute right-3 bottom-3 w-6 h-8 rounded"
                 style={{
-                  background: hollowModeEnabled ? "transparent" : draft.bottomObstacle,
+                  background: hollowModeEnabled
+                    ? "transparent"
+                    : draft.bottomObstacle,
                   border: `2px solid ${draft.bottomObstacle}`,
                 }}
               />
@@ -308,5 +314,3 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
 };
 
 export default ThemeCreatorModal;
-
-

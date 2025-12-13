@@ -51,5 +51,3 @@ export function isContrastSufficient(
   if (ratio === null) return false;
   return ratio >= minRatio;
 }
-
-

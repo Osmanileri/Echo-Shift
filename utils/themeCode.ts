@@ -40,5 +40,3 @@ export function decodeThemeCode(code: string): ThemeColors | null {
     return null;
   }
 }
-
-
