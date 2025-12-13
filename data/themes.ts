@@ -42,6 +42,25 @@ export interface Theme {
 }
 
 /**
+ * Tema renk türetme fonksiyonu:
+ * - topOrb = bottomBg (zıt alanda görünür)
+ * - bottomOrb = topBg (zıt alanda görünür)
+ * - topObstacle = bottomBg (orb ile aynı)
+ * - bottomObstacle = topBg (orb ile aynı)
+ */
+const deriveThemeColors = (topBg: string, bottomBg: string): ThemeColors => ({
+  topBg,
+  bottomBg,
+  topOrb: bottomBg,
+  bottomOrb: topBg,
+  connector: '#888888',
+  accent: '#00F0FF',
+  accentSecondary: '#FF2A2A',
+  topObstacle: bottomBg,
+  bottomObstacle: topBg,
+});
+
+/**
  * Default/Classic Theme
  * Requirements: 5.1, 5.2, 5.3
  */
@@ -49,39 +68,19 @@ const CLASSIC_THEME: Theme = {
   id: 'default',
   name: 'Classic',
   price: 0,
-  colors: {
-    topBg: '#000000',
-    bottomBg: '#FFFFFF',
-    topOrb: '#FFFFFF',
-    bottomOrb: '#000000',
-    connector: '#888888',
-    accent: '#00F0FF',
-    accentSecondary: '#FF2A2A',
-    topObstacle: '#FFFFFF',
-    bottomObstacle: '#000000',
-  },
+  colors: deriveThemeColors('#000000', '#FFFFFF'),
 };
 
 /**
  * Cyberpunk Theme
  * Requirements: 5.4 - neon grid lines and glowing edges
- * Uses neon colors for orbs and obstacles for cyberpunk aesthetic
+ * Dark purple top, neon magenta bottom for contrast
  */
 const CYBERPUNK_THEME: Theme = {
   id: 'cyberpunk',
   name: 'Cyberpunk',
   price: 500,
-  colors: {
-    topBg: '#0D0221',
-    bottomBg: '#1A0533',
-    topOrb: '#00FFFF',      // Cyan neon
-    bottomOrb: '#FF00FF',   // Magenta neon
-    connector: '#FFD700',
-    accent: '#00FF00',
-    accentSecondary: '#FF0066',
-    topObstacle: '#00FFFF',
-    bottomObstacle: '#FF00FF',
-  },
+  colors: deriveThemeColors('#0D0221', '#FF00FF'),
   effects: {
     gridLines: true,
     glowEdges: true,
@@ -91,23 +90,13 @@ const CYBERPUNK_THEME: Theme = {
 /**
  * Retro 8-bit Theme
  * Requirements: 5.5 - pixelated edges and 8-bit color palette
- * Orb colors match opposite background for contrast (same logic as default theme)
+ * Dark blue-gray top, light gray bottom
  */
 const RETRO_THEME: Theme = {
   id: 'retro',
   name: 'Retro 8-bit',
   price: 400,
-  colors: {
-    topBg: '#2C3E50',
-    bottomBg: '#ECF0F1',
-    topOrb: '#ECF0F1',      // Same as bottomBg for contrast
-    bottomOrb: '#2C3E50',   // Same as topBg for contrast
-    connector: '#F39C12',
-    accent: '#2ECC71',
-    accentSecondary: '#9B59B6',
-    topObstacle: '#ECF0F1', // Same as bottomBg for contrast
-    bottomObstacle: '#2C3E50', // Same as topBg for contrast
-  },
+  colors: deriveThemeColors('#2C3E50', '#ECF0F1'),
   effects: {
     pixelated: true,
   },
@@ -116,23 +105,13 @@ const RETRO_THEME: Theme = {
 /**
  * Zen Garden Theme
  * Requirements: 5.6 - soft gradients and muted colors
- * Orb colors match opposite background for contrast (same logic as default theme)
+ * Dark forest green top, beige bottom
  */
 const ZEN_THEME: Theme = {
   id: 'zen',
   name: 'Zen Garden',
   price: 300,
-  colors: {
-    topBg: '#2D4A3E',
-    bottomBg: '#F5F5DC',
-    topOrb: '#F5F5DC',      // Same as bottomBg for contrast
-    bottomOrb: '#2D4A3E',   // Same as topBg for contrast
-    connector: '#D2B48C',
-    accent: '#98FB98',
-    accentSecondary: '#DEB887',
-    topObstacle: '#F5F5DC', // Same as bottomBg for contrast
-    bottomObstacle: '#2D4A3E', // Same as topBg for contrast
-  },
+  colors: deriveThemeColors('#2D4A3E', '#F5F5DC'),
   effects: {
     softGradients: true,
   },

@@ -18,26 +18,26 @@ export const INITIAL_CONFIG = {
   maxSpeed: 14,    // 140km/h max speed (düşürüldü)
   speedIncreaseInterval: 2000, // DAHA YAVAŞ artış (was 1000)
   speedIncreaseAmount: 0.08, // DAHA KÜÇÜK artış (was 0.15)
-  
+
   // Spawn rate - faster obstacle spawning for more action
   spawnRate: 80,  // Faster spawning (was 120)
   minSpawnRate: 35, // Can get more intense (was 40)
-  
+
   // MOBILE OPTIMIZED - Zoomed out view for better visibility
   orbRadius: 7,      // Smaller orbs for zoom out effect
   connectorWidth: 2, // Thinner connector
   obstacleWidth: 24, // Narrower obstacles
-  
+
   // Gate Logic
   gapHeight: 140, // Smaller gap for zoom out
-  
+
   // Dynamic Connector Config - Smaller for zoom out
   minConnectorLength: 45, // Shorter starting connector
   maxConnectorLength: 120, // Shorter max connector
   connectorGrowthRate: 0.06, // Slower growth
-  
+
   // Swap Mechanics - Snappy & Responsive
-  swapCooldown: 150, 
+  swapCooldown: 150,
   swapDuration: 150, // Faster animation (was 200)
 
   // Layout / Safe Zones
@@ -63,17 +63,18 @@ export const GRAVITY_CONFIG = {
   warningDuration: 500,         // Uyarı süresi (ms)
   flipDuration: 300,            // Flip animasyon süresi (ms)
   minTimeBetweenFlips: 5000,    // Flipler arası minimum süre (ms)
-  invincibilityDuration: 200,   // Dokunulmazlık süresi (ms)
+  invincibilityDuration: 100,   // Dokunulmazlık süresi (ms) - düşürüldü
 };
 
 // Near Miss System Configuration - Requirements 3.1, 3.7
+// AYNI RENKLİ blok + orbdan yakın geçiş bonusu
 export const NEAR_MISS_CONFIG = {
-  threshold: 15,                // Yakın geçiş mesafesi (piksel)
-  bonusMultiplier: 2,           // Temel puan çarpanı (20 puan)
-  streakWindow: 4000,           // Streak penceresi (ms) - 4 saniye
-  streakBonusAt: 3,             // Bonus için gereken streak
-  streakBonusPoints: 25,        // Streak bonusu
-  maxStreakMultiplier: 3,       // Maksimum combo çarpanı (x3)
+  threshold: 8,                 // Yakın geçiş mesafesi (piksel) - düşürüldü
+  bonusMultiplier: 1.5,         // Temel puan çarpanı (15 puan) - düşürüldü
+  streakWindow: 3000,           // Streak penceresi (ms) - 3 saniye 
+  streakBonusAt: 4,             // Bonus için gereken streak - artırıldı
+  streakBonusPoints: 15,        // Streak bonusu - düşürüldü
+  maxStreakMultiplier: 2,       // Maksimum combo çarpanı (x2) - düşürüldü
 };
 
 // Dynamic Midline System Configuration - Requirements 4.2, 4.11, 4.12, 4.13
@@ -109,19 +110,19 @@ export const SHIFT_CONFIG = {
   minSpawnProbability: 0.05,    // 5% at score 0
   maxSpawnProbability: 0.15,    // 15% at score 5000
   probabilityMaxScore: 5000,    // Score at which max probability is reached
-  
+
   // Collision - Requirements 9.2
   letterHitboxRadius: 20,       // 20px circular hitbox for letters
-  
+
   // Overdrive Mode - Requirements 4.6
   overdriveDuration: 10000,     // 10 seconds in milliseconds
-  
+
   // Magnet Effect - Requirements 4.5
   magnetRadius: 150,            // 150px pull radius for Echo Shards
-  
+
   // Collection Reward - Requirements 9.4
   collectionReward: 50,         // 50 Echo Shards per letter
-  
+
   // Oscillation Parameters - Requirements 3.3
   oscillation: {
     defaultAmplitude: 30,       // Default vertical oscillation amplitude (pixels)
@@ -129,7 +130,7 @@ export const SHIFT_CONFIG = {
     minAmplitude: 15,           // Minimum amplitude
     maxAmplitude: 50,           // Maximum amplitude
   },
-  
+
   // Reachability - Requirements 3.1
   reachabilityMargin: 20,       // Margin from max reach (connectorLength - 20)
 };

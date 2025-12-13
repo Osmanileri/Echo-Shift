@@ -271,9 +271,8 @@ export const useGameStore = create<GameStore>()(
       const state = get();
 
       // Check if already owned
-      const ownedKey = `owned${
-        category.charAt(0).toUpperCase() + category.slice(1)
-      }s` as keyof typeof state;
+      const ownedKey = `owned${category.charAt(0).toUpperCase() + category.slice(1)
+        }s` as keyof typeof state;
       const ownedItems = state[ownedKey] as string[];
       if (ownedItems.includes(itemId)) {
         console.warn(`[GameStore] Item ${itemId} already owned`);
@@ -302,9 +301,8 @@ export const useGameStore = create<GameStore>()(
       const state = get();
 
       // Check if owned
-      const ownedKey = `owned${
-        category.charAt(0).toUpperCase() + category.slice(1)
-      }s` as keyof typeof state;
+      const ownedKey = `owned${category.charAt(0).toUpperCase() + category.slice(1)
+        }s` as keyof typeof state;
       const ownedItems = state[ownedKey] as string[];
       if (!ownedItems.includes(itemId)) {
         console.warn(`[GameStore] Cannot equip unowned item: ${itemId}`);
@@ -312,9 +310,8 @@ export const useGameStore = create<GameStore>()(
       }
 
       // Equip the item
-      const equippedKey = `equipped${
-        category.charAt(0).toUpperCase() + category.slice(1)
-      }` as "equippedSkin" | "equippedEffect" | "equippedTheme";
+      const equippedKey = `equipped${category.charAt(0).toUpperCase() + category.slice(1)
+        }` as "equippedSkin" | "equippedEffect" | "equippedTheme";
       set({ [equippedKey]: itemId });
       get().saveToStorage();
     },
@@ -451,7 +448,9 @@ export const useGameStore = create<GameStore>()(
         return {
           customThemeColors: colors,
           ownedThemes: nextOwnedThemes,
-          equippedTheme: colors ? "custom" : state.equippedTheme,
+          // When colors is null (reset to default), set theme to "default"
+          // When colors is set (custom theme), set theme to "custom"
+          equippedTheme: colors ? "custom" : "default",
         };
       });
       get().saveToStorage();

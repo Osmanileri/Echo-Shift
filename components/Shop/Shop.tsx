@@ -29,6 +29,8 @@ import { purchaseUpgrade } from "../../systems/upgradeSystem";
 import ShopItem from "./ShopItem";
 // Analytics System - Requirements 5.3
 import { getAnalyticsSystem } from "../../App";
+// Audio System - Phase 4 Launch Polish
+import * as AudioSystem from "../../systems/audioSystem";
 
 type ShopCategory = "skins" | "themes" | "upgrades";
 
@@ -74,6 +76,9 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
 
     // Analytics: Log purchase event - Requirements 5.3
     if (success) {
+      // Audio: Purchase success sound - Phase 4
+      AudioSystem.playPurchase();
+      
       getAnalyticsSystem().logEvent("purchase", {
         item_id: itemId,
         item_category: category,

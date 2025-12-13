@@ -2,34 +2,49 @@
 
 ## Mevcut Odak
 
-- **Phase 3: Echo Studio (Özelleştirme)** kapsamında:
-  - Hollow mode (orb + obstacle wireframe) ile daha modern/temiz görsel dil
-  - Theme Creator: renk seçimi, kontrast kontrolü, paylaşılabilir tema kodu
-  - Custom theme persist + ThemeSystem ile runtime uygulama
+- **Phase 4: Launch Polish & Onboarding** - TAMAMLANDI ✓
+  - **UI Redesign**: Modern "Glassmorphism" tasarımı uygulandı.
+  - **Zone Selector**: Ana ekrana entegre yatay kart sistemi.
+  - **Audio System**: Procedural SFX sistemi eklendi.
+  - **VFX Polish**: Score popup ve particle efektleri iyileştirildi.
 
 ## Son Yapılanlar
 
-- **Echo Studio altyapısı (Phase 3)** eklendi:
-  - `components/ThemeCreator/ThemeCreatorModal.tsx`: Theme Creator overlay (picker + preview + code)
-  - `utils/themeCode.ts`: tema encode/decode (`ECHO-...`)
-  - `utils/colorContrast.ts`: WCAG contrast ratio hesapları + uyarı üretimi
-  - `store/gameStore.ts`: `customThemeColors` + `hollowModeEnabled` persist + setter action’lar
-  - `systems/themeSystem.ts`: `custom` tema desteği (`setCustomThemeColors`)
-  - `components/GameUI.tsx`: menüye `STUDIO` butonu
-  - `App.tsx`: Studio modal orchestration
-  - `components/GameEngine.tsx`: Hollow mode render (orb fill=bg, stroke=identity; obstacles wireframe)
+- **Audio System (Phase 4)**:
+
+  - `systems/audioSystem.ts`: Web Audio API tabanlı procedural ses sistemi.
+  - Tüm UI butonlarına tıklama sesleri.
+  - Gameplay sesleri: swap, near miss, streak bonus, S.H.I.F.T. collect.
+  - Event sesleri: game start, game over, new high score, purchase.
+  - Upgrade sesleri: slow motion, shield activate/block.
+
+- **VFX Polish (Phase 4)**:
+  - Score popup'ları: Glow efekti, scale animasyonu, outline.
+  - Particle rendering: Radial gradient, dynamic size, glow.
 
 ## Bilinen Konular / Riskler
 
-- `README.md` içeriği bu repo ile uyumsuz görünüyor (Expo temalı starter README).
-- `prd.md` içeriği de mevcut projeyi yansıtmıyor (farklı bir ürün dokümanı).
-- Storage key’lerde ikili durum: `constants.ts` içindeki `shadow_sync_highscore` ile `utils/persistence.ts` içindeki `echo-shift-*` anahtarları farklı prefix’lerde.
-- `GameEngine.tsx` içinde bazı “non-core” sistemlerde halen `Math.random()` kullanımı var (S.H.I.F.T. spawn, gravity flip chance, bazı VFX). Phase 1 hedefi “spawn mantığını” deterministik yapmakla karşılandı; istersek sonraki adımda bunlar da seed’li RNG’ye taşınabilir.
+- `README.md` ve `prd.md` güncel değil (farklı bir proje içeriği var).
+- Storage key tutarsızlığı (`shadow_sync_highscore` vs `echo-shift-*`).
 
-## Sonraki Adımlar (Opsiyonel)
+## Son Yapılanlar
 
-- `README.md`’yi “Echo Shift” projesine uygun hale getirmek.
-- `prd.md`’yi kaldırmak ya da `docs/` altına arşivlemek / güncellemek.
-- Storage key konsolidasyonu (high score dahil) ve `safeClear` davranışını netleştirmek.
-- Pattern authoring tarafında `PatternChunk` → `Pattern` compile helper eklemek (şu an sadece type olarak var)
-- Shard placement’i `PatternShard.positionOffset` ile daha “tasarlanmış” (riskli köşe/iki blok arası) hale getirmek
+- **Tema Sistemi Sadeleştirildi (Echo Studio)**:
+
+  - Kullanıcı artık sadece **Üst Alan** ve **Alt Alan** renklerini seçiyor.
+  - Diğer tüm renkler otomatik türetiliyor:
+    - topOrb = bottomBg (zıt alanda görünür)
+    - bottomOrb = topBg (zıt alanda görünür)
+    - topObstacle = bottomBg, bottomObstacle = topBg
+  - Theme code (ECHO-...) V2 formatına güncellendi (daha kısa).
+
+- **Orb Border Mantığı Düzeltildi**:
+  - Border artık SADECE orb kendi renkiyle aynı bölgedeyse gösteriliyor.
+  - Örnek: Siyah top siyah alandaysa beyaz border görünür.
+  - Örnek: Siyah top beyaz alandaysa border yok (zaten görünür).
+
+## Sonraki Adımlar
+
+- Dokümantasyon güncellemesi (README.md, prd.md).
+- Storage key standardizasyonu.
+- Performans optimizasyonu (opsiyonel).
