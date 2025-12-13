@@ -223,11 +223,11 @@ const App: React.FC = () => {
   const handleCloseShop = () => {
     setIsShopOpen(false);
   };
-  
+
   const handleOpenStudio = () => {
     setIsStudioOpen(true);
   };
-  
+
   const handleCloseStudio = () => {
     setIsStudioOpen(false);
   };

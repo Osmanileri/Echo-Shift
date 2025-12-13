@@ -56,7 +56,6 @@
 - Phase 1 polish:
   - Pattern authoring için `PatternChunk` → `Pattern` compile helper
   - Shard placement’ı `positionOffset` ile “riskli köşe/iki blok arası” şeklinde daha net bağlamak
-  
 - Phase 2 polish (opsiyonel):
   - Shield charge ve magnet radius değerlerinin UX tuning’i (mobil denge)
   - HUD üzerinde shield charge göstergesi (isteğe bağlı)
@@ -69,11 +68,13 @@
 ## Son Milestone
 
 - Phase 1’de motorun temel taşları güçlendirildi:
+
   - Pattern spawn deterministik hale getirildi
   - Object pooling GameEngine’e entegre edildi
   - Shard’lar pattern geometrisine bağlandı (random mesafe yerine)
 
 - Phase 2’de roguelite loop başlatıldı:
+
   - Zone selector + unlock/persist
   - Magnet + Shield upgrades gameplay’e entegre
 

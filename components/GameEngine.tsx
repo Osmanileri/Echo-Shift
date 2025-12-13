@@ -210,7 +210,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   useEffect(() => {
     applyTheme(equippedTheme);
   }, [equippedTheme]);
-  
+
   // Keep ThemeSystem in sync with custom theme payload
   useEffect(() => {
     setCustomThemeColors(customThemeColors);
@@ -3592,9 +3592,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         } else {
           // Phase 3: Hollow rendering (fill = local bg, stroke = identity color)
           if (hollowModeEnabled) {
-            const orbBg =
-              orb.y < currentMidlineY ? topBgColor : bottomBgColor;
-            const identityStroke = isWhite ? getColor("topOrb") : getColor("bottomOrb");
+            const orbBg = orb.y < currentMidlineY ? topBgColor : bottomBgColor;
+            const identityStroke = isWhite
+              ? getColor("topOrb")
+              : getColor("bottomOrb");
 
             ctx.save();
             ctx.beginPath();

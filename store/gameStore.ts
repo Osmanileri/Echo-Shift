@@ -5,8 +5,8 @@
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { ZoneId } from "../data/zones";
 import type { ThemeColors } from "../data/themes";
+import type { ZoneId } from "../data/zones";
 import { initializeShiftState } from "../systems/shiftProtocol";
 import {
   EnhancedResonanceState,
@@ -436,12 +436,12 @@ export const useGameStore = create<GameStore>()(
       set({ hapticEnabled: enabled });
       get().saveToStorage();
     },
-    
+
     setHollowModeEnabled: (enabled: boolean) => {
       set({ hollowModeEnabled: enabled });
       get().saveToStorage();
     },
-    
+
     setCustomThemeColors: (colors: ThemeColors | null) => {
       set((state) => {
         const nextOwnedThemes =
