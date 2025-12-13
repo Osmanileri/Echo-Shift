@@ -2,30 +2,64 @@
 
 ## Teknolojiler
 
-- **Frontend**: React 18 + TypeScript
-- **Build/Dev**: Vite 5
-- **State**: Zustand (subscribeWithSelector middleware)
-- **Test**: Vitest
-- **PWA**: `vite-plugin-pwa` (autoUpdate)
-- **Persistence**: localStorage (güvenli adapter + fallback)
-- **Audio**: Web Audio API (procedural sound generation, dosya gerektirmez)
+| Kategori | Teknoloji |
+|----------|-----------|
+| Frontend | React 18 + TypeScript |
+| Build/Dev | Vite 5 |
+| State | Zustand (subscribeWithSelector middleware) |
+| Test | Vitest + fast-check (property-based) |
+| PWA | vite-plugin-pwa (autoUpdate) |
+| Persistence | localStorage (güvenli adapter + fallback) |
+| Audio | Web Audio API (procedural sound generation) |
 
 ## Çalıştırma
 
-- `npm install`
-- `npm run dev` (Vite dev server)
-- `npm run test` (Vitest)
-- `npm run build` / `npm run preview`
+```bash
+npm install          # Bağımlılıkları yükle
+npm run dev          # Vite dev server
+npx vitest run       # Test çalıştır (tek seferlik)
+npm run build        # Production build
+npm run preview      # Build önizleme
+```
 
 ## Önemli Dosyalar
 
-- `vite.config.ts`: PWA manifest, runtime caching, env define (GEMINI_API_KEY)
-- `vitest.config.ts`: test include/exclude ayarları
-- `constants.ts`: gameplay config ve bazı storage key'ler
-- `utils/persistence.ts`: storage adapter + key'ler
-- `systems/audioSystem.ts`: Web Audio API tabanlı SFX sistemi
+| Dosya | Açıklama |
+|-------|----------|
+| `vite.config.ts` | PWA manifest, runtime caching |
+| `vitest.config.ts` | Test include/exclude ayarları |
+| `constants.ts` | Gameplay config |
+| `utils/persistence.ts` | Storage adapter + standardize key'ler |
+| `systems/audioSystem.ts` | Web Audio API SFX |
+
+## Storage Key Standardizasyonu
+
+Tüm key'ler `echo-shift-` prefix'i kullanır:
+
+```typescript
+// utils/persistence.ts
+export const STORAGE_KEYS = {
+  GAME_STATE: 'echo-shift-game-state',
+  ECHO_SHARDS: 'echo-shift-echo-shards',
+  INVENTORY: 'echo-shift-inventory',
+  EQUIPPED: 'echo-shift-equipped',
+  CAMPAIGN: 'echo-shift-campaign',
+  SETTINGS: 'echo-shift-settings',
+  GHOST_DATA: 'echo-shift-ghost',
+  DAILY_CHALLENGE: 'echo-shift-daily',
+  LEADERBOARD: 'echo-shift-leaderboard',
+};
+```
 
 ## Kısıtlar / Notlar
 
-- Game loop “hot path” React render ile değil, canvas + refs ile çalışıyor; performans kritik kodlar burada.
-- Storage key’lerde legacy/ikili kullanım mevcut olabilir (bkz. `constants.ts` vs `utils/persistence.ts`).
+- Game loop "hot path" React render ile değil, canvas + refs ile çalışıyor
+- Performans kritik kodlar `GameEngine.tsx` içinde
+- Backend yok, tüm kalıcılık localStorage ile
+- Audio dosya gerektirmez, procedural üretilir
+
+## Test Durumu
+
+- **364 test** geçiyor
+- Property-based testing (fast-check) kullanılıyor
+- Tüm ana sistemler test edilmiş

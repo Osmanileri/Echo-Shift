@@ -517,6 +517,256 @@ export function playShieldBlock() {
   playTone(300, 0.12, 'triangle', 0.15, 0.01, 0.04);
 }
 
+// ============ ECHO CONSTRUCTS SOUNDS ============
+
+/**
+ * Construct transformation - dramatic phase shift sound
+ * Requirements 6.5: Transformation sound
+ */
+export function playConstructTransform() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Rising power sweep with wobble
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc1.type = 'sawtooth';
+  osc2.type = 'sine';
+  
+  // Main sweep
+  osc1.frequency.setValueAtTime(150, ctx.currentTime);
+  osc1.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.25);
+  osc1.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.35);
+  
+  // Wobble layer
+  osc2.frequency.setValueAtTime(200, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.3);
+  
+  gain.gain.setValueAtTime(0.12, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.15);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+  
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+  
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.35);
+  osc2.stop(ctx.currentTime + 0.35);
+  
+  // Shimmer burst
+  setTimeout(() => playNoise(0.12, 6000, 'highpass', 0.1), 200);
+  
+  // Confirmation chime
+  setTimeout(() => {
+    playTone(880, 0.1, 'sine', 0.2, 0.01, 0.03);
+    playTone(1320, 0.15, 'sine', 0.18, 0.01, 0.04);
+  }, 280);
+}
+
+/**
+ * Titan stomp - heavy impact sound
+ * Requirements 6.5: Construct-specific sounds (stomp)
+ */
+export function playTitanStomp() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Heavy thud
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.15);
+  
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  
+  osc.connect(gain);
+  gain.connect(master);
+  
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.2);
+  
+  // Impact noise
+  playNoise(0.15, 400, 'lowpass', 0.25);
+  
+  // Metallic clang
+  setTimeout(() => playTone(200, 0.08, 'square', 0.1, 0.005, 0.02), 30);
+}
+
+/**
+ * Phase gravity flip - whoosh with pitch shift
+ * Requirements 6.5: Construct-specific sounds (flip)
+ */
+export function playPhaseFlip() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Whoosh sweep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.08);
+  osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.2);
+  
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.08);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  
+  osc.connect(gain);
+  gain.connect(master);
+  
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.2);
+  
+  // Air whoosh
+  playNoise(0.15, 2500, 'bandpass', 0.12);
+}
+
+/**
+ * Blink teleport - digital glitch sound
+ * Requirements 6.5: Construct-specific sounds (teleport)
+ */
+export function playBlinkTeleport() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Digital zap
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc1.type = 'square';
+  osc2.type = 'sawtooth';
+  
+  // Glitchy frequency jumps
+  osc1.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc1.frequency.setValueAtTime(600, ctx.currentTime + 0.03);
+  osc1.frequency.setValueAtTime(1500, ctx.currentTime + 0.06);
+  osc1.frequency.setValueAtTime(400, ctx.currentTime + 0.1);
+  
+  osc2.frequency.setValueAtTime(800, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(2000, ctx.currentTime + 0.05);
+  osc2.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.12);
+  
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+  
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+  
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.15);
+  osc2.stop(ctx.currentTime + 0.15);
+  
+  // Digital noise burst
+  playNoise(0.08, 8000, 'highpass', 0.08);
+}
+
+/**
+ * Construct destruction - explosion sound
+ * Requirements 6.5: Destruction sound
+ */
+export function playConstructDestruction() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Explosion sweep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(300, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.3);
+  
+  gain.gain.setValueAtTime(0.25, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+  
+  osc.connect(gain);
+  gain.connect(master);
+  
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.35);
+  
+  // Heavy impact noise
+  playNoise(0.25, 500, 'lowpass', 0.3);
+  
+  // Debris scatter
+  setTimeout(() => playNoise(0.2, 2000, 'bandpass', 0.15), 100);
+  
+  // Metallic shatter
+  setTimeout(() => {
+    playTone(150, 0.1, 'square', 0.12, 0.01, 0.03);
+    playTone(100, 0.15, 'triangle', 0.1, 0.01, 0.04);
+  }, 50);
+}
+
+/**
+ * Smart Bomb shockwave - expanding pulse sound
+ * Requirements 6.5: Smart Bomb activation sound
+ */
+export function playSmartBombShockwave() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Expanding pulse
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.4);
+  
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 0.1);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+  
+  osc.connect(gain);
+  gain.connect(master);
+  
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.4);
+  
+  // Whoosh layer
+  playNoise(0.35, 1000, 'lowpass', 0.2);
+  
+  // High frequency shimmer
+  setTimeout(() => playNoise(0.2, 6000, 'highpass', 0.08), 150);
+}
+
+/**
+ * Glitch Token collect - digital pickup sound
+ */
+export function playGlitchTokenCollect() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Digital chime with glitch
+  playTone(880, 0.1, 'square', 0.15, 0.01, 0.02);
+  setTimeout(() => playTone(1320, 0.08, 'square', 0.12, 0.01, 0.02), 40);
+  setTimeout(() => playTone(1760, 0.12, 'sine', 0.18, 0.01, 0.03), 80);
+  
+  // Glitch noise
+  playNoise(0.06, 4000, 'highpass', 0.08);
+}
+
 // ============ SETTINGS CONTROL ============
 
 /**
@@ -613,6 +863,15 @@ export const AudioSystem = {
   playSlowMotion,
   playShieldActivate,
   playShieldBlock,
+  
+  // Echo Constructs
+  playConstructTransform,
+  playTitanStomp,
+  playPhaseFlip,
+  playBlinkTeleport,
+  playConstructDestruction,
+  playSmartBombShockwave,
+  playGlitchTokenCollect,
 };
 
 export default AudioSystem;

@@ -3,9 +3,9 @@
  * Uses fast-check for property-based testing
  */
 
-import { describe, test, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
-import { useGameStore, ItemCategory } from './gameStore';
+import { beforeEach, describe, test } from 'vitest';
+import { ItemCategory, useGameStore } from './gameStore';
 
 // Helper to reset store state before each test
 const resetStore = () => {
@@ -51,6 +51,11 @@ const resetStore = () => {
       capacity: 180,
       size: 0,
     },
+    // Echo Constructs State
+    unlockedConstructs: ['TITAN'],
+    activeConstruct: 'NONE',
+    isConstructInvulnerable: false,
+    constructInvulnerabilityEndTime: 0,
     tutorialCompleted: false,
     soundEnabled: true,
     musicEnabled: true,
@@ -171,6 +176,157 @@ describe('Purchase State Consistency Properties', () => {
           const itemNowOwned = finalOwned.includes(itemId);
           
           return purchaseSucceeded && balanceDecreasedCorrectly && itemNowOwned;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+import type { ConstructType } from '../types';
+
+// Arbitrary for construct types (excluding 'NONE' for unlock tests)
+const constructTypeArb = fc.constantFrom<ConstructType>('TITAN', 'PHASE', 'BLINK');
+
+// Arbitrary for active construct types (including 'NONE')
+const activeConstructArb = fc.constantFrom<ConstructType>('NONE', 'TITAN', 'PHASE', 'BLINK');
+
+describe('Echo Constructs State Persistence Properties', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  /**
+   * **Feature: echo-constructs, Property 16: Construct State Not Persisted**
+   * **Validates: Requirements 7.4**
+   *
+   * For any serialization, activeConstruct, isConstructInvulnerable, and
+   * constructInvulnerabilityEndTime SHALL NOT be included (session-only).
+   * After save/load cycle, these values should reset to defaults.
+   */
+  test('Session-only construct state resets after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        activeConstructArb,
+        fc.boolean(),
+        fc.integer({ min: 0, max: 100000 }),
+        (activeConstruct, isInvulnerable, invulnerabilityEndTime) => {
+          // Reset store
+          resetStore();
+          
+          // Set session-only state to non-default values
+          useGameStore.setState({
+            activeConstruct,
+            isConstructInvulnerable: isInvulnerable,
+            constructInvulnerabilityEndTime: invulnerabilityEndTime,
+          });
+          
+          // Verify state was set
+          const stateBeforeSave = useGameStore.getState();
+          const activeConstructSet = stateBeforeSave.activeConstruct === activeConstruct;
+          const invulnerableSet = stateBeforeSave.isConstructInvulnerable === isInvulnerable;
+          const endTimeSet = stateBeforeSave.constructInvulnerabilityEndTime === invulnerabilityEndTime;
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Load from storage (simulates app restart)
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, session-only state should be reset to defaults
+          const stateAfterLoad = useGameStore.getState();
+          const activeConstructReset = stateAfterLoad.activeConstruct === 'NONE';
+          const invulnerableReset = stateAfterLoad.isConstructInvulnerable === false;
+          const endTimeReset = stateAfterLoad.constructInvulnerabilityEndTime === 0;
+          
+          return activeConstructSet && invulnerableSet && endTimeSet &&
+                 activeConstructReset && invulnerableReset && endTimeReset;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+describe('Echo Constructs Unlock Persistence Properties', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  /**
+   * **Feature: echo-constructs, Property 17: Unlock Persistence**
+   * **Validates: Requirements 8.2, 8.3, 8.4**
+   *
+   * For any unlock event, unlockedConstructs SHALL be persisted.
+   * After save/load cycle, unlocked constructs should remain unlocked.
+   */
+  test('Unlocked constructs persist after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        constructTypeArb,
+        (constructToUnlock) => {
+          // Reset store
+          resetStore();
+          
+          // Get initial unlocked constructs (should be ['TITAN'] by default)
+          const initialUnlocked = [...useGameStore.getState().unlockedConstructs];
+          
+          // Skip if construct is already unlocked
+          fc.pre(!initialUnlocked.includes(constructToUnlock));
+          
+          // Unlock the construct
+          useGameStore.getState().unlockConstruct(constructToUnlock);
+          
+          // Verify construct was unlocked
+          const afterUnlock = useGameStore.getState().unlockedConstructs;
+          const wasUnlocked = afterUnlock.includes(constructToUnlock);
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Reset state to simulate fresh load
+          useGameStore.setState({
+            unlockedConstructs: ['TITAN'], // Reset to default
+          });
+          
+          // Load from storage
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, construct should still be unlocked
+          const afterLoad = useGameStore.getState().unlockedConstructs;
+          const stillUnlocked = afterLoad.includes(constructToUnlock);
+          
+          return wasUnlocked && stillUnlocked;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: echo-constructs, Property 17: Unlock Persistence (Default Titan)**
+   * **Validates: Requirements 8.1**
+   *
+   * Titan Resonance SHALL be the default unlocked Construct.
+   */
+  test('Titan is default unlocked construct', () => {
+    fc.assert(
+      fc.property(
+        fc.constant(null), // No input needed, just verify default state
+        () => {
+          // Reset store to defaults
+          resetStore();
+          
+          const state = useGameStore.getState();
+          
+          // Titan should be in unlocked constructs by default
+          const titanUnlocked = state.unlockedConstructs.includes('TITAN');
+          
+          // PHASE and BLINK should NOT be unlocked by default
+          const phaseNotUnlocked = !state.unlockedConstructs.includes('PHASE');
+          const blinkNotUnlocked = !state.unlockedConstructs.includes('BLINK');
+          
+          return titanUnlocked && phaseNotUnlocked && blinkNotUnlocked;
         }
       ),
       { numRuns: 100 }

@@ -42,6 +42,7 @@ export interface ShardMovement {
 /**
  * Represents a placed shard in the game world
  * Requirements: 5.1, 5.4
+ * GÜNCELLEME: bonus tipi eklendi - patlayarak ekstra ödül verir
  */
 export interface PlacedShard {
   id: string;
@@ -50,11 +51,12 @@ export interface PlacedShard {
   baseX: number; // Orijinal X pozisyonu (hareket merkezi)
   baseY: number; // Orijinal Y pozisyonu (hareket merkezi)
   lane: Lane;
-  type: "safe" | "risky";
+  type: "safe" | "risky" | "bonus"; // bonus: patlayarak ekstra ödül
   value: number;
   collected: boolean;
   movement: ShardMovement; // Dinamik hareket parametreleri
   spawnTime: number; // Spawn zamanı (hareket hesaplaması için)
+  isBonus?: boolean; // Bonus shard mı? (patlama efekti için)
 }
 
 /**
@@ -95,36 +97,43 @@ export const DEFAULT_SHARD_CONFIG: ShardConfig = {
 /**
  * Movement configuration for different shard types
  * Risky shards move more aggressively
+ * GÜNCELLEME: Daha belirgin hareket - yukarı-aşağı + ileri-geri
  */
 export const SHARD_MOVEMENT_CONFIG = {
   safe: {
-    // Mobile readability: reduce motion so shards are "trackable", not distracting
-    verticalAmplitude: { min: 6, max: 12 },
-    // NOTE: Frequency is in rad/s (used directly in sin()).
-    // Old values made movement almost imperceptible frame-to-frame; bump for visible motion.
-    verticalFrequency: { min: 4.0, max: 6.5 },
-    horizontalAmplitude: { min: 4, max: 10 },
-    horizontalFrequency: { min: 3.0, max: 5.5 },
+    // Daha belirgin hareket - oyuncu takip edebilsin ama zorlasın
+    verticalAmplitude: { min: 15, max: 25 },
+    verticalFrequency: { min: 3.0, max: 4.5 },
+    horizontalAmplitude: { min: 20, max: 35 }, // İleri-geri hareket artırıldı
+    horizontalFrequency: { min: 2.5, max: 4.0 },
   },
   risky: {
-    verticalAmplitude: { min: 12, max: 20 },
-    verticalFrequency: { min: 5.5, max: 8.5 },
-    horizontalAmplitude: { min: 8, max: 16 },
-    horizontalFrequency: { min: 4.5, max: 7.5 },
+    // Agresif hareket - zor yakalanır ama ödül yüksek
+    verticalAmplitude: { min: 25, max: 40 },
+    verticalFrequency: { min: 4.0, max: 6.0 },
+    horizontalAmplitude: { min: 35, max: 55 }, // Çok belirgin ileri-geri
+    horizontalFrequency: { min: 3.5, max: 5.5 },
+  },
+  // YENİ: Bonus shard tipi - patlayarak ekstra ödül verir
+  bonus: {
+    verticalAmplitude: { min: 30, max: 50 },
+    verticalFrequency: { min: 5.0, max: 7.0 },
+    horizontalAmplitude: { min: 40, max: 60 },
+    horizontalFrequency: { min: 4.0, max: 6.0 },
   },
 };
 
 /**
  * Generate random movement parameters for a shard
- * @param type - Shard type (safe/risky)
+ * @param type - Shard type (safe/risky/bonus)
  * @param rand - Optional RNG function (defaults to Math.random)
  * @returns Movement configuration
  */
 export function generateShardMovement(
-  type: "safe" | "risky",
+  type: "safe" | "risky" | "bonus",
   rand: () => number = Math.random
 ): ShardMovement {
-  const config = SHARD_MOVEMENT_CONFIG[type];
+  const config = SHARD_MOVEMENT_CONFIG[type] || SHARD_MOVEMENT_CONFIG.safe;
 
   return {
     verticalAmplitude: randomInRange(
@@ -321,11 +330,12 @@ export function collectShard(
  * Create a new placed shard with dynamic movement
  *
  * Requirements: 5.1
+ * GÜNCELLEME: bonus tipi desteği eklendi
  *
  * @param id - Unique identifier for the shard
  * @param position - X/Y position
  * @param lane - Lane the shard is in
- * @param type - Safe or risky shard
+ * @param type - Safe, risky, or bonus shard
  * @param config - Shard configuration
  * @returns New PlacedShard object with movement
  */
@@ -333,10 +343,13 @@ export function createPlacedShard(
   id: string,
   position: ShardPosition,
   lane: Lane,
-  type: "safe" | "risky",
+  type: "safe" | "risky" | "bonus",
   config: ShardConfig = DEFAULT_SHARD_CONFIG
 ): PlacedShard {
   const movement = generateShardMovement(type);
+  
+  // Bonus shardlar 3x değer verir
+  const value = type === "bonus" ? config.baseShardValue * 3 : config.baseShardValue;
 
   return {
     id,
@@ -346,10 +359,11 @@ export function createPlacedShard(
     baseY: position.y,
     lane,
     type,
-    value: config.baseShardValue,
+    value,
     collected: false,
     movement,
     spawnTime: Date.now(),
+    isBonus: type === "bonus",
   };
 }
 
