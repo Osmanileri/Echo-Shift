@@ -5,13 +5,20 @@
  * Manages theme application, color retrieval, and effect detection.
  */
 
-import { Theme, ThemeColors, ThemeEffects, getThemeById, getDefaultTheme } from '../data/themes';
+import {
+  Theme,
+  ThemeColors,
+  ThemeEffects,
+  getDefaultTheme,
+  getThemeById,
+} from "../data/themes";
 
 /**
  * Theme System State
  */
 interface ThemeSystemState {
   currentTheme: Theme;
+  customThemeColors: ThemeColors | null;
 }
 
 /**
@@ -19,6 +26,7 @@ interface ThemeSystemState {
  */
 let themeState: ThemeSystemState = {
   currentTheme: getDefaultTheme(),
+  customThemeColors: null,
 };
 
 /**
@@ -29,9 +37,28 @@ let themeState: ThemeSystemState = {
  * @returns The applied theme
  */
 export function applyTheme(themeId: string): Theme {
+  if (themeId === "custom" && themeState.customThemeColors) {
+    const customTheme: Theme = {
+      id: "custom",
+      name: "Custom",
+      price: 0,
+      colors: themeState.customThemeColors,
+    };
+    themeState.currentTheme = customTheme;
+    return customTheme;
+  }
+
   const theme = getThemeById(themeId);
   themeState.currentTheme = theme;
   return theme;
+}
+
+export function setCustomThemeColors(colors: ThemeColors | null): void {
+  themeState.customThemeColors = colors;
+  // If currently using custom theme, re-apply to update runtime theme
+  if (themeState.currentTheme.id === "custom" && colors) {
+    applyTheme("custom");
+  }
 }
 
 /**
@@ -140,5 +167,6 @@ export function _getThemeState(): ThemeSystemState {
 export function _resetThemeState(): void {
   themeState = {
     currentTheme: getDefaultTheme(),
+    customThemeColors: null,
   };
 }

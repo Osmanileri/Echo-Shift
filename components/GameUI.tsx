@@ -5,6 +5,7 @@ import {
   Gem,
   Home,
   Pause,
+  Palette,
   Play,
   PlayCircle,
   RotateCcw,
@@ -31,6 +32,8 @@ interface GameUIProps {
   onMainMenu: () => void;
   // Shop System - Requirements 2.1
   onOpenShop?: () => void;
+  // Echo Studio (Phase 3)
+  onOpenStudio?: () => void;
   // Daily Challenge System - Requirements 8.1, 8.4
   onOpenDailyChallenge?: () => void;
   // Rhythm System UI - Requirements 1.3, 1.4
@@ -63,6 +66,7 @@ const GameUI: React.FC<GameUIProps> = ({
   onResume,
   onMainMenu,
   onOpenShop,
+  onOpenStudio,
   onOpenDailyChallenge,
   rhythmMultiplier = 1,
   rhythmStreak = 0,
@@ -345,6 +349,19 @@ const GameUI: React.FC<GameUIProps> = ({
                 <ShoppingBag className="w-3 h-3 text-white/70" />
                 <span className="text-[10px] sm:text-xs text-white/70 tracking-wider font-medium">
                   MAĞAZA
+                </span>
+              </button>
+            )}
+
+            {/* Studio Button */}
+            {onOpenStudio && (
+              <button
+                onClick={() => handleButtonClick(onOpenStudio)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/15 rounded-full border border-cyan-500/25 hover:border-cyan-500/40 backdrop-blur-sm transition-colors"
+              >
+                <Palette className="w-3 h-3 text-cyan-400" />
+                <span className="text-[10px] sm:text-xs text-cyan-400 tracking-wider font-bold">
+                  STUDIO
                 </span>
               </button>
             )}

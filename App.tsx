@@ -39,6 +39,7 @@ import {
 import { setupRitualAnalytics } from "./systems/dailyRituals";
 // Rate Us System - Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8
 import RatePrompt from "./components/RateUs/RatePrompt";
+import ThemeCreatorModal from "./components/ThemeCreator/ThemeCreatorModal";
 import { createRateUsSystem, RateUsSystem } from "./systems/rateUsSystem";
 
 // Global analytics system instance
@@ -93,6 +94,8 @@ const App: React.FC = () => {
 
   // Shop state - Requirements 2.1
   const [isShopOpen, setIsShopOpen] = useState<boolean>(false);
+  // Echo Studio (Phase 3)
+  const [isStudioOpen, setIsStudioOpen] = useState<boolean>(false);
 
   // Daily Challenge state - Requirements 8.1, 8.2, 8.3, 8.4
   const [isDailyChallengeOpen, setIsDailyChallengeOpen] =
@@ -219,6 +222,14 @@ const App: React.FC = () => {
 
   const handleCloseShop = () => {
     setIsShopOpen(false);
+  };
+  
+  const handleOpenStudio = () => {
+    setIsStudioOpen(true);
+  };
+  
+  const handleCloseStudio = () => {
+    setIsStudioOpen(false);
   };
 
   // Daily Challenge handlers - Requirements 8.1, 8.2, 8.3, 8.4
@@ -447,6 +458,7 @@ const App: React.FC = () => {
         onResume={handleResume}
         onMainMenu={handleMainMenu}
         onOpenShop={handleOpenShop}
+        onOpenStudio={handleOpenStudio}
         onOpenDailyChallenge={handleOpenDailyChallenge}
         rhythmMultiplier={rhythmMultiplier}
         rhythmStreak={rhythmStreak}
@@ -462,6 +474,7 @@ const App: React.FC = () => {
         onActivateSlowMotion={handleActivateSlowMotion}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
+      <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />
       <DailyChallenge
         isOpen={isDailyChallengeOpen}
         onClose={handleCloseDailyChallenge}

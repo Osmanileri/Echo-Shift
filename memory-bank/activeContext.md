@@ -2,25 +2,22 @@
 
 ## Mevcut Odak
 
-- **Phase 2: Roguelite Loop (Gelişim Sistemi)** kapsamında:
-  - Zone sistemi (5 frekans bölgesi) + kilit/açma + persist
-  - Magnet + Shield gibi kalıcı upgrade’lerin shop → gameplay entegrasyonu
-  - Mobil okunabilirlik: daha az bilişsel yük, daha fazla “akış”
+- **Phase 3: Echo Studio (Özelleştirme)** kapsamında:
+  - Hollow mode (orb + obstacle wireframe) ile daha modern/temiz görsel dil
+  - Theme Creator: renk seçimi, kontrast kontrolü, paylaşılabilir tema kodu
+  - Custom theme persist + ThemeSystem ile runtime uygulama
 
 ## Son Yapılanlar
 
-- **Zone sistemi (Phase 2)** eklendi:
-  - `data/zones.ts`: 5 zone + modifiers + unlockCost
-  - `store/gameStore.ts`: `selectedZoneId`, `unlockedZones` persisted + `selectZone`/`unlockZone`
-  - `components/Zones/*`: ZoneSelector + Unlock modal (scroll/snap + lock overlay)
-  - `components/GameUI.tsx`: menüye zone selector entegre
-  - `App.tsx` → `GameEngine.tsx`: seçili zone modifiers (speed/spawn) uygulanıyor
-- **Upgrades (Phase 2)**:
-  - `data/upgrades.ts`: `magnet`, `shield` eklendi
-  - `components/Shop/Shop.tsx`: ikon + effect display eklendi
-  - `components/GameEngine.tsx`:
-    - Magnet: shard’ları level’e göre radius içinde deterministik şekilde orb’a çeker (lerp)
-    - Shield: çarpışmada charge harcar, 2sn invincibility + VFX + engeli temizler
+- **Echo Studio altyapısı (Phase 3)** eklendi:
+  - `components/ThemeCreator/ThemeCreatorModal.tsx`: Theme Creator overlay (picker + preview + code)
+  - `utils/themeCode.ts`: tema encode/decode (`ECHO-...`)
+  - `utils/colorContrast.ts`: WCAG contrast ratio hesapları + uyarı üretimi
+  - `store/gameStore.ts`: `customThemeColors` + `hollowModeEnabled` persist + setter action’lar
+  - `systems/themeSystem.ts`: `custom` tema desteği (`setCustomThemeColors`)
+  - `components/GameUI.tsx`: menüye `STUDIO` butonu
+  - `App.tsx`: Studio modal orchestration
+  - `components/GameEngine.tsx`: Hollow mode render (orb fill=bg, stroke=identity; obstacles wireframe)
 
 ## Bilinen Konular / Riskler
 
