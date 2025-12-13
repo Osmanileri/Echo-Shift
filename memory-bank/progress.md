@@ -9,12 +9,24 @@
 - PWA yapılandırması (`vite.config.ts` + `vite-plugin-pwa`)
 - Test altyapısı (Vitest, `*.test.ts`)
 
+## Son Eklenen / Güncellenen (Phase 1 Milestone)
+
+- **Deterministik pattern progression**: `systems/difficultyProgression.ts` içine `selectPatternForScoreDeterministic` eklendi (Math.random olmadan).
+- **Pattern set genişletme**: `data/patterns.ts` 10+ temel pattern ile güncellendi; `heightRatio` artık gap offset tasarımını taşıyor.
+- **Engine object pooling entegrasyonu**:
+  - `systems/objectPool.ts`: `createEngineObstaclePool`, `createEngineShardPool`
+  - `components/GameEngine.tsx`: obstacle + shard spawn artık pool üzerinden, offscreen/collect sonrası release yapıyor.
+- **Shard movement RNG injection**: `systems/shardPlacement.ts` `generateShardMovement(type, rand?)` eklendi.
+
 ## Kalanlar / Belirsizler
 
 - Dokümantasyonun konsolidasyonu:
   - `README.md` güncelleme
   - `prd.md` gerçek ürün tanımıyla hizalama veya kaldırma
 - Storage key standardizasyonu (tek prefix/tek kaynak)
+- Phase 1 polish:
+  - Pattern authoring için `PatternChunk` → `Pattern` compile helper
+  - Shard placement’ı `positionOffset` ile “riskli köşe/iki blok arası” şeklinde daha net bağlamak
 
 ## Bilinen Sorunlar
 
@@ -23,6 +35,9 @@
 
 ## Son Milestone
 
-- Memory Bank sistemi repo’ya eklendi (`AGENTS.md` + `memory-bank/`).
+- Phase 1’de motorun temel taşları güçlendirildi:
+  - Pattern spawn deterministik hale getirildi
+  - Object pooling GameEngine’e entegre edildi
+  - Shard’lar pattern geometrisine bağlandı (random mesafe yerine)
 
 

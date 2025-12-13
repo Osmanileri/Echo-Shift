@@ -114,27 +114,28 @@ export const SHARD_MOVEMENT_CONFIG = {
 /**
  * Generate random movement parameters for a shard
  * @param type - Shard type (safe/risky)
+ * @param rand - Optional RNG function (defaults to Math.random)
  * @returns Movement configuration
  */
-export function generateShardMovement(type: 'safe' | 'risky'): ShardMovement {
+export function generateShardMovement(type: 'safe' | 'risky', rand: () => number = Math.random): ShardMovement {
   const config = SHARD_MOVEMENT_CONFIG[type];
   
   return {
-    verticalAmplitude: randomInRange(config.verticalAmplitude.min, config.verticalAmplitude.max),
-    verticalFrequency: randomInRange(config.verticalFrequency.min, config.verticalFrequency.max),
-    verticalPhase: Math.random() * Math.PI * 2, // Rastgele başlangıç fazı
+    verticalAmplitude: randomInRange(config.verticalAmplitude.min, config.verticalAmplitude.max, rand),
+    verticalFrequency: randomInRange(config.verticalFrequency.min, config.verticalFrequency.max, rand),
+    verticalPhase: rand() * Math.PI * 2, // Rastgele başlangıç fazı
     
-    horizontalAmplitude: randomInRange(config.horizontalAmplitude.min, config.horizontalAmplitude.max),
-    horizontalFrequency: randomInRange(config.horizontalFrequency.min, config.horizontalFrequency.max),
-    horizontalPhase: Math.random() * Math.PI * 2,
+    horizontalAmplitude: randomInRange(config.horizontalAmplitude.min, config.horizontalAmplitude.max, rand),
+    horizontalFrequency: randomInRange(config.horizontalFrequency.min, config.horizontalFrequency.max, rand),
+    horizontalPhase: rand() * Math.PI * 2,
   };
 }
 
 /**
  * Helper function for random range
  */
-function randomInRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
+function randomInRange(min: number, max: number, rand: () => number): number {
+  return min + rand() * (max - min);
 }
 
 /**

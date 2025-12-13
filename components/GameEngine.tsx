@@ -223,10 +223,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const patternManagerState = useRef<PatternManager.PatternManagerState>(PatternManager.createPatternManagerState());
   const patternStartTime = useRef<number>(0);
   const usePatternBasedSpawning = useRef<boolean>(true); // Enable pattern-based spawning
+  const patternSequenceIndex = useRef<number>(0);
+  
+  // Deterministic RNG for run-local variety without Math.random() in core spawning
+  const runRngState = useRef<number>(0);
+  const nextRunRand = useCallback((): number => {
+    // LCG (Numerical Recipes)
+    runRngState.current = (runRngState.current * 1664525 + 1013904223) >>> 0;
+    return runRngState.current / 4294967296;
+  }, []);
   
   // Object Pool State - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
-  const obstaclePool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledObstacle>>(ObjectPool.createObstaclePool());
-  const shardPool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledShard>>(ObjectPool.createShardPool());
+  const obstaclePool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledEngineObstacle>>(ObjectPool.createEngineObstaclePool());
+  const shardPool = useRef<ObjectPool.ObjectPool<ObjectPool.PooledEngineShard>>(ObjectPool.createEngineShardPool());
   
   // Active Shards from Pattern System - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
   const activeShards = useRef<ShardPlacement.PlacedShard[]>([]);
@@ -394,6 +403,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Pattern Manager State - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
     patternManagerState.current = PatternManager.createPatternManagerState();
     patternStartTime.current = 0;
+    patternSequenceIndex.current = 0;
+    runRngState.current = (Date.now() >>> 0) || 1;
     
     // Reset Object Pools - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
     obstaclePool.current.reset();
@@ -512,9 +523,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Son spawn edilen bloğun polaritesini ve boşluk bilgisini takip et
   const lastSpawnedPolarity = useRef<'white' | 'black' | null>(null);
   const lastGapCenter = useRef<number>(0);
+  const lastHalfGap = useRef<number>(0);
   
   // Pattern-Based Obstacle Spawn
-  // KRİTİK: Bloklar SIFIRI GEÇMELİ - boşluk merkezi rastgele kaydırılır
+  // KRİTİK: Bloklar SIFIRI GEÇMELİ - boşluk merkezi pattern heightRatio ile deterministik hesaplanır
   const spawnPatternObstacle = (lane: Lane, heightRatio: number, canvasHeight: number, canvasWidth: number) => {
     const obsWidth = INITIAL_CONFIG.obstacleWidth;
     const spawnX = canvasWidth + 50;
@@ -531,16 +543,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
     let gapCenter: number;
     
     if (lane === 'TOP') {
-      // Üst blok: rastgele renk seç ve boşluk merkezi hesapla
-      polarity = Math.random() > 0.5 ? 'white' : 'black';
+      // Üst blok: deterministik polarity toggle + deterministik gap center (heightRatio 0..1)
+      polarity = lastSpawnedPolarity.current === 'white' ? 'black' : 'white';
       lastSpawnedPolarity.current = polarity;
       
-      // Boşluk merkezi: midY'den -halfGap*2 ile +halfGap*2 arası kaydır
-      // Bu sayede bloklar KESİNLİKLE sıfır çizgisini geçiyor!
+      // Boşluk merkezi: midY +/- (2*halfGap) aralığına heightRatio ile map et
+      // heightRatio=0   -> max yukarı kayış
+      // heightRatio=0.5 -> midY (nötr)
+      // heightRatio=1   -> max aşağı kayış
+      const clamped = Math.max(0, Math.min(1, heightRatio ?? 0.5));
       const maxOffset = halfGap * 2;
-      const gapOffset = (Math.random() - 0.5) * maxOffset * 2;
+      const gapOffset = (clamped - 0.5) * 2 * maxOffset;
       gapCenter = midY + gapOffset;
       lastGapCenter.current = gapCenter;
+      lastHalfGap.current = halfGap;
     } else {
       // Alt blok: üst bloğun ZIT rengi ve aynı boşluk merkezi
       polarity = lastSpawnedPolarity.current === 'white' ? 'black' : 'white';
@@ -560,33 +576,39 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const blockBottom = gapCenter - halfGap;
       const blockHeight = Math.max(30, blockBottom);
       
-      obstacle = {
-        id: Math.random().toString(36).substring(2, 11),
-        x: spawnX,
-        y: -blockHeight,
-        targetY: 0,
-        width: obsWidth,
-        height: blockHeight,
-        lane: effectiveLane,
-        polarity,
-        passed: false
-      };
+      const pooled = obstaclePool.current.acquire();
+      pooled.x = spawnX;
+      pooled.y = -blockHeight;
+      pooled.targetY = 0;
+      pooled.width = obsWidth;
+      pooled.height = blockHeight;
+      pooled.lane = effectiveLane;
+      pooled.polarity = polarity;
+      pooled.passed = false;
+      pooled.nearMissChecked = false;
+      pooled.hasPhased = false;
+      pooled.isLatent = false;
+      pooled.initialX = spawnX;
+      obstacle = pooled;
     } else {
       // BOTTOM block - (gapCenter + halfGap)'dan canvasHeight'a kadar uzanır
       const blockTop = gapCenter + halfGap;
       const blockHeight = Math.max(30, canvasHeight - blockTop);
       
-      obstacle = {
-        id: Math.random().toString(36).substring(2, 11),
-        x: spawnX,
-        y: canvasHeight,
-        targetY: blockTop,
-        width: obsWidth,
-        height: blockHeight,
-        lane: effectiveLane,
-        polarity,
-        passed: false
-      };
+      const pooled = obstaclePool.current.acquire();
+      pooled.x = spawnX;
+      pooled.y = canvasHeight;
+      pooled.targetY = blockTop;
+      pooled.width = obsWidth;
+      pooled.height = blockHeight;
+      pooled.lane = effectiveLane;
+      pooled.polarity = polarity;
+      pooled.passed = false;
+      pooled.nearMissChecked = false;
+      pooled.hasPhased = false;
+      pooled.isLatent = false;
+      pooled.initialX = spawnX;
+      obstacle = pooled;
     }
     
     // Phantom check
@@ -604,47 +626,42 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // DİNAMİK HAREKET: Elmaslar yukarı-aşağı ve ileri-geri hareket eder
   const spawnPatternShard = (lane: Lane, type: 'safe' | 'risky', canvasHeight: number, canvasWidth: number) => {
     const spawnX = canvasWidth + 50;
-    const maxLen = INITIAL_CONFIG.maxConnectorLength; // Oyuncunun maksimum çubuk uzunluğu
     const midY = canvasHeight / 2; // Merkez çizgi (midlineY)
-    
-    // Güvenli erişim mesafesi: maxConnectorLength - padding
-    const safeReach = maxLen - 20;
-    
-    // Elmaslar merkeze 50px ile safeReach arasında olmalı
-    // Çok kolay olmaması için minimum 50px uzaklık
-    const minDistance = 50;
-    const randomDistance = minDistance + Math.random() * (safeReach - minDistance);
-    
+
+    // Use current gate geometry if available (pattern-defined gap center)
+    const gapCenter = lastGapCenter.current || midY;
+    const halfGap = lastHalfGap.current || (INITIAL_CONFIG.orbRadius + 10);
+    const riskyEdge = 12;
+
     let y: number;
-    if (lane === 'TOP') {
-      // Üst şerit: Merkezden YUKARI git (Y azalır)
-      y = midY - randomDistance;
+    if (type === 'safe') {
+      // Safe shard: center of the passable gap (easy pickup, learnable)
+      y = gapCenter;
     } else {
-      // Alt şerit: Merkezden AŞAĞI git (Y artar)
-      y = midY + randomDistance;
+      // Risky shard: hug the edge of the gap in the requested lane
+      y = lane === 'TOP'
+        ? (gapCenter - halfGap + riskyEdge)
+        : (gapCenter + halfGap - riskyEdge);
     }
     
     // Ekran sınırlarını kontrol et
     y = Math.max(20, Math.min(canvasHeight - 20, y));
     
     // Dinamik hareket parametreleri oluştur
-    const movement = ShardPlacement.generateShardMovement(type);
-    
-    const shard: ShardPlacement.PlacedShard = {
-      id: Math.random().toString(36).substring(2, 11),
-      x: spawnX,
-      y,
-      baseX: spawnX,  // Hareket merkezi
-      baseY: y,       // Hareket merkezi
-      lane,
-      type,
-      value: ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue,
-      collected: false,
-      movement,       // Dinamik hareket parametreleri
-      spawnTime: Date.now()
-    };
-    
-    activeShards.current.push(shard);
+    const movement = ShardPlacement.generateShardMovement(type, nextRunRand);
+
+    const pooled = shardPool.current.acquire();
+    pooled.x = spawnX;
+    pooled.y = y;
+    pooled.baseX = spawnX;
+    pooled.baseY = y;
+    pooled.lane = lane;
+    pooled.type = type;
+    pooled.value = ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue;
+    pooled.collected = false;
+    pooled.movement = movement;
+    pooled.spawnTime = Date.now();
+    activeShards.current.push(pooled);
   };
 
   const createExplosion = (x: number, y: number, color: string) => {
@@ -1192,15 +1209,40 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const spawnTime = Date.now();
       
       if (usePatternBasedSpawning.current) {
+        // Update speed using Flow Curve early (used for deterministic pacing)
+        speed.current = FlowCurve.calculateGameSpeed(score.current);
+
         // Pattern-Based Spawning
         // Check if we need to select a new pattern
         if (!patternManagerState.current.currentPattern || 
             PatternManager.isPatternComplete(patternManagerState.current, spawnTime)) {
           // Select new pattern based on difficulty progression - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
-          const selectedPattern = DifficultyProgression.selectPatternForScore(score.current, PATTERNS);
+          const selectedPattern = DifficultyProgression.selectPatternForScoreDeterministic(
+            score.current,
+            PATTERNS,
+            patternSequenceIndex.current
+          );
+          patternSequenceIndex.current += 1;
+
+          // Dynamic pattern pacing: scale timings as speed changes (keeps spacing feel consistent)
+          const baselineSpeed = 6.0;
+          const timeScale = Math.max(0.55, Math.min(1.2, baselineSpeed / Math.max(0.1, speed.current)));
+          const scaledPattern = {
+            ...selectedPattern,
+            duration: Math.max(250, Math.round(selectedPattern.duration * timeScale)),
+            obstacles: selectedPattern.obstacles.map(o => ({
+              ...o,
+              timeOffset: Math.max(0, Math.round(o.timeOffset * timeScale)),
+            })),
+            shards: selectedPattern.shards.map(s => ({
+              ...s,
+              timeOffset: Math.max(0, Math.round(s.timeOffset * timeScale)),
+            })),
+          };
+
           patternManagerState.current = PatternManager.startPattern(
             patternManagerState.current,
-            selectedPattern,
+            scaledPattern,
             spawnTime
           );
           patternStartTime.current = spawnTime;
@@ -1213,9 +1255,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
           (lane: Lane, heightRatio: number) => spawnPatternObstacle(lane, heightRatio, height, width),
           (lane: Lane, type: 'safe' | 'risky') => spawnPatternShard(lane, type, height, width)
         );
-        
-        // Update speed using Flow Curve - Requirements 1.2, 1.3, 1.4, 1.5, 1.6
-        speed.current = FlowCurve.calculateGameSpeed(score.current);
         
         // Update spawn rate based on speed for UI display
         const spawnInterval = PatternManager.calculateSpawnInterval(speed.current);
@@ -1518,13 +1557,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
       });
 
       // Filter Obstacles - Release back to pool if using object pooling
-      obstacles.current = obstacles.current.filter(obs => obs.x + obs.width > -100);
+      obstacles.current = obstacles.current.filter(obs => {
+        const keep = obs.x + obs.width > -100;
+        if (!keep) {
+          // release is safe even if the item wasn't pooled (ignored gracefully)
+          obstaclePool.current.release(obs as unknown as ObjectPool.PooledEngineObstacle);
+        }
+        return keep;
+      });
 
       // --- SHARD MOVEMENT AND COLLECTION - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
       // Move shards with game speed + dynamic oscillation
       // Note: currentTime is already defined above in gravity flip logic
       activeShards.current = activeShards.current.filter(shard => {
-        if (shard.collected) return false;
+        if (shard.collected) {
+          shardPool.current.release(shard as unknown as ObjectPool.PooledEngineShard);
+          return false;
+        }
         
         // Move base position left with game speed
         shard.baseX -= speed.current * slowMotionMultiplier;
@@ -1564,11 +1613,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Haptic feedback
           getHapticSystem().trigger('light');
           
-          return false; // Remove collected shard
+          // Remove collected shard + release to pool
+          shardPool.current.release(shard as unknown as ObjectPool.PooledEngineShard);
+          return false;
         }
         
         // Remove if off-screen
-        return shard.x > -50;
+        const keep = shard.x > -50;
+        if (!keep) {
+          shardPool.current.release(shard as unknown as ObjectPool.PooledEngineShard);
+        }
+        return keep;
       });
 
       // Restore System: Record snapshot every frame (60fps) - Requirements 7.1, 7.2
