@@ -3,14 +3,19 @@
  * Requirements: 18.1, 18.2, 18.3
  */
 
-import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
-import { safePersist, safeLoad, STORAGE_KEYS } from '../utils/persistence';
-import { ShiftProtocolState, EnhancedResonanceState, SnapshotBuffer } from '../types';
-import { initializeShiftState } from '../systems/shiftProtocol';
+import { create } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
+import type { ZoneId } from "../data/zones";
+import { initializeShiftState } from "../systems/shiftProtocol";
+import {
+  EnhancedResonanceState,
+  ShiftProtocolState,
+  SnapshotBuffer,
+} from "../types";
+import { safeLoad, safePersist, STORAGE_KEYS } from "../utils/persistence";
 
 // Item category type for shop system
-export type ItemCategory = 'skin' | 'effect' | 'theme';
+export type ItemCategory = "skin" | "effect" | "theme";
 
 // Ghost frame for ghost racer system
 export interface GhostFrame {
@@ -62,68 +67,80 @@ export interface GameStore {
   echoShards: number;
   addEchoShards: (amount: number) => void;
   spendEchoShards: (amount: number) => boolean;
-  
+
   // Inventory
   ownedSkins: string[];
   ownedEffects: string[];
   ownedThemes: string[];
   ownedUpgrades: Record<string, number>;
-  
+
+  // Zone Progression (Roguelite Loop)
+  selectedZoneId: ZoneId;
+  unlockedZones: ZoneId[];
+
   // Equipped Items
   equippedSkin: string;
   equippedEffect: string;
   equippedTheme: string;
-  
+
   // Campaign Progress
   completedLevels: number[];
   currentLevel: number;
   levelStars: Record<number, number>;
-  
+
   // Daily Challenge
   lastDailyChallengeDate: string;
   dailyChallengeCompleted: boolean;
   dailyChallengeBestScore: number;
-  
+
   // Ghost Data
   ghostTimeline: GhostFrame[];
-  
+
   // V2 Mechanics State - Requirements 1.3, 1.4
   shift: ShiftProtocolState;
   resonance: EnhancedResonanceState;
   snapshots: SnapshotBuffer;
-  
+
   // Settings
   tutorialCompleted: boolean;
   soundEnabled: boolean;
   musicEnabled: boolean;
   hapticEnabled: boolean;
-  
+
   // Actions
-  purchaseItem: (itemId: string, category: ItemCategory, price: number) => boolean;
+  purchaseItem: (
+    itemId: string,
+    category: ItemCategory,
+    price: number
+  ) => boolean;
   equipItem: (itemId: string, category: ItemCategory) => void;
   completeLevel: (levelId: number, stars: number) => void;
   recordGhostFrame: (frame: GhostFrame) => void;
   resetGhost: () => void;
-  
+
   // Upgrade Actions
   purchaseUpgrade: (upgradeId: string, cost: number) => boolean;
   getUpgradeLevel: (upgradeId: string) => number;
-  
+
+  // Zone Actions
+  selectZone: (zoneId: ZoneId) => void;
+  unlockZone: (zoneId: ZoneId, cost: number) => boolean;
+
   // Daily Challenge Actions
   setDailyChallengeCompleted: (score: number) => void;
-  
+
   // V2 Mechanics Actions - Requirements 1.3, 1.4
   updateShiftState: (state: Partial<ShiftProtocolState>) => void;
   updateResonanceState: (state: Partial<EnhancedResonanceState>) => void;
   updateSnapshotBuffer: (buffer: SnapshotBuffer) => void;
   resetV2State: () => void;
-  
+
   // Settings Actions
   setTutorialCompleted: (completed: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setMusicEnabled: (enabled: boolean) => void;
   setHapticEnabled: (enabled: boolean) => void;
-  
+
   // Persistence
   loadFromStorage: () => void;
   saveToStorage: () => void;
@@ -132,17 +149,19 @@ export interface GameStore {
 // Default state values
 const DEFAULT_STATE = {
   echoShards: 5000, // Starting bonus for new players
-  ownedSkins: ['default'],
-  ownedEffects: ['default'],
-  ownedThemes: ['default'],
+  ownedSkins: ["default"],
+  ownedEffects: ["default"],
+  ownedThemes: ["default"],
   ownedUpgrades: {} as Record<string, number>,
-  equippedSkin: 'default',
-  equippedEffect: 'default',
-  equippedTheme: 'default',
+  selectedZoneId: "sub-bass" as ZoneId,
+  unlockedZones: ["sub-bass"] as ZoneId[],
+  equippedSkin: "default",
+  equippedEffect: "default",
+  equippedTheme: "default",
   completedLevels: [] as number[],
   currentLevel: 1,
   levelStars: {} as Record<number, number>,
-  lastDailyChallengeDate: '',
+  lastDailyChallengeDate: "",
   dailyChallengeCompleted: false,
   dailyChallengeBestScore: 0,
   ghostTimeline: [] as GhostFrame[],
@@ -163,6 +182,8 @@ interface PersistedState {
   ownedEffects: string[];
   ownedThemes: string[];
   ownedUpgrades: Record<string, number>;
+  selectedZoneId: ZoneId;
+  unlockedZones: ZoneId[];
   equippedSkin: string;
   equippedEffect: string;
   equippedTheme: string;
@@ -183,24 +204,24 @@ export const useGameStore = create<GameStore>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
     ...DEFAULT_STATE,
-    
+
     // V2 Mechanics Actions - Requirements 1.3, 1.4
     updateShiftState: (newState: Partial<ShiftProtocolState>) => {
       set((state) => ({
         shift: { ...state.shift, ...newState },
       }));
     },
-    
+
     updateResonanceState: (newState: Partial<EnhancedResonanceState>) => {
       set((state) => ({
         resonance: { ...state.resonance, ...newState },
       }));
     },
-    
+
     updateSnapshotBuffer: (buffer: SnapshotBuffer) => {
       set({ snapshots: buffer });
     },
-    
+
     resetV2State: () => {
       set({
         shift: initializeShiftState(),
@@ -208,11 +229,11 @@ export const useGameStore = create<GameStore>()(
         snapshots: initializeSnapshotBuffer(),
       });
     },
-    
+
     // Currency Actions
     addEchoShards: (amount: number) => {
       if (amount < 0) {
-        console.warn('[GameStore] Cannot add negative Echo Shards');
+        console.warn("[GameStore] Cannot add negative Echo Shards");
         return;
       }
       set((state) => {
@@ -221,11 +242,11 @@ export const useGameStore = create<GameStore>()(
       });
       get().saveToStorage();
     },
-    
+
     spendEchoShards: (amount: number) => {
       const state = get();
       if (amount < 0) {
-        console.warn('[GameStore] Cannot spend negative Echo Shards');
+        console.warn("[GameStore] Cannot spend negative Echo Shards");
         return false;
       }
       if (state.echoShards < amount) {
@@ -235,24 +256,26 @@ export const useGameStore = create<GameStore>()(
       get().saveToStorage();
       return true;
     },
-    
+
     // Shop Actions
     purchaseItem: (itemId: string, category: ItemCategory, price: number) => {
       const state = get();
-      
+
       // Check if already owned
-      const ownedKey = `owned${category.charAt(0).toUpperCase() + category.slice(1)}s` as keyof typeof state;
+      const ownedKey = `owned${
+        category.charAt(0).toUpperCase() + category.slice(1)
+      }s` as keyof typeof state;
       const ownedItems = state[ownedKey] as string[];
       if (ownedItems.includes(itemId)) {
         console.warn(`[GameStore] Item ${itemId} already owned`);
         return false;
       }
-      
+
       // Check balance
       if (state.echoShards < price) {
         return false;
       }
-      
+
       // Deduct price and add to inventory
       set((s) => {
         const newOwned = [...(s[ownedKey] as string[]), itemId];
@@ -261,43 +284,47 @@ export const useGameStore = create<GameStore>()(
           [ownedKey]: newOwned,
         };
       });
-      
+
       get().saveToStorage();
       return true;
     },
-    
+
     equipItem: (itemId: string, category: ItemCategory) => {
       const state = get();
-      
+
       // Check if owned
-      const ownedKey = `owned${category.charAt(0).toUpperCase() + category.slice(1)}s` as keyof typeof state;
+      const ownedKey = `owned${
+        category.charAt(0).toUpperCase() + category.slice(1)
+      }s` as keyof typeof state;
       const ownedItems = state[ownedKey] as string[];
       if (!ownedItems.includes(itemId)) {
         console.warn(`[GameStore] Cannot equip unowned item: ${itemId}`);
         return;
       }
-      
+
       // Equip the item
-      const equippedKey = `equipped${category.charAt(0).toUpperCase() + category.slice(1)}` as 'equippedSkin' | 'equippedEffect' | 'equippedTheme';
+      const equippedKey = `equipped${
+        category.charAt(0).toUpperCase() + category.slice(1)
+      }` as "equippedSkin" | "equippedEffect" | "equippedTheme";
       set({ [equippedKey]: itemId });
       get().saveToStorage();
     },
-    
+
     // Campaign Actions
     completeLevel: (levelId: number, stars: number) => {
       set((state) => {
         const newCompletedLevels = state.completedLevels.includes(levelId)
           ? state.completedLevels
           : [...state.completedLevels, levelId];
-        
+
         const newLevelStars = {
           ...state.levelStars,
           [levelId]: Math.max(state.levelStars[levelId] || 0, stars),
         };
-        
+
         // Unlock next level
         const newCurrentLevel = Math.max(state.currentLevel, levelId + 1);
-        
+
         return {
           completedLevels: newCompletedLevels,
           levelStars: newLevelStars,
@@ -306,26 +333,26 @@ export const useGameStore = create<GameStore>()(
       });
       get().saveToStorage();
     },
-    
+
     // Ghost Actions
     recordGhostFrame: (frame: GhostFrame) => {
       set((state) => ({
         ghostTimeline: [...state.ghostTimeline, frame],
       }));
     },
-    
+
     resetGhost: () => {
       set({ ghostTimeline: [] });
     },
-    
+
     // Upgrade Actions
     purchaseUpgrade: (upgradeId: string, cost: number) => {
       const state = get();
-      
+
       if (state.echoShards < cost) {
         return false;
       }
-      
+
       set((s) => ({
         echoShards: s.echoShards - cost,
         ownedUpgrades: {
@@ -333,18 +360,45 @@ export const useGameStore = create<GameStore>()(
           [upgradeId]: (s.ownedUpgrades[upgradeId] || 0) + 1,
         },
       }));
-      
+
       get().saveToStorage();
       return true;
     },
-    
+
     getUpgradeLevel: (upgradeId: string) => {
       return get().ownedUpgrades[upgradeId] || 0;
     },
-    
+
+    // Zone Actions
+    selectZone: (zoneId: ZoneId) => {
+      set({ selectedZoneId: zoneId });
+      get().saveToStorage();
+    },
+
+    unlockZone: (zoneId: ZoneId, cost: number) => {
+      const state = get();
+      if (state.unlockedZones.includes(zoneId)) {
+        set({ selectedZoneId: zoneId });
+        get().saveToStorage();
+        return true;
+      }
+      if (cost > 0 && state.echoShards < cost) {
+        return false;
+      }
+
+      set((s) => ({
+        echoShards: cost > 0 ? s.echoShards - cost : s.echoShards,
+        unlockedZones: [...s.unlockedZones, zoneId],
+        selectedZoneId: zoneId,
+      }));
+
+      get().saveToStorage();
+      return true;
+    },
+
     // Daily Challenge Actions
     setDailyChallengeCompleted: (score: number) => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toISOString().split("T")[0];
       set((state) => ({
         lastDailyChallengeDate: today,
         dailyChallengeCompleted: true,
@@ -352,32 +406,35 @@ export const useGameStore = create<GameStore>()(
       }));
       get().saveToStorage();
     },
-    
+
     // Settings Actions
     setTutorialCompleted: (completed: boolean) => {
       set({ tutorialCompleted: completed });
       get().saveToStorage();
     },
-    
+
     setSoundEnabled: (enabled: boolean) => {
       set({ soundEnabled: enabled });
       get().saveToStorage();
     },
-    
+
     setMusicEnabled: (enabled: boolean) => {
       set({ musicEnabled: enabled });
       get().saveToStorage();
     },
-    
+
     setHapticEnabled: (enabled: boolean) => {
       set({ hapticEnabled: enabled });
       get().saveToStorage();
     },
-    
+
     // Persistence Actions
     loadFromStorage: () => {
-      const savedState = safeLoad<Partial<PersistedState>>(STORAGE_KEYS.GAME_STATE, {});
-      
+      const savedState = safeLoad<Partial<PersistedState>>(
+        STORAGE_KEYS.GAME_STATE,
+        {}
+      );
+
       // Merge saved state with defaults
       set({
         echoShards: savedState.echoShards ?? DEFAULT_STATE.echoShards,
@@ -385,29 +442,41 @@ export const useGameStore = create<GameStore>()(
         ownedEffects: savedState.ownedEffects ?? DEFAULT_STATE.ownedEffects,
         ownedThemes: savedState.ownedThemes ?? DEFAULT_STATE.ownedThemes,
         ownedUpgrades: savedState.ownedUpgrades ?? DEFAULT_STATE.ownedUpgrades,
+        selectedZoneId:
+          savedState.selectedZoneId ?? DEFAULT_STATE.selectedZoneId,
+        unlockedZones: savedState.unlockedZones ?? DEFAULT_STATE.unlockedZones,
         equippedSkin: savedState.equippedSkin ?? DEFAULT_STATE.equippedSkin,
-        equippedEffect: savedState.equippedEffect ?? DEFAULT_STATE.equippedEffect,
+        equippedEffect:
+          savedState.equippedEffect ?? DEFAULT_STATE.equippedEffect,
         equippedTheme: savedState.equippedTheme ?? DEFAULT_STATE.equippedTheme,
-        completedLevels: savedState.completedLevels ?? DEFAULT_STATE.completedLevels,
+        completedLevels:
+          savedState.completedLevels ?? DEFAULT_STATE.completedLevels,
         currentLevel: savedState.currentLevel ?? DEFAULT_STATE.currentLevel,
         levelStars: savedState.levelStars ?? DEFAULT_STATE.levelStars,
-        lastDailyChallengeDate: savedState.lastDailyChallengeDate ?? DEFAULT_STATE.lastDailyChallengeDate,
-        dailyChallengeCompleted: savedState.dailyChallengeCompleted ?? DEFAULT_STATE.dailyChallengeCompleted,
-        dailyChallengeBestScore: savedState.dailyChallengeBestScore ?? DEFAULT_STATE.dailyChallengeBestScore,
-        tutorialCompleted: savedState.tutorialCompleted ?? DEFAULT_STATE.tutorialCompleted,
+        lastDailyChallengeDate:
+          savedState.lastDailyChallengeDate ??
+          DEFAULT_STATE.lastDailyChallengeDate,
+        dailyChallengeCompleted:
+          savedState.dailyChallengeCompleted ??
+          DEFAULT_STATE.dailyChallengeCompleted,
+        dailyChallengeBestScore:
+          savedState.dailyChallengeBestScore ??
+          DEFAULT_STATE.dailyChallengeBestScore,
+        tutorialCompleted:
+          savedState.tutorialCompleted ?? DEFAULT_STATE.tutorialCompleted,
         soundEnabled: savedState.soundEnabled ?? DEFAULT_STATE.soundEnabled,
         musicEnabled: savedState.musicEnabled ?? DEFAULT_STATE.musicEnabled,
         hapticEnabled: savedState.hapticEnabled ?? DEFAULT_STATE.hapticEnabled,
       });
-      
+
       // Load ghost data separately (can be large)
       const ghostData = safeLoad<GhostFrame[]>(STORAGE_KEYS.GHOST_DATA, []);
       set({ ghostTimeline: ghostData });
     },
-    
+
     saveToStorage: () => {
       const state = get();
-      
+
       // Save main state
       const stateToSave: PersistedState = {
         echoShards: state.echoShards,
@@ -415,6 +484,8 @@ export const useGameStore = create<GameStore>()(
         ownedEffects: state.ownedEffects,
         ownedThemes: state.ownedThemes,
         ownedUpgrades: state.ownedUpgrades,
+        selectedZoneId: state.selectedZoneId,
+        unlockedZones: state.unlockedZones,
         equippedSkin: state.equippedSkin,
         equippedEffect: state.equippedEffect,
         equippedTheme: state.equippedTheme,
@@ -429,9 +500,9 @@ export const useGameStore = create<GameStore>()(
         musicEnabled: state.musicEnabled,
         hapticEnabled: state.hapticEnabled,
       };
-      
+
       safePersist(STORAGE_KEYS.GAME_STATE, stateToSave);
-      
+
       // Save ghost data separately
       if (state.ghostTimeline.length > 0) {
         safePersist(STORAGE_KEYS.GHOST_DATA, state.ghostTimeline);
@@ -441,6 +512,6 @@ export const useGameStore = create<GameStore>()(
 );
 
 // Initialize store from localStorage on module load
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   useGameStore.getState().loadFromStorage();
 }

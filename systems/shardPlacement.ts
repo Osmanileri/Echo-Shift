@@ -1,13 +1,13 @@
 /**
  * Shard Placement System - Strategic Shard Positioning
- * 
+ *
  * Manages intelligent shard placement within patterns, providing
  * risk/reward choices for players through safe and risky shard positions.
- * 
+ *
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
  */
 
-import { Lane } from '../data/patterns';
+import { Lane } from "../data/patterns";
 
 // ============================================================================
 // Types and Interfaces
@@ -18,10 +18,10 @@ import { Lane } from '../data/patterns';
  * Requirements: 5.2, 5.3, 5.5
  */
 export interface ShardConfig {
-  safeGapRatio: number;      // 0.5 - Gap ortasına yerleşim
+  safeGapRatio: number; // 0.5 - Gap ortasına yerleşim
   riskyEdgeDistance: number; // 20px - Engel kenarına mesafe
-  nearMissBonus: number;     // 5 - Near miss bonus çarpanı
-  baseShardValue: number;    // 1 - Temel shard değeri
+  nearMissBonus: number; // 5 - Near miss bonus çarpanı
+  baseShardValue: number; // 1 - Temel shard değeri
 }
 
 /**
@@ -29,14 +29,14 @@ export interface ShardConfig {
  */
 export interface ShardMovement {
   // Vertical oscillation (yukarı-aşağı)
-  verticalAmplitude: number;   // Dikey hareket genliği (piksel)
-  verticalFrequency: number;   // Dikey hareket frekansı (rad/s)
-  verticalPhase: number;       // Başlangıç fazı (radyan)
-  
+  verticalAmplitude: number; // Dikey hareket genliği (piksel)
+  verticalFrequency: number; // Dikey hareket frekansı (rad/s)
+  verticalPhase: number; // Başlangıç fazı (radyan)
+
   // Horizontal oscillation (ileri-geri)
   horizontalAmplitude: number; // Yatay hareket genliği (piksel)
   horizontalFrequency: number; // Yatay hareket frekansı (rad/s)
-  horizontalPhase: number;     // Başlangıç fazı (radyan)
+  horizontalPhase: number; // Başlangıç fazı (radyan)
 }
 
 /**
@@ -47,14 +47,14 @@ export interface PlacedShard {
   id: string;
   x: number;
   y: number;
-  baseX: number;  // Orijinal X pozisyonu (hareket merkezi)
-  baseY: number;  // Orijinal Y pozisyonu (hareket merkezi)
+  baseX: number; // Orijinal X pozisyonu (hareket merkezi)
+  baseY: number; // Orijinal Y pozisyonu (hareket merkezi)
   lane: Lane;
-  type: 'safe' | 'risky';
+  type: "safe" | "risky";
   value: number;
   collected: boolean;
-  movement: ShardMovement;  // Dinamik hareket parametreleri
-  spawnTime: number;        // Spawn zamanı (hareket hesaplaması için)
+  movement: ShardMovement; // Dinamik hareket parametreleri
+  spawnTime: number; // Spawn zamanı (hareket hesaplaması için)
 }
 
 /**
@@ -89,7 +89,7 @@ export const DEFAULT_SHARD_CONFIG: ShardConfig = {
   safeGapRatio: 0.5,
   riskyEdgeDistance: 20,
   nearMissBonus: 5,
-  baseShardValue: 1
+  baseShardValue: 1,
 };
 
 /**
@@ -98,17 +98,18 @@ export const DEFAULT_SHARD_CONFIG: ShardConfig = {
  */
 export const SHARD_MOVEMENT_CONFIG = {
   safe: {
-    verticalAmplitude: { min: 15, max: 25 },    // Yumuşak dikey hareket
-    verticalFrequency: { min: 1.5, max: 2.5 },  // Yavaş salınım
-    horizontalAmplitude: { min: 10, max: 20 },  // Hafif yatay hareket
-    horizontalFrequency: { min: 1.0, max: 2.0 },
+    // Mobile readability: reduce motion so shards are "trackable", not distracting
+    verticalAmplitude: { min: 6, max: 12 },
+    verticalFrequency: { min: 0.8, max: 1.4 },
+    horizontalAmplitude: { min: 4, max: 10 },
+    horizontalFrequency: { min: 0.6, max: 1.2 },
   },
   risky: {
-    verticalAmplitude: { min: 25, max: 40 },    // Agresif dikey hareket
-    verticalFrequency: { min: 2.5, max: 4.0 },  // Hızlı salınım
-    horizontalAmplitude: { min: 20, max: 35 },  // Belirgin yatay hareket
-    horizontalFrequency: { min: 2.0, max: 3.5 },
-  }
+    verticalAmplitude: { min: 12, max: 20 },
+    verticalFrequency: { min: 1.2, max: 2.0 },
+    horizontalAmplitude: { min: 8, max: 16 },
+    horizontalFrequency: { min: 1.0, max: 1.8 },
+  },
 };
 
 /**
@@ -117,16 +118,35 @@ export const SHARD_MOVEMENT_CONFIG = {
  * @param rand - Optional RNG function (defaults to Math.random)
  * @returns Movement configuration
  */
-export function generateShardMovement(type: 'safe' | 'risky', rand: () => number = Math.random): ShardMovement {
+export function generateShardMovement(
+  type: "safe" | "risky",
+  rand: () => number = Math.random
+): ShardMovement {
   const config = SHARD_MOVEMENT_CONFIG[type];
-  
+
   return {
-    verticalAmplitude: randomInRange(config.verticalAmplitude.min, config.verticalAmplitude.max, rand),
-    verticalFrequency: randomInRange(config.verticalFrequency.min, config.verticalFrequency.max, rand),
+    verticalAmplitude: randomInRange(
+      config.verticalAmplitude.min,
+      config.verticalAmplitude.max,
+      rand
+    ),
+    verticalFrequency: randomInRange(
+      config.verticalFrequency.min,
+      config.verticalFrequency.max,
+      rand
+    ),
     verticalPhase: rand() * Math.PI * 2, // Rastgele başlangıç fazı
-    
-    horizontalAmplitude: randomInRange(config.horizontalAmplitude.min, config.horizontalAmplitude.max, rand),
-    horizontalFrequency: randomInRange(config.horizontalFrequency.min, config.horizontalFrequency.max, rand),
+
+    horizontalAmplitude: randomInRange(
+      config.horizontalAmplitude.min,
+      config.horizontalAmplitude.max,
+      rand
+    ),
+    horizontalFrequency: randomInRange(
+      config.horizontalFrequency.min,
+      config.horizontalFrequency.max,
+      rand
+    ),
     horizontalPhase: rand() * Math.PI * 2,
   };
 }
@@ -149,17 +169,22 @@ export function calculateShardPosition(
   currentTime: number
 ): { x: number; y: number } {
   const elapsed = (currentTime - shard.spawnTime) / 1000; // Saniyeye çevir
-  
+
   // Sinüzoidal hareket hesaplaması
-  const verticalOffset = Math.sin(elapsed * shard.movement.verticalFrequency + shard.movement.verticalPhase) 
-    * shard.movement.verticalAmplitude;
-  
-  const horizontalOffset = Math.sin(elapsed * shard.movement.horizontalFrequency + shard.movement.horizontalPhase) 
-    * shard.movement.horizontalAmplitude;
-  
+  const verticalOffset =
+    Math.sin(
+      elapsed * shard.movement.verticalFrequency + shard.movement.verticalPhase
+    ) * shard.movement.verticalAmplitude;
+
+  const horizontalOffset =
+    Math.sin(
+      elapsed * shard.movement.horizontalFrequency +
+        shard.movement.horizontalPhase
+    ) * shard.movement.horizontalAmplitude;
+
   return {
     x: shard.baseX + horizontalOffset,
-    y: shard.baseY + verticalOffset
+    y: shard.baseY + verticalOffset,
   };
 }
 
@@ -178,7 +203,7 @@ export function updateShardPosition(
   return {
     ...shard,
     x: newPos.x,
-    y: newPos.y
+    y: newPos.y,
   };
 }
 
@@ -191,7 +216,7 @@ export const DEFAULT_PLAYABLE_AREA: PlayableArea = {
   minY: 0,
   maxY: 600,
   canvasHeight: 600,
-  canvasWidth: 800
+  canvasWidth: 800,
 };
 
 // ============================================================================
@@ -200,11 +225,11 @@ export const DEFAULT_PLAYABLE_AREA: PlayableArea = {
 
 /**
  * Calculate safe shard position - centered in gap between obstacles
- * 
+ *
  * Requirements: 5.2
  * Safe shards are placed in the center of a gap between obstacles,
  * making them easy to collect without risk.
- * 
+ *
  * @param gapStart - X coordinate where the gap starts
  * @param gapEnd - X coordinate where the gap ends
  * @param lane - Which lane (TOP/BOTTOM) the shard should be in
@@ -219,24 +244,22 @@ export function calculateSafeShardPosition(
 ): ShardPosition {
   // Calculate X position at center of gap
   const x = gapStart + (gapEnd - gapStart) * DEFAULT_SHARD_CONFIG.safeGapRatio;
-  
+
   // Calculate Y position based on lane
   // TOP lane: upper quarter of screen
   // BOTTOM lane: lower quarter of screen
-  const y = lane === 'TOP' 
-    ? canvasHeight * 0.25 
-    : canvasHeight * 0.75;
-  
+  const y = lane === "TOP" ? canvasHeight * 0.25 : canvasHeight * 0.75;
+
   return { x, y };
 }
 
 /**
  * Calculate risky shard position - adjacent to obstacle edge
- * 
+ *
  * Requirements: 5.3
  * Risky shards are placed close to obstacles, requiring precise
  * movement to collect without collision.
- * 
+ *
  * @param obstacleX - X coordinate of the obstacle
  * @param obstacleY - Y coordinate of the obstacle
  * @param obstacleHeight - Height of the obstacle
@@ -253,23 +276,24 @@ export function calculateRiskyShardPosition(
 ): ShardPosition {
   // Place shard at edge distance from obstacle
   const x = obstacleX + config.riskyEdgeDistance;
-  
+
   // Y position is at the edge of the obstacle based on lane
   // For TOP lane obstacles, place shard just below the obstacle
   // For BOTTOM lane obstacles, place shard just above the obstacle
-  const y = lane === 'TOP'
-    ? obstacleY + obstacleHeight + config.riskyEdgeDistance
-    : obstacleY - config.riskyEdgeDistance;
-  
+  const y =
+    lane === "TOP"
+      ? obstacleY + obstacleHeight + config.riskyEdgeDistance
+      : obstacleY - config.riskyEdgeDistance;
+
   return { x, y };
 }
 
 /**
  * Collect a shard and calculate awarded value
- * 
+ *
  * Requirements: 5.4, 5.5
  * Awards base value for normal collection, bonus for Near Miss collection.
- * 
+ *
  * @param shard - The shard being collected
  * @param isNearMiss - Whether this was a Near Miss collection
  * @param config - Shard configuration
@@ -282,20 +306,20 @@ export function collectShard(
 ): number {
   // Base value from the shard
   let awardedValue = shard.value;
-  
+
   // Add Near Miss bonus if applicable - Requirements 5.5
   if (isNearMiss) {
     awardedValue += config.nearMissBonus;
   }
-  
+
   return awardedValue;
 }
 
 /**
  * Create a new placed shard with dynamic movement
- * 
+ *
  * Requirements: 5.1
- * 
+ *
  * @param id - Unique identifier for the shard
  * @param position - X/Y position
  * @param lane - Lane the shard is in
@@ -307,11 +331,11 @@ export function createPlacedShard(
   id: string,
   position: ShardPosition,
   lane: Lane,
-  type: 'safe' | 'risky',
+  type: "safe" | "risky",
   config: ShardConfig = DEFAULT_SHARD_CONFIG
 ): PlacedShard {
   const movement = generateShardMovement(type);
-  
+
   return {
     id,
     x: position.x,
@@ -323,16 +347,16 @@ export function createPlacedShard(
     value: config.baseShardValue,
     collected: false,
     movement,
-    spawnTime: Date.now()
+    spawnTime: Date.now(),
   };
 }
 
 /**
  * Check if a shard position is within the playable area
- * 
+ *
  * Requirements: 5.1
  * Ensures shards are always collectible by the player.
- * 
+ *
  * @param position - Position to validate
  * @param playableArea - Boundaries of the playable area
  * @returns True if position is valid
@@ -351,10 +375,10 @@ export function isPositionInPlayableArea(
 
 /**
  * Validate that a shard's lane matches its Y position
- * 
+ *
  * Requirements: 5.1
  * TOP lane shards should be in upper half, BOTTOM in lower half.
- * 
+ *
  * @param shard - Shard to validate
  * @param canvasHeight - Height of the game canvas
  * @returns True if lane and position are consistent
@@ -364,8 +388,8 @@ export function validateShardLanePosition(
   canvasHeight: number
 ): boolean {
   const midpoint = canvasHeight / 2;
-  
-  if (shard.lane === 'TOP') {
+
+  if (shard.lane === "TOP") {
     return shard.y < midpoint;
   } else {
     return shard.y >= midpoint;
@@ -374,7 +398,7 @@ export function validateShardLanePosition(
 
 /**
  * Clamp a position to be within the playable area
- * 
+ *
  * @param position - Position to clamp
  * @param playableArea - Boundaries to clamp to
  * @returns Clamped position
@@ -385,16 +409,16 @@ export function clampToPlayableArea(
 ): ShardPosition {
   return {
     x: Math.max(playableArea.minX, Math.min(playableArea.maxX, position.x)),
-    y: Math.max(playableArea.minY, Math.min(playableArea.maxY, position.y))
+    y: Math.max(playableArea.minY, Math.min(playableArea.maxY, position.y)),
   };
 }
 
 /**
  * Calculate shard position based on pattern definition
- * 
+ *
  * Requirements: 5.1, 5.2, 5.3
  * Determines position based on shard type (safe/risky).
- * 
+ *
  * @param lane - Lane for the shard
  * @param type - Safe or risky shard
  * @param timeOffset - Time offset in the pattern
@@ -406,7 +430,7 @@ export function clampToPlayableArea(
  */
 export function calculateShardPositionFromPattern(
   lane: Lane,
-  type: 'safe' | 'risky',
+  type: "safe" | "risky",
   timeOffset: number,
   gameSpeed: number,
   canvasHeight: number,
@@ -415,13 +439,13 @@ export function calculateShardPositionFromPattern(
 ): ShardPosition {
   // Calculate X based on time offset and speed
   // Shards spawn from the right side of the screen
-  const baseX = canvasWidth + (timeOffset * gameSpeed / 100);
-  
-  if (type === 'safe') {
+  const baseX = canvasWidth + (timeOffset * gameSpeed) / 100;
+
+  if (type === "safe") {
     // Safe shards: centered in lane
     return calculateSafeShardPosition(
-      baseX - 50,  // Gap start
-      baseX + 50,  // Gap end
+      baseX - 50, // Gap start
+      baseX + 50, // Gap end
       lane,
       canvasHeight
     );
@@ -438,14 +462,14 @@ export function calculateShardPositionFromPattern(
     // Fallback if no obstacle info
     return {
       x: baseX,
-      y: lane === 'TOP' ? canvasHeight * 0.25 : canvasHeight * 0.75
+      y: lane === "TOP" ? canvasHeight * 0.25 : canvasHeight * 0.75,
     };
   }
 }
 
 /**
  * Generate unique shard ID
- * 
+ *
  * @param patternId - ID of the pattern
  * @param shardIndex - Index of the shard in the pattern
  * @returns Unique shard ID
@@ -456,7 +480,7 @@ export function generateShardId(patternId: string, shardIndex: number): string {
 
 /**
  * Check if player is close enough to collect a shard
- * 
+ *
  * @param playerX - Player X position
  * @param playerY - Player Y position
  * @param shard - Shard to check
@@ -472,23 +496,23 @@ export function canCollectShard(
   if (shard.collected) {
     return false;
   }
-  
+
   const dx = playerX - shard.x;
   const dy = playerY - shard.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  
+
   return distance <= collectionRadius;
 }
 
 /**
  * Mark a shard as collected
- * 
+ *
  * @param shard - Shard to mark
  * @returns Updated shard with collected = true
  */
 export function markShardCollected(shard: PlacedShard): PlacedShard {
   return {
     ...shard,
-    collected: true
+    collected: true,
   };
 }

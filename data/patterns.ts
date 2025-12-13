@@ -6,12 +6,16 @@
 /**
  * Lane type - represents the two playable lanes
  */
-export type Lane = 'TOP' | 'BOTTOM';
+export type Lane = "TOP" | "BOTTOM";
 
 /**
  * Pattern difficulty levels
  */
-export type PatternDifficulty = 'basic' | 'intermediate' | 'advanced' | 'expert';
+export type PatternDifficulty =
+  | "basic"
+  | "intermediate"
+  | "advanced"
+  | "expert";
 
 /**
  * Obstacle definition within a pattern
@@ -19,8 +23,8 @@ export type PatternDifficulty = 'basic' | 'intermediate' | 'advanced' | 'expert'
  */
 export interface PatternObstacle {
   lane: Lane;
-  timeOffset: number;    // ms - Pattern başlangıcına göre
-  heightRatio?: number;  // 0-1 arası, varsayılan 0.5
+  timeOffset: number; // ms - Pattern başlangıcına göre
+  heightRatio?: number; // 0-1 arası, varsayılan 0.5
 }
 
 /**
@@ -30,7 +34,7 @@ export interface PatternObstacle {
 export interface PatternShard {
   lane: Lane;
   timeOffset: number;
-  type: 'safe' | 'risky';
+  type: "safe" | "risky";
   positionOffset?: number; // Engele göre offset (risky için)
 }
 
@@ -52,7 +56,7 @@ export interface PatternChunk {
   steps: Array<{
     beat: number;
     heightRatio?: number;
-    shard?: { lane: Lane; type: 'safe' | 'risky' };
+    shard?: { lane: Lane; type: "safe" | "risky" };
   }>;
 }
 
@@ -64,7 +68,7 @@ export interface Pattern {
   id: string;
   name: string;
   difficulty: PatternDifficulty;
-  duration: number;      // ms - Pattern toplam süresi
+  duration: number; // ms - Pattern toplam süresi
   obstacles: PatternObstacle[];
   shards: PatternShard[];
 }
@@ -75,17 +79,15 @@ export interface Pattern {
  * Most common pattern - altlı üstlü bloklar
  */
 const GATE_PATTERN: Pattern = {
-  id: 'gate',
-  name: 'The Gate',
-  difficulty: 'basic',
-  duration: 800,  // Faster pattern (was 1500)
+  id: "gate",
+  name: "The Gate",
+  difficulty: "basic",
+  duration: 800, // Faster pattern (was 1500)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 }
+    { lane: "TOP", timeOffset: 0 },
+    { lane: "BOTTOM", timeOffset: 0 },
   ],
-  shards: [
-    { lane: 'TOP', timeOffset: 400, type: 'safe' }
-  ]
+  shards: [{ lane: "TOP", timeOffset: 400, type: "safe" }],
 };
 
 /**
@@ -93,20 +95,20 @@ const GATE_PATTERN: Pattern = {
  * Requirements: 3.1
  */
 const DOUBLE_GATE_PATTERN: Pattern = {
-  id: 'double_gate',
-  name: 'Double Gate',
-  difficulty: 'basic',
+  id: "double_gate",
+  name: "Double Gate",
+  difficulty: "basic",
   duration: 1200,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 },
-    { lane: 'TOP', timeOffset: 600 },
-    { lane: 'BOTTOM', timeOffset: 600 }
+    { lane: "TOP", timeOffset: 0 },
+    { lane: "BOTTOM", timeOffset: 0 },
+    { lane: "TOP", timeOffset: 600 },
+    { lane: "BOTTOM", timeOffset: 600 },
   ],
   shards: [
-    { lane: 'TOP', timeOffset: 300, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 900, type: 'safe' }
-  ]
+    { lane: "TOP", timeOffset: 300, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 900, type: "safe" },
+  ],
 };
 
 /**
@@ -114,18 +116,18 @@ const DOUBLE_GATE_PATTERN: Pattern = {
  * Requirements: 3.5
  */
 const BREATHER_PATTERN: Pattern = {
-  id: 'breather',
-  name: 'Breather',
-  difficulty: 'basic',
-  duration: 1000,  // Faster (was 2000)
+  id: "breather",
+  name: "Breather",
+  difficulty: "basic",
+  duration: 1000, // Faster (was 2000)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 }  // Added bottom for gate style
+    { lane: "TOP", timeOffset: 0 },
+    { lane: "BOTTOM", timeOffset: 0 }, // Added bottom for gate style
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 300, type: 'safe' },
-    { lane: 'TOP', timeOffset: 600, type: 'safe' }
-  ]
+    { lane: "BOTTOM", timeOffset: 300, type: "safe" },
+    { lane: "TOP", timeOffset: 600, type: "safe" },
+  ],
 };
 
 /**
@@ -133,25 +135,25 @@ const BREATHER_PATTERN: Pattern = {
  * Requirements: 3.2
  */
 const ZIGZAG_PATTERN: Pattern = {
-  id: 'zigzag',
-  name: 'Zig-Zag',
-  difficulty: 'intermediate',
-  duration: 1400,  // Faster (was 2000)
+  id: "zigzag",
+  name: "Zig-Zag",
+  difficulty: "intermediate",
+  duration: 1400, // Faster (was 2000)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 },
-    { lane: 'TOP', timeOffset: 350 },
-    { lane: 'BOTTOM', timeOffset: 350 },
-    { lane: 'TOP', timeOffset: 700 },
-    { lane: 'BOTTOM', timeOffset: 700 },
-    { lane: 'TOP', timeOffset: 1050 },
-    { lane: 'BOTTOM', timeOffset: 1050 }
+    { lane: "TOP", timeOffset: 0 },
+    { lane: "BOTTOM", timeOffset: 0 },
+    { lane: "TOP", timeOffset: 350 },
+    { lane: "BOTTOM", timeOffset: 350 },
+    { lane: "TOP", timeOffset: 700 },
+    { lane: "BOTTOM", timeOffset: 700 },
+    { lane: "TOP", timeOffset: 1050 },
+    { lane: "BOTTOM", timeOffset: 1050 },
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 175, type: 'safe' },
-    { lane: 'TOP', timeOffset: 525, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 875, type: 'safe' }
-  ]
+    { lane: "BOTTOM", timeOffset: 175, type: "safe" },
+    { lane: "TOP", timeOffset: 525, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 875, type: "safe" },
+  ],
 };
 
 /**
@@ -159,25 +161,25 @@ const ZIGZAG_PATTERN: Pattern = {
  * Requirements: 3.3
  */
 const TUNNEL_PATTERN: Pattern = {
-  id: 'tunnel',
-  name: 'The Tunnel',
-  difficulty: 'advanced',
-  duration: 1600,  // Faster (was 2500)
+  id: "tunnel",
+  name: "The Tunnel",
+  difficulty: "advanced",
+  duration: 1600, // Faster (was 2500)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0 },
-    { lane: 'BOTTOM', timeOffset: 0 },
-    { lane: 'TOP', timeOffset: 400 },
-    { lane: 'BOTTOM', timeOffset: 400 },
-    { lane: 'TOP', timeOffset: 800 },
-    { lane: 'BOTTOM', timeOffset: 800 },
-    { lane: 'TOP', timeOffset: 1200 },
-    { lane: 'BOTTOM', timeOffset: 1200 }
+    { lane: "TOP", timeOffset: 0 },
+    { lane: "BOTTOM", timeOffset: 0 },
+    { lane: "TOP", timeOffset: 400 },
+    { lane: "BOTTOM", timeOffset: 400 },
+    { lane: "TOP", timeOffset: 800 },
+    { lane: "BOTTOM", timeOffset: 800 },
+    { lane: "TOP", timeOffset: 1200 },
+    { lane: "BOTTOM", timeOffset: 1200 },
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 200, type: 'safe' },
-    { lane: 'TOP', timeOffset: 600, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 1000, type: 'safe' }
-  ]
+    { lane: "BOTTOM", timeOffset: 200, type: "safe" },
+    { lane: "TOP", timeOffset: 600, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1000, type: "safe" },
+  ],
 };
 
 /**
@@ -185,146 +187,146 @@ const TUNNEL_PATTERN: Pattern = {
  * Requirements: 3.4
  */
 const GAUNTLET_PATTERN: Pattern = {
-  id: 'gauntlet',
-  name: 'The Gauntlet',
-  difficulty: 'expert',
-  duration: 1500,  // Faster (was 2000)
+  id: "gauntlet",
+  name: "The Gauntlet",
+  difficulty: "expert",
+  duration: 1500, // Faster (was 2000)
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.75 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.75 },
-    { lane: 'TOP', timeOffset: 250, heightRatio: 0.25 },
-    { lane: 'BOTTOM', timeOffset: 250, heightRatio: 0.25 },
-    { lane: 'TOP', timeOffset: 500, heightRatio: 0.8 },
-    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.8 },
-    { lane: 'TOP', timeOffset: 750, heightRatio: 0.2 },
-    { lane: 'BOTTOM', timeOffset: 750, heightRatio: 0.2 },
-    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.7 },
-    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.7 },
-    { lane: 'TOP', timeOffset: 1250, heightRatio: 0.3 },
-    { lane: 'BOTTOM', timeOffset: 1250, heightRatio: 0.3 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.75 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.75 },
+    { lane: "TOP", timeOffset: 250, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 250, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 500, heightRatio: 0.8 },
+    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.8 },
+    { lane: "TOP", timeOffset: 750, heightRatio: 0.2 },
+    { lane: "BOTTOM", timeOffset: 750, heightRatio: 0.2 },
+    { lane: "TOP", timeOffset: 1000, heightRatio: 0.7 },
+    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.7 },
+    { lane: "TOP", timeOffset: 1250, heightRatio: 0.3 },
+    { lane: "BOTTOM", timeOffset: 1250, heightRatio: 0.3 },
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 125, type: 'risky' },
-    { lane: 'TOP', timeOffset: 375, type: 'risky' },
-    { lane: 'BOTTOM', timeOffset: 625, type: 'risky' },
-    { lane: 'TOP', timeOffset: 875, type: 'risky' }
-  ]
+    { lane: "BOTTOM", timeOffset: 125, type: "risky" },
+    { lane: "TOP", timeOffset: 375, type: "risky" },
+    { lane: "BOTTOM", timeOffset: 625, type: "risky" },
+    { lane: "TOP", timeOffset: 875, type: "risky" },
+  ],
 };
 
 /**
  * Stairs Pattern - Gap center climbs steadily (learnable "stairs" motion)
  */
 const STAIRS_PATTERN: Pattern = {
-  id: 'stairs',
-  name: 'Stairs',
-  difficulty: 'intermediate',
+  id: "stairs",
+  name: "Stairs",
+  difficulty: "intermediate",
   duration: 1600,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.25 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.25 },
-    { lane: 'TOP', timeOffset: 400, heightRatio: 0.35 },
-    { lane: 'BOTTOM', timeOffset: 400, heightRatio: 0.35 },
-    { lane: 'TOP', timeOffset: 800, heightRatio: 0.5 },
-    { lane: 'BOTTOM', timeOffset: 800, heightRatio: 0.5 },
-    { lane: 'TOP', timeOffset: 1200, heightRatio: 0.65 },
-    { lane: 'BOTTOM', timeOffset: 1200, heightRatio: 0.65 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 400, heightRatio: 0.35 },
+    { lane: "BOTTOM", timeOffset: 400, heightRatio: 0.35 },
+    { lane: "TOP", timeOffset: 800, heightRatio: 0.5 },
+    { lane: "BOTTOM", timeOffset: 800, heightRatio: 0.5 },
+    { lane: "TOP", timeOffset: 1200, heightRatio: 0.65 },
+    { lane: "BOTTOM", timeOffset: 1200, heightRatio: 0.65 },
   ],
   shards: [
-    { lane: 'TOP', timeOffset: 200, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 1000, type: 'safe' }
-  ]
+    { lane: "TOP", timeOffset: 200, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1000, type: "safe" },
+  ],
 };
 
 /**
  * Switchback Pattern - Alternates high/low gap center, forcing quick re-centering
  */
 const SWITCHBACK_PATTERN: Pattern = {
-  id: 'switchback',
-  name: 'Switchback',
-  difficulty: 'intermediate',
+  id: "switchback",
+  name: "Switchback",
+  difficulty: "intermediate",
   duration: 1500,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.2 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.2 },
-    { lane: 'TOP', timeOffset: 500, heightRatio: 0.8 },
-    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.8 },
-    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.25 },
-    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.25 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.2 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.2 },
+    { lane: "TOP", timeOffset: 500, heightRatio: 0.8 },
+    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.8 },
+    { lane: "TOP", timeOffset: 1000, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.25 },
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 250, type: 'risky' },
-    { lane: 'TOP', timeOffset: 750, type: 'risky' }
-  ]
+    { lane: "BOTTOM", timeOffset: 250, type: "risky" },
+    { lane: "TOP", timeOffset: 750, type: "risky" },
+  ],
 };
 
 /**
  * Pulse Pattern - Repeated center-ish gates with slight offset pulses
  */
 const PULSE_PATTERN: Pattern = {
-  id: 'pulse',
-  name: 'Pulse',
-  difficulty: 'basic',
+  id: "pulse",
+  name: "Pulse",
+  difficulty: "basic",
   duration: 1500,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.45 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.45 },
-    { lane: 'TOP', timeOffset: 500, heightRatio: 0.55 },
-    { lane: 'BOTTOM', timeOffset: 500, heightRatio: 0.55 },
-    { lane: 'TOP', timeOffset: 1000, heightRatio: 0.5 },
-    { lane: 'BOTTOM', timeOffset: 1000, heightRatio: 0.5 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.45 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.45 },
+    { lane: "TOP", timeOffset: 500, heightRatio: 0.55 },
+    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.55 },
+    { lane: "TOP", timeOffset: 1000, heightRatio: 0.5 },
+    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.5 },
   ],
   shards: [
-    { lane: 'TOP', timeOffset: 250, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 1250, type: 'safe' }
-  ]
+    { lane: "TOP", timeOffset: 250, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1250, type: "safe" },
+  ],
 };
 
 /**
  * Chicane Pattern - Quick left/right (high/low) with short cadence
  */
 const CHICANE_PATTERN: Pattern = {
-  id: 'chicane',
-  name: 'Chicane',
-  difficulty: 'advanced',
+  id: "chicane",
+  name: "Chicane",
+  difficulty: "advanced",
   duration: 1400,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.7 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.7 },
-    { lane: 'TOP', timeOffset: 350, heightRatio: 0.3 },
-    { lane: 'BOTTOM', timeOffset: 350, heightRatio: 0.3 },
-    { lane: 'TOP', timeOffset: 700, heightRatio: 0.75 },
-    { lane: 'BOTTOM', timeOffset: 700, heightRatio: 0.75 },
-    { lane: 'TOP', timeOffset: 1050, heightRatio: 0.35 },
-    { lane: 'BOTTOM', timeOffset: 1050, heightRatio: 0.35 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.7 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.7 },
+    { lane: "TOP", timeOffset: 350, heightRatio: 0.3 },
+    { lane: "BOTTOM", timeOffset: 350, heightRatio: 0.3 },
+    { lane: "TOP", timeOffset: 700, heightRatio: 0.75 },
+    { lane: "BOTTOM", timeOffset: 700, heightRatio: 0.75 },
+    { lane: "TOP", timeOffset: 1050, heightRatio: 0.35 },
+    { lane: "BOTTOM", timeOffset: 1050, heightRatio: 0.35 },
   ],
   shards: [
-    { lane: 'TOP', timeOffset: 175, type: 'safe' },
-    { lane: 'BOTTOM', timeOffset: 875, type: 'risky' }
-  ]
+    { lane: "TOP", timeOffset: 175, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 875, type: "risky" },
+  ],
 };
 
 /**
  * Squeeze Pattern - Narrow-ish, consistent bias to one side
  */
 const SQUEEZE_PATTERN: Pattern = {
-  id: 'squeeze',
-  name: 'Squeeze',
-  difficulty: 'advanced',
+  id: "squeeze",
+  name: "Squeeze",
+  difficulty: "advanced",
   duration: 1600,
   obstacles: [
-    { lane: 'TOP', timeOffset: 0, heightRatio: 0.2 },
-    { lane: 'BOTTOM', timeOffset: 0, heightRatio: 0.2 },
-    { lane: 'TOP', timeOffset: 400, heightRatio: 0.25 },
-    { lane: 'BOTTOM', timeOffset: 400, heightRatio: 0.25 },
-    { lane: 'TOP', timeOffset: 800, heightRatio: 0.3 },
-    { lane: 'BOTTOM', timeOffset: 800, heightRatio: 0.3 },
-    { lane: 'TOP', timeOffset: 1200, heightRatio: 0.25 },
-    { lane: 'BOTTOM', timeOffset: 1200, heightRatio: 0.25 }
+    { lane: "TOP", timeOffset: 0, heightRatio: 0.2 },
+    { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.2 },
+    { lane: "TOP", timeOffset: 400, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 400, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 800, heightRatio: 0.3 },
+    { lane: "BOTTOM", timeOffset: 800, heightRatio: 0.3 },
+    { lane: "TOP", timeOffset: 1200, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 1200, heightRatio: 0.25 },
   ],
   shards: [
-    { lane: 'BOTTOM', timeOffset: 600, type: 'safe' },
-    { lane: 'TOP', timeOffset: 1000, type: 'risky' }
-  ]
+    { lane: "BOTTOM", timeOffset: 600, type: "safe" },
+    { lane: "TOP", timeOffset: 1000, type: "risky" },
+  ],
 };
 
 /**
@@ -334,7 +336,7 @@ const SQUEEZE_PATTERN: Pattern = {
  */
 export const PATTERNS: Pattern[] = [
   GATE_PATTERN,
-  GATE_PATTERN,      // Duplicate for higher weight
+  GATE_PATTERN, // Duplicate for higher weight
   DOUBLE_GATE_PATTERN,
   BREATHER_PATTERN,
   PULSE_PATTERN,
@@ -344,7 +346,7 @@ export const PATTERNS: Pattern[] = [
   TUNNEL_PATTERN,
   CHICANE_PATTERN,
   SQUEEZE_PATTERN,
-  GAUNTLET_PATTERN
+  GAUNTLET_PATTERN,
 ];
 
 /**
@@ -358,7 +360,7 @@ export const FALLBACK_PATTERN: Pattern = BREATHER_PATTERN;
  * @returns Pattern or undefined if not found
  */
 export function getPatternById(patternId: string): Pattern | undefined {
-  return PATTERNS.find(p => p.id === patternId);
+  return PATTERNS.find((p) => p.id === patternId);
 }
 
 /**
@@ -366,22 +368,24 @@ export function getPatternById(patternId: string): Pattern | undefined {
  * @param difficulty - Difficulty level to filter by
  * @returns Array of patterns matching the difficulty
  */
-export function getPatternsByDifficulty(difficulty: PatternDifficulty): Pattern[] {
-  return PATTERNS.filter(p => p.difficulty === difficulty);
+export function getPatternsByDifficulty(
+  difficulty: PatternDifficulty
+): Pattern[] {
+  return PATTERNS.filter((p) => p.difficulty === difficulty);
 }
 
 /**
  * Get all basic patterns (for early game)
  */
 export function getBasicPatterns(): Pattern[] {
-  return getPatternsByDifficulty('basic');
+  return getPatternsByDifficulty("basic");
 }
 
 /**
  * Check if a pattern ID is valid
  */
 export function isValidPatternId(patternId: string): boolean {
-  return PATTERNS.some(p => p.id === patternId);
+  return PATTERNS.some((p) => p.id === patternId);
 }
 
 /**
@@ -403,11 +407,11 @@ export function serializePattern(pattern: Pattern): string {
  */
 export function deserializePattern(json: string): Pattern {
   const parsed = JSON.parse(json);
-  
+
   if (!validatePattern(parsed)) {
-    throw new Error('Invalid pattern structure');
+    throw new Error("Invalid pattern structure");
   }
-  
+
   return parsed as Pattern;
 }
 
@@ -418,31 +422,31 @@ export function deserializePattern(json: string): Pattern {
  * @returns true if valid Pattern structure
  */
 export function validatePattern(obj: unknown): obj is Pattern {
-  if (typeof obj !== 'object' || obj === null) {
+  if (typeof obj !== "object" || obj === null) {
     return false;
   }
-  
+
   const pattern = obj as Record<string, unknown>;
-  
+
   // Check required string fields
-  if (typeof pattern.id !== 'string' || pattern.id.length === 0) {
+  if (typeof pattern.id !== "string" || pattern.id.length === 0) {
     return false;
   }
-  if (typeof pattern.name !== 'string' || pattern.name.length === 0) {
+  if (typeof pattern.name !== "string" || pattern.name.length === 0) {
     return false;
   }
-  
+
   // Check difficulty
-  const validDifficulties = ['basic', 'intermediate', 'advanced', 'expert'];
+  const validDifficulties = ["basic", "intermediate", "advanced", "expert"];
   if (!validDifficulties.includes(pattern.difficulty as string)) {
     return false;
   }
-  
+
   // Check duration
-  if (typeof pattern.duration !== 'number' || pattern.duration <= 0) {
+  if (typeof pattern.duration !== "number" || pattern.duration <= 0) {
     return false;
   }
-  
+
   // Check obstacles array
   if (!Array.isArray(pattern.obstacles)) {
     return false;
@@ -452,7 +456,7 @@ export function validatePattern(obj: unknown): obj is Pattern {
       return false;
     }
   }
-  
+
   // Check shards array
   if (!Array.isArray(pattern.shards)) {
     return false;
@@ -462,7 +466,7 @@ export function validatePattern(obj: unknown): obj is Pattern {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -470,31 +474,33 @@ export function validatePattern(obj: unknown): obj is Pattern {
  * Validate obstacle structure
  */
 function validatePatternObstacle(obj: unknown): obj is PatternObstacle {
-  if (typeof obj !== 'object' || obj === null) {
+  if (typeof obj !== "object" || obj === null) {
     return false;
   }
-  
+
   const obstacle = obj as Record<string, unknown>;
-  
+
   // Check lane
-  if (obstacle.lane !== 'TOP' && obstacle.lane !== 'BOTTOM') {
+  if (obstacle.lane !== "TOP" && obstacle.lane !== "BOTTOM") {
     return false;
   }
-  
+
   // Check timeOffset
-  if (typeof obstacle.timeOffset !== 'number' || obstacle.timeOffset < 0) {
+  if (typeof obstacle.timeOffset !== "number" || obstacle.timeOffset < 0) {
     return false;
   }
-  
+
   // Check optional heightRatio
   if (obstacle.heightRatio !== undefined) {
-    if (typeof obstacle.heightRatio !== 'number' || 
-        obstacle.heightRatio < 0 || 
-        obstacle.heightRatio > 1) {
+    if (
+      typeof obstacle.heightRatio !== "number" ||
+      obstacle.heightRatio < 0 ||
+      obstacle.heightRatio > 1
+    ) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -502,33 +508,33 @@ function validatePatternObstacle(obj: unknown): obj is PatternObstacle {
  * Validate shard structure
  */
 function validatePatternShard(obj: unknown): obj is PatternShard {
-  if (typeof obj !== 'object' || obj === null) {
+  if (typeof obj !== "object" || obj === null) {
     return false;
   }
-  
+
   const shard = obj as Record<string, unknown>;
-  
+
   // Check lane
-  if (shard.lane !== 'TOP' && shard.lane !== 'BOTTOM') {
+  if (shard.lane !== "TOP" && shard.lane !== "BOTTOM") {
     return false;
   }
-  
+
   // Check timeOffset
-  if (typeof shard.timeOffset !== 'number' || shard.timeOffset < 0) {
+  if (typeof shard.timeOffset !== "number" || shard.timeOffset < 0) {
     return false;
   }
-  
+
   // Check type
-  if (shard.type !== 'safe' && shard.type !== 'risky') {
+  if (shard.type !== "safe" && shard.type !== "risky") {
     return false;
   }
-  
+
   // Check optional positionOffset
   if (shard.positionOffset !== undefined) {
-    if (typeof shard.positionOffset !== 'number') {
+    if (typeof shard.positionOffset !== "number") {
       return false;
     }
   }
-  
+
   return true;
 }
