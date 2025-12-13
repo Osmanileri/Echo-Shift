@@ -35,7 +35,7 @@ export const ZONES: ZoneConfig[] = [
       via: "via-white/5",
       to: "to-transparent",
     },
-    modifiers: { speedMultiplier: 0.95, spawnRateMultiplier: 0.95 },
+    modifiers: { speedMultiplier: 0.7, spawnRateMultiplier: 0.6 }, // Çok yavaş başlangıç
     unlockCost: 0,
   },
   {
@@ -49,7 +49,7 @@ export const ZONES: ZoneConfig[] = [
       via: "via-white/5",
       to: "to-transparent",
     },
-    modifiers: { speedMultiplier: 1.0, spawnRateMultiplier: 1.0 },
+    modifiers: { speedMultiplier: 0.85, spawnRateMultiplier: 0.8 }, // Yavaş
     unlockCost: 300,
   },
   {
@@ -63,7 +63,7 @@ export const ZONES: ZoneConfig[] = [
       via: "via-white/5",
       to: "to-transparent",
     },
-    modifiers: { speedMultiplier: 1.05, spawnRateMultiplier: 1.05 },
+    modifiers: { speedMultiplier: 1.0, spawnRateMultiplier: 1.0 }, // Normal
     unlockCost: 900,
   },
   {
@@ -77,7 +77,7 @@ export const ZONES: ZoneConfig[] = [
       via: "via-white/5",
       to: "to-transparent",
     },
-    modifiers: { speedMultiplier: 1.1, spawnRateMultiplier: 1.1 },
+    modifiers: { speedMultiplier: 1.1, spawnRateMultiplier: 1.1 }, // Biraz hızlı
     unlockCost: 2000,
   },
   {
@@ -91,7 +91,7 @@ export const ZONES: ZoneConfig[] = [
       via: "via-white/5",
       to: "to-transparent",
     },
-    modifiers: { speedMultiplier: 1.15, spawnRateMultiplier: 1.12 },
+    modifiers: { speedMultiplier: 1.2, spawnRateMultiplier: 1.15 }, // Hızlı
     unlockCost: 5000,
   },
 ];

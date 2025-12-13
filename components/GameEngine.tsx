@@ -654,8 +654,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const edgeMargin = 30; // Kenar güvenlik payı (küçültüldü)
 
       // Çubuk uzunluğuna bağlı sıfır geçiş miktarı
-      // crossFactor: 0.8 = çubuk uzunluğunun %80'i kadar midline'ı geçebilir
-      const crossFactor = 0.8;
+      // crossFactor: 0.6 = çubuk uzunluğunun %60'ı kadar midline'ı geçebilir (daha geniş alan)
+      const crossFactor = 0.6;
       const maxCrossDistance = connectorLen * crossFactor;
 
       // Gap merkezi sınırları:
@@ -691,19 +691,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // 3. Zıt renkli top, bloka değerse ölür
     // 4. Max geçiş = connector uzunluğu (oyuncunun uzanabileceği max nokta)
 
-    // Minimum boşluk = connector + 2 orb + güvenlik payı
-    const minGap = connectorLen + orbRadius * 2 + 10;
+    // Minimum boşluk = connector + 2 orb + güvenlik payı (artırıldı)
+    const minGap = connectorLen + orbRadius * 2 + 25;
 
     // Rastgele polarite - üst ve alt bloklar ZIT renklerde
     const topPolarity: "white" | "black" = Math.random() > 0.5 ? "white" : "black";
     const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
 
-    // === AGRESİF SIFIR GEÇİŞ MEKANİĞİ ===
+    // === DAHA YUMUŞAK SIFIR GEÇİŞ MEKANİĞİ ===
     // maxCrossDistance = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
     const maxCrossDistance = connectorLen - orbRadius;
 
-    // Rastgele geçiş miktarı: %30 ile %100 arası (her zaman önemli bir geçiş)
-    const crossAmount = 0.3 + Math.random() * 0.7;
+    // Rastgele geçiş miktarı: %15 ile %60 arası (daha kolay başlangıç)
+    // Skor arttıkça zorluk artacak
+    const difficultyFactor = Math.min(1, score.current / 3000); // 3000 skorda max zorluk
+    const minCross = 0.15 + difficultyFactor * 0.15; // 0.15 -> 0.30
+    const maxCross = 0.45 + difficultyFactor * 0.25; // 0.45 -> 0.70
+    const crossAmount = minCross + Math.random() * (maxCross - minCross);
     const actualCross = crossAmount * maxCrossDistance;
 
     // TAM RASTGELE YÖN: %50 üst aşağı geçer, %50 alt yukarı geçer
