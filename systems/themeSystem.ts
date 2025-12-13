@@ -55,9 +55,17 @@ export function applyTheme(themeId: string): Theme {
 
 export function setCustomThemeColors(colors: ThemeColors | null): void {
   themeState.customThemeColors = colors;
-  // If currently using custom theme, re-apply to update runtime theme
-  if (themeState.currentTheme.id === "custom" && colors) {
-    applyTheme("custom");
+  // ALWAYS immediately apply custom theme when colors are provided
+  // This ensures instant theme updates without waiting for multiple React renders
+  if (colors) {
+    // Immediately create and apply custom theme
+    const customTheme: Theme = {
+      id: "custom",
+      name: "Custom",
+      price: 0,
+      colors: colors,
+    };
+    themeState.currentTheme = customTheme;
   }
 }
 

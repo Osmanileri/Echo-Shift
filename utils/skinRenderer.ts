@@ -33,7 +33,10 @@ export interface OrbRenderParams {
  */
 export function renderSolidOrb(params: OrbRenderParams, config: SkinConfig, useThemeColors: boolean = false): void {
   const { ctx, x, y, radius, isTopOrb } = params;
-  
+
+  // Fallback colors
+  const fallbackColor = isTopOrb ? '#FFFFFF' : '#000000';
+
   // Use theme colors if specified, otherwise use skin config colors
   let color: string;
   if (useThemeColors) {
@@ -41,9 +44,12 @@ export function renderSolidOrb(params: OrbRenderParams, config: SkinConfig, useT
   } else {
     color = isTopOrb ? config.topColor || '' : config.bottomColor || '';
   }
-  
-  if (!color) return;
-  
+
+  // Ensure we always have a valid color
+  if (!color) {
+    color = fallbackColor;
+  }
+
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = color;
@@ -54,16 +60,26 @@ export function renderSolidOrb(params: OrbRenderParams, config: SkinConfig, useT
 /**
  * Render a gradient orb with optional glow effect
  * Requirements: 3.2, 3.4 - gradient orbs with visual effects
+ * Theme System Integration - uses theme colors as base
  * 
  * @param params - Render parameters
  * @param config - Skin configuration
  */
 export function renderGradientOrb(params: OrbRenderParams, config: SkinConfig): void {
-  const { ctx, x, y, radius } = params;
-  
+  const { ctx, x, y, radius, isTopOrb } = params;
+
   if (!config.gradient) return;
 
-  
+  // First draw theme-colored base for contrast
+  const bgColor = isTopOrb ? getColor('topOrb') : getColor('bottomOrb');
+  const fallbackColor = isTopOrb ? '#FFFFFF' : '#000000';
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = bgColor || fallbackColor;
+  ctx.fill();
+  ctx.closePath();
+
   // Apply glow effect if configured - Requirements 3.4
   if (config.glowColor && config.glowIntensity) {
     ctx.save();
@@ -72,8 +88,8 @@ export function renderGradientOrb(params: OrbRenderParams, config: SkinConfig): 
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
   }
-  
-  // Create radial gradient
+
+  // Create radial gradient overlay
   const gradient = ctx.createRadialGradient(
     x - radius * 0.3, // Offset for 3D effect
     y - radius * 0.3,
@@ -82,16 +98,16 @@ export function renderGradientOrb(params: OrbRenderParams, config: SkinConfig): 
     y,
     radius
   );
-  
+
   gradient.addColorStop(0, config.gradient.start);
   gradient.addColorStop(1, config.gradient.end);
-  
+
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = gradient;
   ctx.fill();
   ctx.closePath();
-  
+
   // Restore context if glow was applied
   if (config.glowColor && config.glowIntensity) {
     ctx.restore();
@@ -101,22 +117,27 @@ export function renderGradientOrb(params: OrbRenderParams, config: SkinConfig): 
 /**
  * Render an emoji orb
  * Requirements: 3.2 - emoji-based orbs
+ * Theme System Integration - orbs now use theme colors as background
  * 
  * @param params - Render parameters
  * @param config - Skin configuration
  */
 export function renderEmojiOrb(params: OrbRenderParams, config: SkinConfig): void {
-  const { ctx, x, y, radius } = params;
-  
+  const { ctx, x, y, radius, isTopOrb } = params;
+
   if (!config.emoji) return;
-  
-  // Draw a subtle background circle
+
+  // Use theme colors for the background circle
+  const bgColor = isTopOrb ? getColor('topOrb') : getColor('bottomOrb');
+  const fallbackColor = isTopOrb ? '#FFFFFF' : '#000000';
+
+  // Draw solid background circle with theme color
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.fillStyle = bgColor || fallbackColor;
   ctx.fill();
   ctx.closePath();
-  
+
   // Draw emoji centered on the orb
   const fontSize = radius * 1.5;
   ctx.font = `${fontSize}px Arial`;
@@ -130,26 +151,34 @@ export function renderEmojiOrb(params: OrbRenderParams, config: SkinConfig): voi
  * Requirements: 3.1, 3.2, 3.3, 3.4
  * Theme System Integration - Requirements 5.1, 5.2, 5.3
  * 
+ * NEW APPROACH: Orbs always render with theme colors for visibility.
+ * Skins now create trail effects behind orbs (handled by orbTrailSystem).
+ * 
  * @param params - Render parameters
- * @param skin - Ball skin to apply
+ * @param skin - Ball skin to apply (used for emoji overlay only)
  */
 export function renderOrb(params: OrbRenderParams, skin: BallSkin): void {
-  // For default skin, use theme colors - Requirements 5.1, 5.2, 5.3
-  const useThemeColors = skin.id === 'default';
-  
-  switch (skin.type) {
-    case 'solid':
-      renderSolidOrb(params, skin.config, useThemeColors);
-      break;
-    case 'gradient':
-      renderGradientOrb(params, skin.config);
-      break;
-    case 'emoji':
-      renderEmojiOrb(params, skin.config);
-      break;
-    default:
-      // Fallback to solid rendering with theme colors
-      renderSolidOrb(params, skin.config, useThemeColors);
+  const { ctx, x, y, radius, isTopOrb } = params;
+
+  // Get theme colors
+  const orbColor = isTopOrb ? getColor('topOrb') : getColor('bottomOrb');
+  const fallbackColor = isTopOrb ? '#FFFFFF' : '#000000';
+  const fillColor = orbColor || fallbackColor;
+
+  // Always draw solid orb with theme colors
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  ctx.closePath();
+
+  // For emoji skins, overlay the emoji on top
+  if (skin.type === 'emoji' && skin.config.emoji) {
+    const fontSize = radius * 1.4;
+    ctx.font = `${fontSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(skin.config.emoji, x, y);
   }
 }
 
@@ -175,13 +204,13 @@ export function renderOrbsWithSkin(
   skinId: string
 ): void {
   const skin = getSkinById(skinId);
-  
+
   // Render top orb
   renderOrb(
     { ctx, x: topOrbX, y: topOrbY, radius, isTopOrb: true },
     skin
   );
-  
+
   // Render bottom orb
   renderOrb(
     { ctx, x: bottomOrbX, y: bottomOrbY, radius, isTopOrb: false },

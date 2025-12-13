@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, Palette, Save, X } from "lucide-react";
+import { AlertTriangle, Copy, Palette, RotateCcw, Save, X } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import type { ThemeColors } from "../../data/themes";
 import { useGameStore } from "../../store/gameStore";
@@ -112,6 +112,13 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
 
   const handleSaveEquip = () => {
     setCustomThemeColors(draft);
+    onClose();
+  };
+
+  const handleResetToDefault = () => {
+    // Reset to classic black/white theme
+    setCustomThemeColors(null);
+    setDraft(DEFAULT_CUSTOM_COLORS);
     onClose();
   };
 
@@ -311,20 +318,49 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10 bg-black/40 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3.5 rounded-xl border border-white/10 text-white/60 font-bold text-xs tracking-widest hover:bg-white/5 transition-colors uppercase"
-          >
-            Vazgeç
-          </button>
-          <button
-            onClick={handleSaveEquip}
-            className="flex-[2] py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-black text-xs tracking-[0.2em] active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(0,240,255,0.2)] hover:shadow-[0_0_30px_rgba(0,240,255,0.3)] uppercase flex items-center justify-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            Kaydet & Kullan
-          </button>
+        <div className="p-4 border-t border-white/10 bg-black/40 space-y-3">
+          {/* Top Row: Vazgeç + Kullan (Apply/Preview) */}
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-white/10 text-white/60 font-bold text-xs tracking-widest hover:bg-white/5 transition-colors uppercase"
+            >
+              Vazgeç
+            </button>
+            <button
+              onClick={() => {
+                // Apply theme to preview (save to store temporarily)
+                setCustomThemeColors(draft);
+              }}
+              className="flex-1 py-3 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-xs tracking-widest hover:bg-cyan-500/30 transition-colors uppercase"
+            >
+              Kullan
+            </button>
+          </div>
+
+          {/* Bottom Row: Default + Kaydet */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                // Reset to classic black/white theme and apply immediately
+                const defaultTheme = deriveFullTheme("#000000", "#FFFFFF");
+                setDraft(defaultTheme);
+                setCustomThemeColors(null); // This sets equippedTheme to 'default'
+              }}
+              className="py-3 px-5 rounded-xl border border-white/20 text-white/70 font-bold text-xs tracking-widest hover:bg-white/10 transition-colors uppercase flex items-center justify-center gap-2"
+              title="Varsayılan temaya dön"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Default
+            </button>
+            <button
+              onClick={handleSaveEquip}
+              className="flex-[2] py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-black text-xs tracking-[0.2em] active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(0,240,255,0.2)] hover:shadow-[0_0_30px_rgba(0,240,255,0.3)] uppercase flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Kaydet
+            </button>
+          </div>
         </div>
       </div>
     </div>

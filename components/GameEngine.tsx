@@ -105,6 +105,8 @@ import * as ShardPlacement from "../systems/shardPlacement";
 import { setCustomThemeColors } from "../systems/themeSystem";
 // Audio System Integration - Phase 4 Launch Polish
 import * as AudioSystem from "../systems/audioSystem";
+// Orb Trail System - Skins create trail effects behind orbs
+import * as OrbTrailSystem from "../systems/orbTrailSystem";
 
 // Campaign mode configuration for mechanics enable/disable
 export interface CampaignModeConfig {
@@ -492,6 +494,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Chromatic Aberration - Requirements 11.3
     ChromaticAberration.reset();
 
+    // Reset Orb Trail System
+    OrbTrailSystem.resetTrails();
+
+
     // Reset/Initialize Zen Mode State - Requirements 9.1, 9.2, 9.4
     if (zenMode?.enabled) {
       zenModeState.current = ZenMode.activateZenMode(
@@ -589,26 +595,26 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const clamped = Math.max(0, Math.min(1, ratio));
       const midY = canvasHeight / 2;
       const edgeMargin = 30; // Kenar güvenlik payı (küçültüldü)
-      
+
       // Çubuk uzunluğuna bağlı sıfır geçiş miktarı
       // crossFactor: 0.8 = çubuk uzunluğunun %80'i kadar midline'ı geçebilir
       const crossFactor = 0.8;
       const maxCrossDistance = connectorLen * crossFactor;
-      
+
       // Gap merkezi sınırları:
       // - Ekran kenarından halfGap + edgeMargin kadar içeride kalmalı
       // - Midline'dan maxCrossDistance kadar uzaklaşabilir
       const screenMin = halfGap + edgeMargin;
       const screenMax = canvasHeight - halfGap - edgeMargin;
-      
+
       // Midline'ı geçebilecek alan
       const crossMin = midY - maxCrossDistance;
       const crossMax = midY + maxCrossDistance;
-      
+
       // Her iki kısıtlamayı da uygula
       const minCenter = Math.max(screenMin, crossMin);
       const maxCenter = Math.min(screenMax, crossMax);
-      
+
       if (maxCenter <= minCenter) return midY;
       return minCenter + (maxCenter - minCenter) * clamped;
     },
@@ -622,41 +628,60 @@ const GameEngine: React.FC<GameEngineProps> = ({
     const orbRadius = INITIAL_CONFIG.orbRadius;
     const connectorLen = currentConnectorLength.current;
 
-    // Geçiş boşluğu = connector uzunluğu + orb çapı + küçük güvenlik payı
-    // Bu, oyuncunun TAM OLARAK sığabileceği minimum boşluk
-    const passableGap = connectorLen + orbRadius * 2 + 10;
+    // OYUN MEKANİĞİ:
+    // 1. Bloklar sıfır noktasını (midline) AGRESİF şekilde GEÇMELİ
+    // 2. Aynı renkli top, aynı renkli blokun içinden geçer (hasar almaz)
+    // 3. Zıt renkli top, bloka değerse ölür
+    // 4. Max geçiş = connector uzunluğu (oyuncunun uzanabileceği max nokta)
 
-    // Polarities - ZIT RENKLER (üst beyazsa alt siyah)
-    const topPolarity: "white" | "black" =
-      Math.random() > 0.5 ? "white" : "black";
-    const bottomPolarity: "white" | "black" =
-      topPolarity === "white" ? "black" : "white";
+    // Minimum boşluk = connector + 2 orb + güvenlik payı
+    const minGap = connectorLen + orbRadius * 2 + 10;
+
+    // Rastgele polarite - üst ve alt bloklar ZIT renklerde
+    const topPolarity: "white" | "black" = Math.random() > 0.5 ? "white" : "black";
+    const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
+
+    // === AGRESİF SIFIR GEÇİŞ MEKANİĞİ ===
+    // maxCrossDistance = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
+    const maxCrossDistance = connectorLen - orbRadius;
+
+    // Rastgele geçiş miktarı: %30 ile %100 arası (her zaman önemli bir geçiş)
+    const crossAmount = 0.3 + Math.random() * 0.7;
+    const actualCross = crossAmount * maxCrossDistance;
+
+    // TAM RASTGELE YÖN: %50 üst aşağı geçer, %50 alt yukarı geçer
+    const crossFromTop = Math.random() > 0.5;
+
+    // Blok yükseklikleri hesapla
+    let topBlockHeight: number;
+    let bottomBlockTop: number;
+    let bottomBlockHeight: number;
+
+    if (crossFromTop) {
+      // ÜST BLOK AŞAĞI DOĞRU SIFIRI GEÇİYOR
+      // Üst blok midY + actualCross kadar aşağı uzanır
+      topBlockHeight = midY + actualCross;
+      // Alt blok üst bloğun altından minGap kadar aşağıda başlar
+      bottomBlockTop = topBlockHeight + minGap;
+      bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
+    } else {
+      // ALT BLOK YUKARI DOĞRU SIFIRI GEÇİYOR
+      // Alt blok midY - actualCross'tan başlar (yukarı doğru uzanır)
+      bottomBlockTop = midY - actualCross;
+      bottomBlockHeight = canvasHeight - bottomBlockTop;
+      // Üst blok alt bloğun üstünden minGap kadar yukarıda biter
+      topBlockHeight = Math.max(30, bottomBlockTop - minGap);
+    }
+
+    // Güvenlik: ekran sınırları içinde kal
+    topBlockHeight = Math.max(30, topBlockHeight);
+    bottomBlockTop = Math.min(canvasHeight - 30, Math.max(30, bottomBlockTop));
+    bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
 
     // --- LANE INVERSION FOR GRAVITY FLIP ---
     const isGravityFlipped = gravityState.current.isFlipped;
-    const topLane: "top" | "bottom" = isGravityFlipped
-      ? getFlippedLane("top")
-      : "top";
-    const bottomLane: "top" | "bottom" = isGravityFlipped
-      ? getFlippedLane("bottom")
-      : "bottom";
-
-    // === BLOK HESAPLAMASI - SIFIRI GEÇEN BLOKLAR ===
-    // Gap merkezi, connector uzunluğuna bağlı olarak midline'ı geçebilir
-    // Uzun çubuk = bloklar sıfır çizgisini daha fazla geçebilir
-    const halfGap = passableGap / 2;
-    const gapCenter = computeGapCenter(canvasHeight, halfGap, Math.random(), connectorLen);
-
-    // Üst blok: 0'dan (gapCenter - halfGap)'a kadar uzanır
-    // Eğer gapCenter midY'nin altındaysa, üst blok sıfırı GEÇİYOR!
-    const topBlockBottom = gapCenter - halfGap;
-    const topBlockHeight = Math.max(30, topBlockBottom);
-
-    // Alt blok: (gapCenter + halfGap)'dan canvasHeight'a kadar uzanır
-    // Eğer gapCenter midY'nin üstündeyse, alt blok sıfırı GEÇİYOR!
-    const bottomBlockTop = gapCenter + halfGap;
-    const bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
-    const bottomBlockTargetY = bottomBlockTop;
+    const topLane: "top" | "bottom" = isGravityFlipped ? getFlippedLane("top") : "top";
+    const bottomLane: "top" | "bottom" = isGravityFlipped ? getFlippedLane("bottom") : "bottom";
 
     let topObstacle: Obstacle = {
       id: Math.random().toString(36).substring(2, 11),
@@ -689,7 +714,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       id: Math.random().toString(36).substring(2, 11),
       x: spawnX,
       y: canvasHeight,
-      targetY: bottomBlockTargetY,
+      targetY: bottomBlockTop,
       width: obsWidth,
       height: bottomBlockHeight,
       lane: bottomLane,
@@ -720,7 +745,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const shardSpawnSequence = useRef<number>(0);
 
   // Pattern-Based Obstacle Spawn
-  // KRİTİK: Bloklar SIFIRI GEÇMELİ - boşluk merkezi pattern heightRatio ile deterministik hesaplanır
+  // KRİTİK: Bloklar SIFIRI AGRESİF GEÇMELİ - oyun mekaniğinin özü bu
   const spawnPatternObstacle = (
     lane: Lane,
     heightRatio: number,
@@ -733,63 +758,62 @@ const GameEngine: React.FC<GameEngineProps> = ({
     const orbRadius = INITIAL_CONFIG.orbRadius;
     const connectorLen = currentConnectorLength.current;
 
-    // Geçiş boşluğu = connector uzunluğu + orb çapı + güvenlik payı
-    const passableGap = connectorLen + orbRadius * 2 + 10;
-    const halfGap = passableGap / 2;
+    // Minimum boşluk = connector + 2 orb + güvenlik payı
+    const minGap = connectorLen + orbRadius * 2 + 10;
 
-    // Polarity: Üst blok için rastgele, alt blok için ZIT
+    // Max geçiş = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
+    const maxCrossDistance = connectorLen - orbRadius;
+
+    // Polarity mantığı: TOP spawn edilirken polarite belirlenir, BOTTOM zıttını alır
     let polarity: "white" | "black";
-    let gapCenter: number;
 
     if (lane === "TOP") {
-      // Üst blok: pattern-stable polarity (less cognitive load than alternating every gate)
       polarity = patternPolarity.current;
       lastSpawnedPolarity.current = polarity;
 
-      // Gap center'ı deterministik olarak ekrana map'le (connector uzunluğuna bağlı sıfır geçişi)
-      const clamped = Math.max(0, Math.min(1, heightRatio ?? 0.5));
-      gapCenter = computeGapCenter(canvasHeight, halfGap, clamped, connectorLen);
-      lastGapCenter.current = gapCenter;
-      lastHalfGap.current = halfGap;
-    } else {
-      // Alt blok: üst bloğun ZIT rengi ve aynı boşluk merkezi
-      polarity = lastSpawnedPolarity.current === "white" ? "black" : "white";
-      gapCenter = lastGapCenter.current || midY;
-    }
+      // HeightRatio'yu kullanarak sıfır geçiş miktarını belirle
+      // %30 ile %100 arası agresif geçiş
+      const crossAmount = 0.3 + heightRatio * 0.7;
+      const actualCross = crossAmount * maxCrossDistance;
 
-    // Apply gravity flip to lane
-    const isGravityFlipped = gravityState.current.isFlipped;
-    const effectiveLane: "top" | "bottom" = isGravityFlipped
-      ? lane === "TOP"
-        ? "bottom"
-        : "top"
-      : lane === "TOP"
-      ? "top"
-      : "bottom";
+      // Üst blok sıfırı geçecek şekilde hesapla
+      const topBlockHeight = midY + actualCross;
+      const bottomBlockTop = topBlockHeight + minGap;
 
-    let obstacle: Obstacle;
+      lastGapCenter.current = topBlockHeight + minGap / 2; // Gap center for shards
+      lastHalfGap.current = minGap / 2;
 
-    if (lane === "TOP") {
-      // TOP block - 0'dan (gapCenter - halfGap)'a kadar uzanır
-      const blockBottom = gapCenter - halfGap;
-      const blockHeight = Math.max(30, blockBottom);
-
+      // TOP BLOCK
       const pooled = obstaclePool.current.acquire();
       pooled.x = spawnX;
-      pooled.y = -blockHeight;
+      pooled.y = -topBlockHeight;
       pooled.targetY = 0;
       pooled.width = obsWidth;
-      pooled.height = blockHeight;
-      pooled.lane = effectiveLane;
+      pooled.height = Math.max(30, topBlockHeight);
+      pooled.lane = gravityState.current.isFlipped ? "bottom" : "top";
       pooled.polarity = polarity;
       pooled.passed = false;
       pooled.nearMissChecked = false;
       pooled.hasPhased = false;
       pooled.isLatent = false;
       pooled.initialX = spawnX;
-      obstacle = pooled;
+
+      // Phantom check
+      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
+      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+        obstacles.current.push(createPhantomObstacle(pooled, spawnX, PHANTOM_CONFIG));
+      } else {
+        obstacles.current.push(pooled);
+      }
     } else {
-      // BOTTOM block - (gapCenter + halfGap)'dan canvasHeight'a kadar uzanır
+      // BOTTOM blok - üst bloğun zıttı polarite
+      polarity = lastSpawnedPolarity.current === "white" ? "black" : "white";
+
+      // Üst bloktan kalan gap bilgisini kullan
+      const gapCenter = lastGapCenter.current || midY;
+      const halfGap = lastHalfGap.current || minGap / 2;
+
       const blockTop = gapCenter + halfGap;
       const blockHeight = Math.max(30, canvasHeight - blockTop);
 
@@ -799,31 +823,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
       pooled.targetY = blockTop;
       pooled.width = obsWidth;
       pooled.height = blockHeight;
-      pooled.lane = effectiveLane;
+      pooled.lane = gravityState.current.isFlipped ? "top" : "bottom";
       pooled.polarity = polarity;
       pooled.passed = false;
       pooled.nearMissChecked = false;
       pooled.hasPhased = false;
       pooled.isLatent = false;
       pooled.initialX = spawnX;
-      obstacle = pooled;
-    }
 
-    // Phantom check
-    const phantomEnabled =
-      !campaignMode?.enabled ||
-      campaignMode.levelConfig?.mechanics.phantom !== false;
-    const forcePhantom =
-      dailyChallengeMode?.enabled &&
-      dailyChallengeMode.config?.modifiers.phantomOnly;
-    if (
-      forcePhantom ||
-      (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))
-    ) {
-      obstacle = createPhantomObstacle(obstacle, spawnX, PHANTOM_CONFIG);
+      // Phantom check
+      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
+      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+        obstacles.current.push(createPhantomObstacle(pooled, spawnX, PHANTOM_CONFIG));
+      } else {
+        obstacles.current.push(pooled);
+      }
     }
-
-    obstacles.current.push(obstacle);
   };
 
   // Pattern-Based Shard Spawn - Requirements 5.1, 5.2, 5.3
@@ -931,7 +947,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Haptic Feedback: Medium pulse for near miss - Requirements 4.3
     getHapticSystem().trigger("medium");
-    
+
     // Audio: Near miss sound - Phase 4
     if (isStreakBonus) {
       AudioSystem.playStreakBonus();
@@ -1444,7 +1460,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const targetLen = Math.min(
         INITIAL_CONFIG.maxConnectorLength,
         INITIAL_CONFIG.minConnectorLength +
-          score.current * INITIAL_CONFIG.connectorGrowthRate
+        score.current * INITIAL_CONFIG.connectorGrowthRate
       );
       currentConnectorLength.current +=
         (targetLen - currentConnectorLength.current) * 0.01;
@@ -1469,10 +1485,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         : 0;
       const currentAmplitude = midlineEnabled
         ? calculateDynamicAmplitude(
-            midlineConfig.baseAmplitude,
-            score.current,
-            midlineConfig
-          )
+          midlineConfig.baseAmplitude,
+          score.current,
+          midlineConfig
+        )
         : 0;
 
       // Calculate current midline Y position (static at center if midline disabled)
@@ -2065,11 +2081,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const whiteOrbY =
           playerY.current * height -
           Math.cos(rotationAngle.current) *
-            (currentConnectorLength.current / 2);
+          (currentConnectorLength.current / 2);
         const blackOrbY =
           playerY.current * height +
           Math.cos(rotationAngle.current) *
-            (currentConnectorLength.current / 2);
+          (currentConnectorLength.current / 2);
 
         // Phase 2: Magnet attraction (deterministic, no RNG)
         if (magnetRadiusFactorUpgrade.current > 0) {
@@ -3628,31 +3644,48 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Orb renkleri (tema sisteminden):
           // - topOrb = bottomBg (beyaz/açık renk)
           // - bottomOrb = topBg (siyah/koyu renk)
-          const orbFillColor = isWhite ? getColor("topOrb") : getColor("bottomOrb");
-          const orbBorderColor = isWhite ? getColor("bottomOrb") : getColor("topOrb");
-          
-          // Her zaman içi dolu çiz (orb rengiyle), border zıt renkte
-          // - Siyah top + siyah alan → içi siyah dolu, beyaz border
-          // - Beyaz top + beyaz alan → içi beyaz dolu, siyah border
+          let orbFillColor = isWhite ? getColor("topOrb") : getColor("bottomOrb");
+          let orbBorderColor = isWhite ? getColor("bottomOrb") : getColor("topOrb");
+
+          // Fallback to default colors if theme system returns empty
+          if (!orbFillColor) orbFillColor = isWhite ? "#FFFFFF" : "#000000";
+          if (!orbBorderColor) orbBorderColor = isWhite ? "#000000" : "#FFFFFF";
+
+          // Determine zone background: check orb Y position against midline
+          const midY = height / 2;
+          const currentZoneBg = orb.y < midY ? getColor("topBg") || "#000000" : getColor("bottomBg") || "#FFFFFF";
+
+          // Only draw border if orb color matches background (for visibility)
+          const needsBorder = orbFillColor.toLowerCase() === currentZoneBg.toLowerCase();
+
+          // Her zaman içi dolu çiz (orb rengiyle), border SADECE gerektiğinde
           if (skin.id === "default") {
             ctx.beginPath();
             ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
             ctx.fillStyle = orbFillColor;
             ctx.fill();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = orbBorderColor; // Zıt renk border
-            ctx.stroke();
+
+            // Border only when orb blends with background
+            if (needsBorder) {
+              ctx.beginPath();
+              ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = orbBorderColor;
+              ctx.stroke();
+            }
           } else {
             renderOrb(
               { ctx, x: orb.x, y: orb.y, radius: orb.radius, isTopOrb },
               skin
             );
-            // Custom skin'ler için de border ekle
-            ctx.beginPath();
-            ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = orbBorderColor; // Zıt renk border
-            ctx.stroke();
+            // Border for custom skins if needed
+            if (needsBorder) {
+              ctx.beginPath();
+              ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = orbBorderColor;
+              ctx.stroke();
+            }
           }
 
           // Theme Effects - Requirements 5.4: Cyberpunk glowing edges
@@ -3709,7 +3742,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      // 2. Draw Orbs
+      // 2. Draw Orbs with Trail Effects
+      // Get trail config for equipped skin
+      const trailConfig = OrbTrailSystem.getTrailConfig(equippedSkin);
+
+      // Emit trail particles from current orb positions
+      if (trailConfig.enabled) {
+        OrbTrailSystem.emitTrail(whiteOrb.x, whiteOrb.y, true, trailConfig);
+        OrbTrailSystem.emitTrail(blackOrb.x, blackOrb.y, false, trailConfig);
+        OrbTrailSystem.updateTrails(1 / 60, trailConfig); // Assume 60fps
+      }
+
+      // Render trails BEFORE orbs so they appear behind
+      OrbTrailSystem.renderTrails(ctx, trailConfig);
+
+      // Draw the orbs
       drawOrb(blackOrb, false);
       drawOrb(whiteOrb, true);
 
@@ -3773,25 +3820,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
       particles.current.forEach((p) => {
         ctx.save();
         ctx.globalAlpha = p.life * visualIntensity;
-        
+
         // Add glow effect
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 8 * p.life;
-        
+
         // Dynamic size based on life
         const size = (2 + p.life * 4) * (0.8 + Math.random() * 0.4);
-        
+
         // Draw particle with gradient
         const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
         gradient.addColorStop(0, p.color);
         gradient.addColorStop(0.5, p.color);
         gradient.addColorStop(1, "transparent");
-        
+
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
         ctx.fill();
-        
+
         ctx.restore();
       });
 
@@ -3843,37 +3890,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Draw Score Popups - Requirements 3.3, 3.8 - VFX Polish Phase 4
       scorePopups.current.forEach((popup) => {
         ctx.save();
-        
+
         // Calculate scale based on life (pop-in effect then shrink)
         const lifeProgress = 1 - popup.life;
-        const scale = lifeProgress < 0.1 
+        const scale = lifeProgress < 0.1
           ? 0.5 + lifeProgress * 5  // Pop-in from 0.5 to 1.0
           : 1.0 - lifeProgress * 0.3; // Shrink from 1.0 to 0.7
-        
+
         ctx.globalAlpha = popup.life;
-        
+
         // Glow effect
         ctx.shadowColor = popup.color;
         ctx.shadowBlur = 12 * popup.life;
-        
+
         // Determine font size based on content
-        const isSpecial = popup.text.includes("PERFECT") || 
-                          popup.text.includes("SHIELD") || 
-                          popup.text.includes("⚡");
+        const isSpecial = popup.text.includes("PERFECT") ||
+          popup.text.includes("SHIELD") ||
+          popup.text.includes("⚡");
         const baseFontSize = isSpecial ? 18 : 15;
         const fontSize = Math.round(baseFontSize * scale);
-        
+
         ctx.font = `bold ${fontSize}px "Segoe UI", system-ui, sans-serif`;
         ctx.fillStyle = popup.color;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        
+
         // Draw text with slight outline for better visibility
         ctx.strokeStyle = "rgba(0,0,0,0.5)";
         ctx.lineWidth = 2;
         ctx.strokeText(popup.text, popup.x, popup.y);
         ctx.fillText(popup.text, popup.x, popup.y);
-        
+
         ctx.restore();
       });
 
@@ -4087,7 +4134,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           Math.min(
             INITIAL_CONFIG.maxConnectorLength,
             INITIAL_CONFIG.minConnectorLength +
-              currentSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
+            currentSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
           );
         const halfLen = snapshotConnectorLength / 2;
 
@@ -4135,9 +4182,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // === REWIND OVERLAY EFFECTS ===
 
         // Semi-transparent cyan overlay for rewind feel
-        ctx.fillStyle = `rgba(0, 240, 255, ${
-          0.05 + 0.05 * Math.sin(elapsed * 0.01)
-        })`;
+        ctx.fillStyle = `rgba(0, 240, 255, ${0.05 + 0.05 * Math.sin(elapsed * 0.01)
+          })`;
         ctx.fillRect(0, 0, width, height);
 
         // Horizontal scan lines moving RIGHT (rewind direction)
@@ -4236,7 +4282,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             const restoredConnectorLength = Math.min(
               INITIAL_CONFIG.maxConnectorLength,
               INITIAL_CONFIG.minConnectorLength +
-                finalSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
+              finalSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
             );
             currentConnectorLength.current = restoredConnectorLength;
           }
