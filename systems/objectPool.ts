@@ -1,15 +1,15 @@
 /**
  * Object Pool System - Performance Optimization
- * 
+ *
  * Provides reusable object pools for obstacles and shards to minimize
  * garbage collection and improve performance at high game speeds.
- * 
+ *
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
  */
 
-import { Lane } from '../data/patterns';
-import type { Obstacle } from '../types';
-import type { PlacedShard, ShardMovement } from './shardPlacement';
+import { Lane } from "../data/patterns";
+import type { Obstacle } from "../types";
+import type { PlacedShard, ShardMovement } from "./shardPlacement";
 
 // ============================================================================
 // Types and Interfaces
@@ -22,7 +22,7 @@ import type { PlacedShard, ShardMovement } from './shardPlacement';
 export interface ObjectPool<T> {
   items: T[];
   activeCount: number;
-  
+
   acquire(): T;
   release(item: T): void;
   reset(): void;
@@ -40,7 +40,7 @@ export interface PooledObstacle {
   width: number;
   height: number;
   lane: Lane;
-  polarity: 'white' | 'black';
+  polarity: "white" | "black";
   active: boolean;
 }
 
@@ -52,7 +52,7 @@ export interface PooledShard {
   id: string;
   x: number;
   y: number;
-  type: 'safe' | 'risky';
+  type: "safe" | "risky";
   value: number;
   active: boolean;
 }
@@ -106,14 +106,14 @@ function generatePooledId(prefix: string, index: number): string {
  */
 function createDefaultObstacle(index: number): PooledObstacle {
   return {
-    id: generatePooledId('obstacle', index),
+    id: generatePooledId("obstacle", index),
     x: 0,
     y: 0,
     width: 60,
     height: 80,
-    lane: 'TOP',
-    polarity: 'white',
-    active: false
+    lane: "TOP",
+    polarity: "white",
+    active: false,
   };
 }
 
@@ -123,25 +123,25 @@ function createDefaultObstacle(index: number): PooledObstacle {
  */
 function createDefaultShard(index: number): PooledShard {
   return {
-    id: generatePooledId('shard', index),
+    id: generatePooledId("shard", index),
     x: 0,
     y: 0,
-    type: 'safe',
+    type: "safe",
     value: 1,
-    active: false
+    active: false,
   };
 }
 
 function createDefaultEngineObstacle(index: number): PooledEngineObstacle {
   return {
-    id: generatePooledId('engine-obstacle', index),
+    id: generatePooledId("engine-obstacle", index),
     x: 0,
     y: 0,
     targetY: 0,
     width: 60,
     height: 80,
-    lane: 'top',
-    polarity: 'white',
+    lane: "top",
+    polarity: "white",
     passed: false,
     active: false,
   };
@@ -158,13 +158,13 @@ function createDefaultEngineShard(index: number): PooledEngineShard {
   };
 
   return {
-    id: generatePooledId('engine-shard', index),
+    id: generatePooledId("engine-shard", index),
     x: 0,
     y: 0,
     baseX: 0,
     baseY: 0,
-    lane: 'TOP',
-    type: 'safe',
+    lane: "TOP",
+    type: "safe",
     value: 1,
     collected: false,
     movement,
@@ -180,7 +180,7 @@ function createDefaultEngineShard(index: number): PooledEngineShard {
 /**
  * Create an obstacle pool
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
- * 
+ *
  * @param initialSize - Initial number of obstacles to pre-allocate
  * @returns ObjectPool for obstacles
  */
@@ -192,9 +192,9 @@ export function createObstaclePool(
   for (let i = 0; i < initialSize; i++) {
     items.push(createDefaultObstacle(i));
   }
-  
+
   let activeCount = 0;
-  
+
   return {
     items,
     get activeCount() {
@@ -203,51 +203,53 @@ export function createObstaclePool(
     set activeCount(value: number) {
       activeCount = value;
     },
-    
+
     /**
      * Acquire an obstacle from the pool
      * Requirements: 6.3, 6.4
      */
     acquire(): PooledObstacle {
       // Find an inactive obstacle
-      const inactive = items.find(item => !item.active);
-      
+      const inactive = items.find((item) => !item.active);
+
       if (inactive) {
         inactive.active = true;
         activeCount++;
         return inactive;
       }
-      
+
       // Pool exhausted - expand pool - Requirements 6.4
       const currentSize = items.length;
-      const expansionCount = Math.ceil(currentSize * (POOL_EXPANSION_FACTOR - 1));
-      
+      const expansionCount = Math.ceil(
+        currentSize * (POOL_EXPANSION_FACTOR - 1)
+      );
+
       for (let i = 0; i < expansionCount; i++) {
         items.push(createDefaultObstacle(currentSize + i));
       }
-      
+
       // Return the first newly created obstacle
       const newObstacle = items[currentSize];
       newObstacle.active = true;
       activeCount++;
       return newObstacle;
     },
-    
+
     /**
      * Release an obstacle back to the pool
      * Requirements: 6.2
      */
     release(item: PooledObstacle): void {
       // Find the item in the pool
-      const poolItem = items.find(i => i.id === item.id);
-      
+      const poolItem = items.find((i) => i.id === item.id);
+
       if (poolItem && poolItem.active) {
         poolItem.active = false;
         activeCount = Math.max(0, activeCount - 1);
       }
       // Ignore if not in pool (graceful handling)
     },
-    
+
     /**
      * Reset all obstacles to inactive state
      */
@@ -257,20 +259,20 @@ export function createObstaclePool(
       }
       activeCount = 0;
     },
-    
+
     /**
      * Get all active obstacles
      */
     getActive(): PooledObstacle[] {
-      return items.filter(item => item.active);
-    }
+      return items.filter((item) => item.active);
+    },
   };
 }
 
 /**
  * Create a shard pool
  * Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
- * 
+ *
  * @param initialSize - Initial number of shards to pre-allocate
  * @returns ObjectPool for shards
  */
@@ -282,9 +284,9 @@ export function createShardPool(
   for (let i = 0; i < initialSize; i++) {
     items.push(createDefaultShard(i));
   }
-  
+
   let activeCount = 0;
-  
+
   return {
     items,
     get activeCount() {
@@ -293,51 +295,53 @@ export function createShardPool(
     set activeCount(value: number) {
       activeCount = value;
     },
-    
+
     /**
      * Acquire a shard from the pool
      * Requirements: 6.3, 6.4
      */
     acquire(): PooledShard {
       // Find an inactive shard
-      const inactive = items.find(item => !item.active);
-      
+      const inactive = items.find((item) => !item.active);
+
       if (inactive) {
         inactive.active = true;
         activeCount++;
         return inactive;
       }
-      
+
       // Pool exhausted - expand pool - Requirements 6.4
       const currentSize = items.length;
-      const expansionCount = Math.ceil(currentSize * (POOL_EXPANSION_FACTOR - 1));
-      
+      const expansionCount = Math.ceil(
+        currentSize * (POOL_EXPANSION_FACTOR - 1)
+      );
+
       for (let i = 0; i < expansionCount; i++) {
         items.push(createDefaultShard(currentSize + i));
       }
-      
+
       // Return the first newly created shard
       const newShard = items[currentSize];
       newShard.active = true;
       activeCount++;
       return newShard;
     },
-    
+
     /**
      * Release a shard back to the pool
      * Requirements: 6.2, 6.5
      */
     release(item: PooledShard): void {
       // Find the item in the pool
-      const poolItem = items.find(i => i.id === item.id);
-      
+      const poolItem = items.find((i) => i.id === item.id);
+
       if (poolItem && poolItem.active) {
         poolItem.active = false;
         activeCount = Math.max(0, activeCount - 1);
       }
       // Ignore if not in pool (graceful handling)
     },
-    
+
     /**
      * Reset all shards to inactive state
      */
@@ -347,13 +351,13 @@ export function createShardPool(
       }
       activeCount = 0;
     },
-    
+
     /**
      * Get all active shards
      */
     getActive(): PooledShard[] {
-      return items.filter(item => item.active);
-    }
+      return items.filter((item) => item.active);
+    },
   };
 }
 
@@ -379,7 +383,7 @@ export function createEngineObstaclePool(
       activeCount = value;
     },
     acquire(): PooledEngineObstacle {
-      const inactive = items.find(item => !item.active);
+      const inactive = items.find((item) => !item.active);
 
       if (inactive) {
         inactive.active = true;
@@ -388,7 +392,9 @@ export function createEngineObstaclePool(
       }
 
       const currentSize = items.length;
-      const expansionCount = Math.ceil(currentSize * (POOL_EXPANSION_FACTOR - 1));
+      const expansionCount = Math.ceil(
+        currentSize * (POOL_EXPANSION_FACTOR - 1)
+      );
 
       for (let i = 0; i < expansionCount; i++) {
         items.push(createDefaultEngineObstacle(currentSize + i));
@@ -400,7 +406,7 @@ export function createEngineObstaclePool(
       return newObstacle;
     },
     release(item: PooledEngineObstacle): void {
-      const poolItem = items.find(i => i.id === item.id);
+      const poolItem = items.find((i) => i.id === item.id);
       if (poolItem && poolItem.active) {
         poolItem.active = false;
         activeCount = Math.max(0, activeCount - 1);
@@ -413,8 +419,8 @@ export function createEngineObstaclePool(
       activeCount = 0;
     },
     getActive(): PooledEngineObstacle[] {
-      return items.filter(item => item.active);
-    }
+      return items.filter((item) => item.active);
+    },
   };
 }
 
@@ -440,7 +446,7 @@ export function createEngineShardPool(
       activeCount = value;
     },
     acquire(): PooledEngineShard {
-      const inactive = items.find(item => !item.active);
+      const inactive = items.find((item) => !item.active);
 
       if (inactive) {
         inactive.active = true;
@@ -449,7 +455,9 @@ export function createEngineShardPool(
       }
 
       const currentSize = items.length;
-      const expansionCount = Math.ceil(currentSize * (POOL_EXPANSION_FACTOR - 1));
+      const expansionCount = Math.ceil(
+        currentSize * (POOL_EXPANSION_FACTOR - 1)
+      );
 
       for (let i = 0; i < expansionCount; i++) {
         items.push(createDefaultEngineShard(currentSize + i));
@@ -461,7 +469,7 @@ export function createEngineShardPool(
       return newShard;
     },
     release(item: PooledEngineShard): void {
-      const poolItem = items.find(i => i.id === item.id);
+      const poolItem = items.find((i) => i.id === item.id);
       if (poolItem && poolItem.active) {
         poolItem.active = false;
         activeCount = Math.max(0, activeCount - 1);
@@ -474,21 +482,21 @@ export function createEngineShardPool(
       activeCount = 0;
     },
     getActive(): PooledEngineShard[] {
-      return items.filter(item => item.active);
-    }
+      return items.filter((item) => item.active);
+    },
   };
 }
 
 /**
  * Configure a pooled obstacle with specific values
- * 
+ *
  * @param obstacle - Obstacle to configure
  * @param config - Configuration values
  * @returns Configured obstacle
  */
 export function configureObstacle(
   obstacle: PooledObstacle,
-  config: Partial<Omit<PooledObstacle, 'id' | 'active'>>
+  config: Partial<Omit<PooledObstacle, "id" | "active">>
 ): PooledObstacle {
   if (config.x !== undefined) obstacle.x = config.x;
   if (config.y !== undefined) obstacle.y = config.y;
@@ -501,14 +509,14 @@ export function configureObstacle(
 
 /**
  * Configure a pooled shard with specific values
- * 
+ *
  * @param shard - Shard to configure
  * @param config - Configuration values
  * @returns Configured shard
  */
 export function configureShard(
   shard: PooledShard,
-  config: Partial<Omit<PooledShard, 'id' | 'active'>>
+  config: Partial<Omit<PooledShard, "id" | "active">>
 ): PooledShard {
   if (config.x !== undefined) shard.x = config.x;
   if (config.y !== undefined) shard.y = config.y;
@@ -519,7 +527,7 @@ export function configureShard(
 
 /**
  * Get pool statistics
- * 
+ *
  * @param pool - Pool to get stats for
  * @returns Pool statistics
  */
@@ -529,6 +537,6 @@ export function getPoolStats<T extends { active: boolean }>(
   const total = pool.items.length;
   const active = pool.activeCount;
   const available = total - active;
-  
+
   return { total, active, available };
 }

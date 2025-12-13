@@ -2,20 +2,25 @@
 
 ## Mevcut Odak
 
-- **Phase 1: Core Engine Overhaul** (Offline Roguelite Arcade dönüşümü) kapsamında:
-  - Pattern-based spawning’i deterministik ve “designed” hale getirme
-  - Object pooling’i GameEngine hot-path’ine entegre etme
-  - Physical shard’ları pattern geometrisine bağlama (rastgele konum yerine)
+- **Phase 2: Roguelite Loop (Gelişim Sistemi)** kapsamında:
+  - Zone sistemi (5 frekans bölgesi) + kilit/açma + persist
+  - Magnet + Shield gibi kalıcı upgrade’lerin shop → gameplay entegrasyonu
+  - Mobil okunabilirlik: daha az bilişsel yük, daha fazla “akış”
 
 ## Son Yapılanlar
 
-- `GameEngine.tsx` içinde pattern spawn hattı “deterministik pacing + pool reuse” ile güncellendi:
-  - Yeni pattern seçimi: `DifficultyProgression.selectPatternForScoreDeterministic`
-  - Pattern timing: hız arttıkça pattern duration/timeOffset ölçekleniyor
-  - Obstacle + shard oluşturma artık pool üzerinden (alloc yerine reuse)
-- `data/patterns.ts` pattern set’i genişletildi (10+ temel desen, heightRatio ile learnable gap offset)
-- `systems/shardPlacement.ts` RNG injection eklendi (`generateShardMovement(type, rand?)`)
-- `systems/objectPool.ts` içine engine-uyumlu yeni pool’lar eklendi (`createEngineObstaclePool`, `createEngineShardPool`)
+- **Zone sistemi (Phase 2)** eklendi:
+  - `data/zones.ts`: 5 zone + modifiers + unlockCost
+  - `store/gameStore.ts`: `selectedZoneId`, `unlockedZones` persisted + `selectZone`/`unlockZone`
+  - `components/Zones/*`: ZoneSelector + Unlock modal (scroll/snap + lock overlay)
+  - `components/GameUI.tsx`: menüye zone selector entegre
+  - `App.tsx` → `GameEngine.tsx`: seçili zone modifiers (speed/spawn) uygulanıyor
+- **Upgrades (Phase 2)**:
+  - `data/upgrades.ts`: `magnet`, `shield` eklendi
+  - `components/Shop/Shop.tsx`: ikon + effect display eklendi
+  - `components/GameEngine.tsx`:
+    - Magnet: shard’ları level’e göre radius içinde deterministik şekilde orb’a çeker (lerp)
+    - Shield: çarpışmada charge harcar, 2sn invincibility + VFX + engeli temizler
 
 ## Bilinen Konular / Riskler
 

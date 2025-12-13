@@ -18,6 +18,21 @@
   - `components/GameEngine.tsx`: obstacle + shard spawn artık pool üzerinden, offscreen/collect sonrası release yapıyor.
 - **Shard movement RNG injection**: `systems/shardPlacement.ts` `generateShardMovement(type, rand?)` eklendi.
 
+## Son Eklenen / Güncellenen (Phase 2 Milestone)
+
+- **Zone sistemi (Roguelite loop)**:
+  - `data/zones.ts`: 5 frekans zone’u + unlockCost + modifiers
+  - `store/gameStore.ts`: zone seçimi + unlock/persist (localStorage fallback’li)
+  - `components/Zones/ZoneSelector.tsx` + `components/Zones/ZoneUnlockModal.tsx`
+  - `components/GameUI.tsx`: menüde scrollable zone selector
+  - `App.tsx` → `components/GameEngine.tsx`: zone modifiers (speed/spawn) uygulanıyor
+- **Upgrades: Magnet + Shield**:
+  - `data/upgrades.ts`: `magnet`, `shield` eklendi (Shop’tan satın alınabilir)
+  - `systems/upgradeSystem.ts`: aktif effect set’ine magnet/shield eklendi
+  - `components/GameEngine.tsx`:
+    - Magnet çekimi: radius içinde shard base pozisyonunu orb’a doğru lerp’ler (deterministik)
+    - Shield: collision’da charge harcar, 2sn invincibility + VFX, engeli temizler
+
 ## Kalanlar / Belirsizler
 
 - Dokümantasyonun konsolidasyonu:
@@ -27,6 +42,10 @@
 - Phase 1 polish:
   - Pattern authoring için `PatternChunk` → `Pattern` compile helper
   - Shard placement’ı `positionOffset` ile “riskli köşe/iki blok arası” şeklinde daha net bağlamak
+  
+- Phase 2 polish (opsiyonel):
+  - Shield charge ve magnet radius değerlerinin UX tuning’i (mobil denge)
+  - HUD üzerinde shield charge göstergesi (isteğe bağlı)
 
 ## Bilinen Sorunlar
 
@@ -40,4 +59,6 @@
   - Object pooling GameEngine’e entegre edildi
   - Shard’lar pattern geometrisine bağlandı (random mesafe yerine)
 
-
+- Phase 2’de roguelite loop başlatıldı:
+  - Zone selector + unlock/persist
+  - Magnet + Shield upgrades gameplay’e entegre

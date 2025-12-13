@@ -22,14 +22,16 @@ export function getUpgradeCost(upgrade: Upgrade, currentLevel: number): number {
   if (currentLevel >= upgrade.maxLevel) {
     return Infinity; // Cannot purchase beyond max level
   }
-  return Math.floor(upgrade.baseCost * Math.pow(upgrade.costMultiplier, currentLevel));
+  return Math.floor(
+    upgrade.baseCost * Math.pow(upgrade.costMultiplier, currentLevel)
+  );
 }
 
 /**
  * Get the effect value for a specific upgrade level
  */
 export function getUpgradeEffect(upgrade: Upgrade, level: number): number {
-  if (level <= 0) return upgrade.id === 'score-multiplier' ? 1 : 0;
+  if (level <= 0) return upgrade.id === "score-multiplier" ? 1 : 0;
   return upgrade.effect(level);
 }
 
@@ -39,9 +41,9 @@ export function getUpgradeEffect(upgrade: Upgrade, level: number): number {
  */
 export const UPGRADES: Upgrade[] = [
   {
-    id: 'starting-score',
-    name: 'Head Start',
-    description: 'Start each game with bonus score',
+    id: "starting-score",
+    name: "Head Start",
+    description: "Start each game with bonus score",
     maxLevel: 5,
     baseCost: 200,
     costMultiplier: 1.5,
@@ -49,9 +51,31 @@ export const UPGRADES: Upgrade[] = [
     effect: (level: number) => level * 100,
   },
   {
-    id: 'score-multiplier',
-    name: 'Echo Amplifier',
-    description: 'Permanent score multiplier',
+    id: "magnet",
+    name: "Magnet",
+    description: "Pull nearby shards toward your orbs",
+    maxLevel: 5,
+    baseCost: 250,
+    costMultiplier: 1.6,
+    // Effect: radius factor (multiplied by min(canvasWidth, canvasHeight))
+    // L1=0.16, L2=0.20, L3=0.24, L4=0.28, L5=0.32
+    effect: (level: number) => 0.12 + level * 0.04,
+  },
+  {
+    id: "shield",
+    name: "Shield",
+    description:
+      "First collision breaks shield instead of dying (2s invincibility)",
+    maxLevel: 3,
+    baseCost: 600,
+    costMultiplier: 2,
+    // Effect: number of shield charges per run (1..3)
+    effect: (level: number) => level,
+  },
+  {
+    id: "score-multiplier",
+    name: "Echo Amplifier",
+    description: "Permanent score multiplier",
     maxLevel: 3,
     baseCost: 500,
     costMultiplier: 2,
@@ -59,9 +83,9 @@ export const UPGRADES: Upgrade[] = [
     effect: (level: number) => 1 + level * 0.1,
   },
   {
-    id: 'slow-motion',
-    name: 'Time Warp',
-    description: 'Slow motion ability per game',
+    id: "slow-motion",
+    name: "Time Warp",
+    description: "Slow motion ability per game",
     maxLevel: 3,
     baseCost: 300,
     costMultiplier: 1.5,
@@ -74,5 +98,5 @@ export const UPGRADES: Upgrade[] = [
  * Get upgrade by ID
  */
 export function getUpgradeById(id: string): Upgrade | undefined {
-  return UPGRADES.find(u => u.id === id);
+  return UPGRADES.find((u) => u.id === id);
 }

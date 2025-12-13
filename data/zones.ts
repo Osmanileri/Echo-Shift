@@ -1,0 +1,101 @@
+/**
+ * Zone Data Definitions (Offline Roguelite Loop)
+ *
+ * Zones are the primary progression gates for endless runs.
+ * No backend: unlocks are stored in Zustand + localStorage persist.
+ */
+
+export type ZoneId = "sub-bass" | "bass" | "mid" | "high" | "ultra";
+
+export interface ZoneModifiers {
+  speedMultiplier: number;
+  spawnRateMultiplier: number;
+}
+
+export interface ZoneConfig {
+  id: ZoneId;
+  name: string;
+  subtitle: string;
+  description: string;
+  accent: string; // hex
+  gradient: { from: string; via: string; to: string }; // tailwind tokens for UI
+  modifiers: ZoneModifiers;
+  unlockCost: number; // Echo Shards cost (0 = default)
+}
+
+export const ZONES: ZoneConfig[] = [
+  {
+    id: "sub-bass",
+    name: "SUB‑BASS",
+    subtitle: "Warmup / Readability",
+    description: "Geniş nefes alan ritim. Öğren, ısın, akışı kur.",
+    accent: "#00F0FF",
+    gradient: {
+      from: "from-cyan-500/20",
+      via: "via-white/5",
+      to: "to-transparent",
+    },
+    modifiers: { speedMultiplier: 0.95, spawnRateMultiplier: 0.95 },
+    unlockCost: 0,
+  },
+  {
+    id: "bass",
+    name: "BASS",
+    subtitle: "Flow",
+    description: "Daha sık pattern. Refleks + renk okuma.",
+    accent: "#22C55E",
+    gradient: {
+      from: "from-green-500/20",
+      via: "via-white/5",
+      to: "to-transparent",
+    },
+    modifiers: { speedMultiplier: 1.0, spawnRateMultiplier: 1.0 },
+    unlockCost: 300,
+  },
+  {
+    id: "mid",
+    name: "MID",
+    subtitle: "Pressure",
+    description: "Akış sıkılaşıyor. Shard risk/ödül belirgin.",
+    accent: "#A855F7",
+    gradient: {
+      from: "from-purple-500/20",
+      via: "via-white/5",
+      to: "to-transparent",
+    },
+    modifiers: { speedMultiplier: 1.05, spawnRateMultiplier: 1.05 },
+    unlockCost: 900,
+  },
+  {
+    id: "high",
+    name: "HIGH",
+    subtitle: "Precision",
+    description: "Hatalar affetmez. Kalkan ve mıknatıs değer kazanır.",
+    accent: "#F59E0B",
+    gradient: {
+      from: "from-amber-500/20",
+      via: "via-white/5",
+      to: "to-transparent",
+    },
+    modifiers: { speedMultiplier: 1.1, spawnRateMultiplier: 1.1 },
+    unlockCost: 2000,
+  },
+  {
+    id: "ultra",
+    name: "ULTRA",
+    subtitle: "Limit",
+    description: "Saf tempo. Sadece ustalar.",
+    accent: "#EF4444",
+    gradient: {
+      from: "from-red-500/25",
+      via: "via-white/5",
+      to: "to-transparent",
+    },
+    modifiers: { speedMultiplier: 1.15, spawnRateMultiplier: 1.12 },
+    unlockCost: 5000,
+  },
+];
+
+export function getZoneById(id: ZoneId): ZoneConfig | undefined {
+  return ZONES.find((z) => z.id === id);
+}

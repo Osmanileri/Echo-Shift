@@ -1,9 +1,9 @@
 /**
  * Flow Curve System - Logarithmic Speed Progression
- * 
+ *
  * Implements a logarithmic speed curve for professional arcade feel.
  * Speed increases smoothly and caps at human-playable maximum.
- * 
+ *
  * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6
  */
 
@@ -15,10 +15,10 @@
  * Configuration for the Flow Curve system
  */
 export interface FlowCurveConfig {
-  minSpeed: number;      // Starting speed (6 units)
-  maxSpeed: number;      // Human reflex limit (22 units)
-  scaleFactor: number;   // Logarithmic scale factor (6)
-  scoreBase: number;     // Score divisor (100)
+  minSpeed: number; // Starting speed (6 units)
+  maxSpeed: number; // Human reflex limit (22 units)
+  scaleFactor: number; // Logarithmic scale factor (6)
+  scoreBase: number; // Score divisor (100)
 }
 
 /**
@@ -35,7 +35,7 @@ export interface FlowCurveState {
  * - groove: Score 500-5000, gradual speed increase
  * - plateau: Score > 5000, speed near MAX_SPEED
  */
-export type GamePhase = 'warmup' | 'groove' | 'plateau';
+export type GamePhase = "warmup" | "groove" | "plateau";
 
 // ============================================================================
 // Constants
@@ -44,16 +44,20 @@ export type GamePhase = 'warmup' | 'groove' | 'plateau';
 /**
  * Default Flow Curve configuration
  * Requirements: 1.1, 1.2, 1.3
- * 
+ *
  * Speed values represent km/h display (3.0 = 30km/h)
  * Starting at 30km/h for comfortable gameplay
  * DAHA YAVAŞ HIZ ARTIŞI - Oyuncuya alışma süresi ver
  */
 export const DEFAULT_FLOW_CURVE_CONFIG: FlowCurveConfig = {
-  minSpeed: 3.0,      // Start at 30km/h
-  maxSpeed: 14,       // Max 140km/h (düşürüldü - daha oynanabilir)
-  scaleFactor: 2.5,   // ÇOK DAHA YAVAŞ progression (was 4)
-  scoreBase: 500      // ÇOK DAHA YAVAŞ scaling (was 200)
+  // Mobile-first tuning:
+  // - slower starting speed
+  // - gentler logarithmic progression
+  // - lower cap to keep visual parsing manageable (obstacle + color + shards)
+  minSpeed: 2.4, // Start ~24km/h feel
+  maxSpeed: 10.5, // Cap ~105km/h feel
+  scaleFactor: 1.8, // Gentler progression
+  scoreBase: 1200, // Longer warmup before speed meaningfully ramps
 };
 
 /**
@@ -61,8 +65,8 @@ export const DEFAULT_FLOW_CURVE_CONFIG: FlowCurveConfig = {
  * Requirements: 1.4, 1.5, 1.6
  */
 export const PHASE_THRESHOLDS = {
-  warmupEnd: 500,    // End of warmup phase
-  grooveEnd: 5000    // End of groove phase, start of plateau
+  warmupEnd: 900, // Longer warmup on mobile
+  grooveEnd: 8000, // Longer groove before plateau
 };
 
 // ============================================================================
@@ -71,16 +75,16 @@ export const PHASE_THRESHOLDS = {
 
 /**
  * Calculate game speed using logarithmic formula
- * 
+ *
  * Formula: MIN_SPEED + log10(score/100 + 1) * scaleFactor
- * 
+ *
  * The logarithmic curve provides:
  * - Gentle start for new players
  * - Satisfying progression in mid-game
  * - Natural cap approaching human reflex limits
- * 
+ *
  * Requirements: 1.2, 1.3
- * 
+ *
  * @param score - Current player score (>= 0)
  * @param config - Flow curve configuration
  * @returns Calculated speed, capped at maxSpeed
@@ -93,49 +97,49 @@ export function calculateGameSpeed(
   if (score < 0) {
     score = 0;
   }
-  
+
   // Logarithmic formula: MIN_SPEED + log10(score/scoreBase + 1) * scaleFactor
   const logValue = Math.log10(score / config.scoreBase + 1);
   const calculatedSpeed = config.minSpeed + logValue * config.scaleFactor;
-  
+
   // Validate result
   if (!Number.isFinite(calculatedSpeed)) {
-    console.warn('[FlowCurve] Invalid speed calculated, using minSpeed');
+    console.warn("[FlowCurve] Invalid speed calculated, using minSpeed");
     return config.minSpeed;
   }
-  
+
   // Cap at maxSpeed - Requirements 1.3
   return Math.min(calculatedSpeed, config.maxSpeed);
 }
 
 /**
  * Determine the current game phase based on score
- * 
+ *
  * Phases:
  * - warmup (score < 500): Slow adaptation period
  * - groove (500 <= score < 5000): Sweet spot progression
  * - plateau (score >= 5000): Challenge from patterns, not speed
- * 
+ *
  * Requirements: 1.4, 1.5, 1.6
- * 
+ *
  * @param score - Current player score
  * @returns Current game phase
  */
 export function determinePhase(score: number): GamePhase {
   if (score < PHASE_THRESHOLDS.warmupEnd) {
-    return 'warmup';
+    return "warmup";
   }
-  
+
   if (score < PHASE_THRESHOLDS.grooveEnd) {
-    return 'groove';
+    return "groove";
   }
-  
-  return 'plateau';
+
+  return "plateau";
 }
 
 /**
  * Get the complete Flow Curve state for a given score
- * 
+ *
  * @param score - Current player score
  * @param config - Flow curve configuration
  * @returns Complete flow curve state
@@ -146,13 +150,13 @@ export function getFlowCurveState(
 ): FlowCurveState {
   return {
     currentSpeed: calculateGameSpeed(score, config),
-    phase: determinePhase(score)
+    phase: determinePhase(score),
   };
 }
 
 /**
  * Safe speed calculation with error handling
- * 
+ *
  * @param score - Current player score
  * @param config - Flow curve configuration
  * @returns Calculated speed with fallback to minSpeed on error
@@ -164,12 +168,12 @@ export function safeCalculateSpeed(
   try {
     const speed = calculateGameSpeed(score, config);
     if (!Number.isFinite(speed)) {
-      console.warn('[FlowCurve] Invalid speed calculated, using minSpeed');
+      console.warn("[FlowCurve] Invalid speed calculated, using minSpeed");
       return config.minSpeed;
     }
     return speed;
   } catch (error) {
-    console.error('[FlowCurve] Error calculating speed:', error);
+    console.error("[FlowCurve] Error calculating speed:", error);
     return config.minSpeed;
   }
 }
@@ -177,7 +181,7 @@ export function safeCalculateSpeed(
 /**
  * Check if speed is within warmup phase limits
  * Requirements: 1.4
- * 
+ *
  * @param speed - Current speed
  * @returns True if speed is below warmup threshold (10 units)
  */
@@ -188,7 +192,7 @@ export function isWarmupSpeed(speed: number): boolean {
 /**
  * Get speed progress as percentage (0-100)
  * Useful for UI display
- * 
+ *
  * @param speed - Current speed
  * @param config - Flow curve configuration
  * @returns Progress percentage
