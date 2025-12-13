@@ -9,9 +9,9 @@ import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
 import { initializeShiftState } from "../systems/shiftProtocol";
 import {
-  EnhancedResonanceState,
-  ShiftProtocolState,
-  SnapshotBuffer,
+    EnhancedResonanceState,
+    ShiftProtocolState,
+    SnapshotBuffer
 } from "../types";
 import { safeLoad, safePersist, STORAGE_KEYS } from "../utils/persistence";
 
@@ -102,6 +102,12 @@ export interface GameStore {
   resonance: EnhancedResonanceState;
   snapshots: SnapshotBuffer;
 
+  // Echo Constructs State - Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2, 8.3, 8.4
+  unlockedConstructs: ConstructType[];  // Persisted - Requirements 8.2, 8.3, 8.4
+  activeConstruct: ConstructType;        // Session-only, NOT persisted - Requirements 7.1, 7.4
+  isConstructInvulnerable: boolean;      // Session-only - Requirements 2.1, 6.3
+  constructInvulnerabilityEndTime: number; // Session-only - Requirements 2.1, 6.3
+
   // Settings
   tutorialCompleted: boolean;
   soundEnabled: boolean;
@@ -137,6 +143,12 @@ export interface GameStore {
   updateResonanceState: (state: Partial<EnhancedResonanceState>) => void;
   updateSnapshotBuffer: (buffer: SnapshotBuffer) => void;
   resetV2State: () => void;
+
+  // Echo Constructs Actions - Requirements 7.1, 7.2, 7.3, 7.5, 8.1, 8.2, 8.3
+  unlockConstruct: (constructType: ConstructType) => void;
+  setActiveConstruct: (constructType: ConstructType) => void;
+  setConstructInvulnerable: (endTime: number) => void;
+  resetConstructState: () => void;
 
   // Settings Actions
   setTutorialCompleted: (completed: boolean) => void;
@@ -174,6 +186,11 @@ const DEFAULT_STATE = {
   shift: initializeShiftState(),
   resonance: initializeEnhancedResonanceState(),
   snapshots: initializeSnapshotBuffer(),
+  // Echo Constructs State - Requirements 7.1, 8.1
+  unlockedConstructs: ['TITAN'] as ConstructType[],  // Titan is default unlocked - Requirements 8.1
+  activeConstruct: 'NONE' as ConstructType,          // Session-only - Requirements 7.1
+  isConstructInvulnerable: false,                    // Session-only
+  constructInvulnerabilityEndTime: 0,                // Session-only
   tutorialCompleted: false,
   soundEnabled: true,
   musicEnabled: true,
@@ -183,6 +200,7 @@ const DEFAULT_STATE = {
 };
 
 // Persisted state interface (subset of GameStore that gets saved)
+// NOTE: activeConstruct, isConstructInvulnerable, constructInvulnerabilityEndTime are NOT persisted (session-only) - Requirements 7.4
 interface PersistedState {
   echoShards: number;
   ownedSkins: string[];
@@ -206,6 +224,8 @@ interface PersistedState {
   hapticEnabled: boolean;
   hollowModeEnabled: boolean;
   customThemeColors: ThemeColors | null;
+  // Echo Constructs - Only unlockedConstructs is persisted - Requirements 8.2, 8.3, 8.4
+  unlockedConstructs: ConstructType[];
 }
 
 // Create the store
@@ -237,6 +257,57 @@ export const useGameStore = create<GameStore>()(
         resonance: initializeEnhancedResonanceState(),
         snapshots: initializeSnapshotBuffer(),
       });
+    },
+
+    // Echo Constructs Actions - Requirements 7.1, 7.2, 7.3, 7.5, 8.1, 8.2, 8.3
+    /**
+     * Unlock a new construct type
+     * Requirements 8.2, 8.3: Add construct to unlockedConstructs and persist
+     */
+    unlockConstruct: (constructType: ConstructType) => {
+      const state = get();
+      // Don't add if already unlocked
+      if (state.unlockedConstructs.includes(constructType)) {
+        return;
+      }
+      set({
+        unlockedConstructs: [...state.unlockedConstructs, constructType],
+      });
+      get().saveToStorage();
+    },
+
+    /**
+     * Set the active construct
+     * Requirements 7.1, 7.2: Update activeConstruct state (session-only)
+     */
+    setActiveConstruct: (constructType: ConstructType) => {
+      set({ activeConstruct: constructType });
+      // NOTE: Do NOT save to storage - activeConstruct is session-only (Requirements 7.4)
+    },
+
+    /**
+     * Set construct invulnerability state
+     * Requirements 2.1, 6.3: Grant invincibility during transformation/second chance
+     */
+    setConstructInvulnerable: (endTime: number) => {
+      set({
+        isConstructInvulnerable: endTime > Date.now(),
+        constructInvulnerabilityEndTime: endTime,
+      });
+      // NOTE: Do NOT save to storage - invulnerability is session-only
+    },
+
+    /**
+     * Reset construct state to initial values
+     * Requirements 7.3, 7.5: Reset activeConstruct to 'NONE' when game ends
+     */
+    resetConstructState: () => {
+      set({
+        activeConstruct: 'NONE',
+        isConstructInvulnerable: false,
+        constructInvulnerabilityEndTime: 0,
+      });
+      // NOTE: Do NOT save to storage - these are session-only states
     },
 
     // Currency Actions
@@ -499,6 +570,13 @@ export const useGameStore = create<GameStore>()(
           savedState.hollowModeEnabled ?? DEFAULT_STATE.hollowModeEnabled,
         customThemeColors:
           savedState.customThemeColors ?? DEFAULT_STATE.customThemeColors,
+        // Echo Constructs - Load persisted unlockedConstructs - Requirements 8.2, 8.3, 8.4
+        unlockedConstructs:
+          savedState.unlockedConstructs ?? DEFAULT_STATE.unlockedConstructs,
+        // Session-only states are always reset on load - Requirements 7.4
+        activeConstruct: DEFAULT_STATE.activeConstruct,
+        isConstructInvulnerable: DEFAULT_STATE.isConstructInvulnerable,
+        constructInvulnerabilityEndTime: DEFAULT_STATE.constructInvulnerabilityEndTime,
       });
 
       // Load ghost data separately (can be large)
@@ -510,6 +588,7 @@ export const useGameStore = create<GameStore>()(
       const state = get();
 
       // Save main state
+      // NOTE: activeConstruct, isConstructInvulnerable, constructInvulnerabilityEndTime are NOT saved (session-only) - Requirements 7.4
       const stateToSave: PersistedState = {
         echoShards: state.echoShards,
         ownedSkins: state.ownedSkins,
@@ -533,6 +612,8 @@ export const useGameStore = create<GameStore>()(
         hapticEnabled: state.hapticEnabled,
         hollowModeEnabled: state.hollowModeEnabled,
         customThemeColors: state.customThemeColors,
+        // Echo Constructs - Only unlockedConstructs is persisted - Requirements 8.2, 8.3, 8.4
+        unlockedConstructs: state.unlockedConstructs,
       };
 
       safePersist(STORAGE_KEYS.GAME_STATE, stateToSave);

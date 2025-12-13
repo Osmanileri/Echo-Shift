@@ -45,8 +45,11 @@ export const INITIAL_CONFIG = {
   bottomMargin: 50, // Space reserved at bottom
 };
 
+// Legacy key - use utils/persistence.ts STORAGE_KEYS instead
+// Kept for backward compatibility migration
 export const STORAGE_KEYS = {
-  HIGH_SCORE: 'shadow_sync_highscore',
+  HIGH_SCORE: 'echo-shift-high-score', // Standardized prefix
+  LEGACY_HIGH_SCORE: 'shadow_sync_highscore', // Old key for migration
 };
 
 // Rhythm System Configuration - Requirements 1.2, 1.6

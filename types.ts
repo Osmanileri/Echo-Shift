@@ -225,3 +225,96 @@ export interface MidlineConfig {
   forecastTime: number;           // Öngörü süresi (500ms)
   criticalSpaceRatio: number;     // Kritik alan oranı (0.30)
 }
+
+
+// ============================================================================
+// Echo Constructs System Types - Requirements 2.3, 2.4, 7.1
+// ============================================================================
+
+/**
+ * Construct type representing the player's current form
+ * Requirements 7.1: Define ConstructType for state management
+ */
+export type ConstructType = 'NONE' | 'TITAN' | 'PHASE' | 'BLINK';
+
+/**
+ * Collision result determined by the active physics strategy
+ * Requirements 2.3, 2.4: Different constructs have different collision behaviors
+ */
+export type CollisionResult = 'DAMAGE' | 'DESTROY' | 'IGNORE';
+
+/**
+ * Input state for construct-specific input handling
+ * Requirements 5.2: Blink Node requires touch Y coordinate for ghost positioning
+ */
+export interface InputState {
+  isPressed: boolean;       // Is touch/mouse currently pressed
+  y: number;                // Current touch Y coordinate (for Blink ghost)
+  isTapFrame: boolean;      // Was this the frame where press started (for Titan stomp)
+  isReleaseFrame: boolean;  // Was this the frame where press ended (for Blink teleport)
+}
+
+/**
+ * Player entity interface for physics calculations
+ * Requirements 2.3, 2.4: Physics strategies operate on player entity
+ */
+export interface PlayerEntity {
+  x: number;
+  y: number;
+  velocity: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Rectangle interface for hitbox calculations
+ * Requirements 2.3: Physics strategies provide hitbox information
+ */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Physics strategy interface - Strategy Pattern for construct physics
+ * Requirements 2.3, 2.4: Each construct has its own physics behavior
+ */
+export interface PhysicsStrategy {
+  type: ConstructType;
+  
+  /**
+   * Update player physics based on construct-specific rules
+   * @param player - The player entity to update
+   * @param deltaTime - Time since last frame in milliseconds
+   * @param input - Current input state
+   */
+  update(player: PlayerEntity, deltaTime: number, input: InputState): void;
+  
+  /**
+   * Determine collision result based on construct-specific rules
+   * @param isFromAbove - Whether collision is from above (for Titan stomp)
+   * @returns CollisionResult - DAMAGE, DESTROY, or IGNORE
+   */
+  resolveCollision(isFromAbove: boolean): CollisionResult;
+  
+  /**
+   * Get the hitbox for the current construct
+   * @param player - The player entity
+   * @returns Rect - The hitbox rectangle
+   */
+  getHitbox(player: PlayerEntity): Rect;
+  
+  /**
+   * Get speed multiplier for this construct
+   * @returns number - Speed multiplier (e.g., 1.2 for Phase)
+   */
+  getSpeedMultiplier(): number;
+  
+  /**
+   * Get gravity multiplier for this construct
+   * @returns number - Gravity multiplier (e.g., 2.5 for Titan)
+   */
+  getGravityMultiplier(): number;
+}

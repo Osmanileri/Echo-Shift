@@ -2,30 +2,121 @@
 
 ## Üst Seviye Mimari
 
-- **UI State Machine**: `App.tsx` oyunun durumlarını (`GameState`: MENU/PLAYING/PAUSED/GAME_OVER/RESTORING) ve “overlay” UI’ları (Shop, Daily Challenge, Tutorial, Restore, Rate Us) yönetir.
-- **Game Loop & Render**: `components/GameEngine.tsx` canvas üstünde requestAnimationFrame ile simülasyon + çizimi yürütür. React burada “container”dır; gerçek frame state `useRef` ile mutable tutulur.
-- **Feature Systems**: `systems/*` ve bazı `utils/*` modülleri “sisteme” ait kuralları içerir (ör. particle, slow motion, restore snapshot, ghost racer, difficulty progression).
-- **Global Persisted State**: `store/gameStore.ts` (Zustand) oyuncu meta verilerini ve ayarları tutar; `utils/persistence.ts` ile güvenli localStorage kullanır.
+```
+┌─────────────────────────────────────────────────────────┐
+│                      App.tsx                            │
+│              (State Machine / Orchestration)            │
+├─────────────────────────────────────────────────────────┤
+│  GameState: MENU | PLAYING | PAUSED | GAME_OVER | ...   │
+│  Overlays: Shop | Tutorial | Restore | RateUs | ...     │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                  GameEngine.tsx                         │
+│           (Canvas + requestAnimationFrame)              │
+├─────────────────────────────────────────────────────────┤
+│  useRef: score, speed, obstacles, particles, player     │
+│  Systems: Constructs, Patterns, Difficulty, VFX, Audio  │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                   systems/*                             │
+│              (Feature Modules)                          │
+├─────────────────────────────────────────────────────────┤
+│  constructs/  │ audioSystem │ flowCurve │ patterns     │
+│  resonance    │ restore     │ shiftProtocol │ ...      │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│              store/gameStore.ts                         │
+│                  (Zustand)                              │
+├─────────────────────────────────────────────────────────┤
+│  Persisted: shards, inventory, equipped, campaign       │
+│  Session: activeConstruct, isInvulnerable               │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## State Yönetimi Deseni
 
-- **Frame-critical state (hot path)**: `useRef` ile `components/GameEngine.tsx` içinde tutulur (score, speed, obstacles, particles, player pos).
-- **Meta/progress state**: Zustand store (`useGameStore`) üzerinden tutulur (Echo Shards, inventory, equipped, upgrades, settings, campaign progress).
-- **UI state**: `App.tsx` içinde `useState` ile (shop açık mı, prompt göster, streak göstergeleri vb.).
+| State Tipi | Nerede | Örnek |
+|------------|--------|-------|
+| Frame-critical (hot path) | `useRef` in GameEngine | score, speed, obstacles, particles |
+| Meta/progress | Zustand store | Echo Shards, inventory, upgrades |
+| UI state | `useState` in App.tsx | shop açık mı, prompt göster |
+| Session-only | Zustand (not persisted) | activeConstruct, isInvulnerable |
 
-## Sistem Entegrasyonu Prensipleri
+## Sistem Entegrasyonu
 
-- **Config ile davranış**: `constants.ts` ve ilgili system config’leri (RHYTHM_CONFIG, GRAVITY_CONFIG, MIDLINE_CONFIG, SHIFT_CONFIG) oyun hissini belirler.
-- **Modlar “config object” ile açılır**: GameEngine props’larında `dailyChallengeMode`, `restoreMode`, `zenMode`, `ghostRacerMode`, `campaignMode` gibi opsiyonel config’ler var.
-- **Callback ile UI senkronizasyonu**: score, rhythm, near miss, slow motion gibi durumlar `onXxxUpdate` callback’leri ile `App.tsx` UI state’ine aktarılır.
+### Config-Driven Behavior
+```typescript
+// constants.ts
+export const RHYTHM_CONFIG = { toleranceMs: 200, streakForX2: 3, ... };
+export const SHIFT_CONFIG = { overdriveDuration: 10000, magnetRadius: 150, ... };
+```
 
-## Kalıcılık / Storage Deseni
+### Mode Activation
+```typescript
+// GameEngine props
+interface GameEngineProps {
+  dailyChallengeMode?: DailyChallengeConfig;
+  restoreMode?: RestoreConfig;
+  zenMode?: boolean;
+  ghostRacerMode?: GhostConfig;
+  campaignMode?: CampaignConfig;
+}
+```
 
-- **Safe persist adapter**: `utils/persistence.ts` JSON serialize/deserialize hatalarını yakalar; localStorage yoksa memory fallback kullanır.
-- **Store init**: `store/gameStore.ts` modül yüklenince localStorage’dan hydrate eder (browser ortamında).
+### Callback Senkronizasyonu
+```typescript
+// App.tsx → GameEngine
+onScoreUpdate={(score) => setCurrentScore(score)}
+onRhythmUpdate={(streak, multiplier) => setRhythmState({streak, multiplier})}
+onNearMissUpdate={(streak) => setNearMissStreak(streak)}
+```
+
+## Kalıcılık Deseni
+
+```typescript
+// utils/persistence.ts
+safePersist(key, data)  // JSON serialize + localStorage
+safeLoad(key, default)  // JSON deserialize + fallback
+```
+
+### Fallback Stratejisi
+1. localStorage'a yaz
+2. Hata → memory fallback kullan
+3. Load sırasında validate et
+4. Bozuk veri → default döndür
+
+## Echo Constructs Sistemi
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 ConstructSystem                         │
+├─────────────────────────────────────────────────────────┤
+│  activeType: 'NONE' | 'TITAN' | 'PHASE' | 'BLINK'      │
+│  strategy: PhysicsStrategy                              │
+│  invincibilityEndTime: number                           │
+└─────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌──────────┐    ┌──────────┐    ┌──────────┐
+    │  Titan   │    │  Phase   │    │  Blink   │
+    │ Physics  │    │ Physics  │    │ Physics  │
+    ├──────────┤    ├──────────┤    ├──────────┤
+    │ 2.5x grav│    │ flip grav│    │ teleport │
+    │ stomp    │    │ 1.2x spd │    │ static Y │
+    │ destroy  │    │ damage   │    │ ignore   │
+    └──────────┘    └──────────┘    └──────────┘
+```
 
 ## Test Deseni
 
-- `vitest` ile unit/property test yaklaşımı var (ör. `systems/*.test.ts`, `utils/*.test.ts`).
-
-
+- `vitest` ile unit/property test
+- `fast-check` ile property-based testing
+- Her sistem için `*.test.ts` dosyası
+- 364 test geçiyor

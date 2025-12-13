@@ -1,107 +1,134 @@
 # Progress — Durum, Yapılanlar, Kalanlar
 
-## Çalışanlar (Kod Tabanından Gözlemlenen)
+## Genel Durum
 
-- Oyun loop + canvas render (`components/GameEngine.tsx`)
-- UI orchestration (`App.tsx`) + overlay sistemleri
-- Zustand store + localStorage persist (`store/gameStore.ts`, `utils/persistence.ts`)
-- Sistem modülleri (ör. daily challenge, restore, tutorial, shop, upgrades, particle/screen shake vb.) `systems/*`
-- PWA yapılandırması (`vite.config.ts` + `vite-plugin-pwa`)
-- Test altyapısı (Vitest, `*.test.ts`)
+- **364 test** geçiyor
+- **6 spec** tamamlandı
+- **Dokümantasyon** güncel
+- **Storage key'ler** standardize
 
-## Son Eklenen / Güncellenen (Phase 4 - Audio & VFX Polish)
+## Tamamlanan Spec'ler
 
-- **Audio System** (`systems/audioSystem.ts`):
-  - Web Audio API tabanlı procedural ses üretimi (dosya gerektirmez).
-  - UI sesleri: buton tıklama, menü seçimi, zone seçimi.
-  - Gameplay sesleri: swap, near miss, streak bonus, S.H.I.F.T. letter collect.
-  - Event sesleri: game start, game over, new high score, purchase.
-  - Special sesleri: slow motion, shield activate/block, overdrive.
-  - Volume kontrol ve enable/disable özelliği.
+### 1. Echo Constructs ✅
+- Titan Physics (2.5x gravity, stomp)
+- Phase Physics (gravity flip, 1.2x speed)
+- Blink Physics (teleport, static Y)
+- GlitchToken Spawner
+- Second Chance + Smart Bomb
+- Construct Renderer (VFX)
+- Transformation VFX
+- Audio Integration
 
-- **VFX Polish**:
-  - Score popup'ları: Glow efekti, pop-in scale animasyonu, text outline.
-  - Particle rendering: Radial gradient fill, dynamic sizing, shadow glow.
+### 2. Procedural Gameplay ✅
+- Flow Curve (logaritmik hız)
+- Pattern System (Gate, Zig-Zag, Tunnel, Gauntlet, Breather)
+- Difficulty Progression
+- Shard Placement (safe/risky/bonus)
+- Object Pooling
 
-## Son Düzeltmeler
+### 3. Echo Shift Professionalization ✅
+- Echo Shards ekonomisi
+- Shop (Skins, Themes, Upgrades)
+- Campaign Mode (100 seviye)
+- Daily Challenge
+- Ghost Racer
+- Leaderboard
+- PWA desteği
+- Tutorial sistemi
 
-- **Tema Sistemi Sadeleştirildi**:
-  - `ThemeCreatorModal.tsx`: Sadece **Üst Alan** ve **Alt Alan** renk seçicileri.
-  - `deriveFullTheme()` fonksiyonu tüm renkleri otomatik türetiyor.
-  - `data/themes.ts`: Tüm temalar `deriveThemeColors()` ile tanımlanıyor.
-  - `utils/themeCode.ts`: V2 format (sadece topBg + bottomBg).
+### 4. Echo Shift Engagement ✅
+- Harmonic Resonance (Fever Mode)
+- System Restore (Revive)
+- Daily Rituals
+- Haptic Feedback
+- Analytics System
+- Rate Us Flow
 
-- **Orb Border Mantığı (Dinamik Görünürlük)**:
-  - Border SADECE orb kendi renkiyle aynı bölgedeyse gösteriliyor.
-  - White orb (bottomBg rengi) + bottom zone → border gerekli
-  - Black orb (topBg rengi) + top zone → border gerekli
-  - Aksi halde orb zaten arka plandan ayrışıyor, border yok.
+### 5. Echo Shift V2 Mechanics ✅
+- S.H.I.F.T. Protocol
+- Overdrive Mode
+- Snapshot System
+- Enhanced Resonance
 
-- **Sıfır Noktası Geçişi (Connector Length Bağlı)**:
-  - `computeGapCenter` fonksiyonu tamamen yeniden yazıldı.
-  - Blokların midline (sıfır noktası) geçiş miktarı artık **connector uzunluğuna bağlı**.
-  - `crossFactor = 0.8`: Çubuk uzunluğunun %80'i kadar midline'ı geçebilir.
+### 6. Advanced Game Mechanics ✅
+- Near Miss System
+- Rhythm Mode
+- Gravity Flip
+- Dynamic Midline
+- Phantom Obstacles
 
-- **Hollow Mode Border Düzeltmesi**:
-  - Dış çerçeve: Zıt renk (oppositeColor) ile her arka planda görünür kontrast.
-  - İç çerçeve: Polarite rengi (obstacleColor) ile hangi orb'un geçebileceğini gösterir.
+## Son Yapılan Polish
 
-- **Önceki Gameplay bugfix/tuning**:
-  - Shard (elmas) hareket frekansları artırıldı → hareket gözle görülür hale getirildi.
+### Documentation
+- ✅ README.md güncellendi
+- ✅ prd.md güncellendi
+- ✅ Memory-bank dosyaları güncellendi
 
-## Önceki Milestone (Phase 4 - UI Overhaul)
+### Storage Standardizasyonu
+- ✅ `echo-shift-` prefix standardize edildi
+- ✅ Legacy key backward compatibility korundu
 
-- **Modern & Profesyonel UI**:
-  - `GameUI.tsx`: Hub tasarımı, temiz ikonografi, güçlü "Başla" aksiyonu.
-  - **ZonePickerModal**: Zone seçimi modal içine taşındı, ana ekran ferahladı.
-  - **ZoneSelector**: Dikey liste düzenine geçildi, kartlar detaylandırıldı.
-  - **Visuals**: Grainy gradient arka planlar, blur efektleri, yumuşak geçişler.
+## Dosya Yapısı
 
-## Son Eklenen / Güncellenen (Phase 3 Milestone)
+```
+components/
+├── GameEngine.tsx       # Oyun loop + canvas
+├── GameUI.tsx           # Ana UI
+├── Campaign/            # Campaign modu
+├── DailyChallenge/      # Günlük challenge
+├── Leaderboard/         # Skor tablosu
+├── RateUs/              # Değerlendirme
+├── Restore/             # System Restore
+├── Rituals/             # Daily Rituals
+├── Shop/                # Mağaza
+├── ThemeCreator/        # Tema oluşturucu
+├── Tutorial/            # Tutorial
+└── Zones/               # Zone seçici
 
-- **Echo Studio / Theme Creator**:
-  - `components/ThemeCreator/ThemeCreatorModal.tsx`: Modernize edildi, canlı preview.
-  - `utils/themeCode.ts`: `ECHO-...` tema kodu encode/decode.
-  - `utils/colorContrast.ts`: Kontrast oranı hesapları.
-- **Hollow Design Rendering**:
-  - `store/gameStore.ts`: `hollowModeEnabled` persisted.
-  - `components/GameEngine.tsx`: Hollow orb + wireframe obstacles.
-- **Custom Theme persist + runtime apply**:
-  - `store/gameStore.ts`: `customThemeColors` persisted.
-  - `systems/themeSystem.ts`: `custom` tema desteği.
+systems/
+├── constructs/          # Echo Constructs
+│   ├── ConstructSystem.ts
+│   ├── ConstructRenderer.ts
+│   ├── TitanPhysics.ts
+│   ├── PhasePhysics.ts
+│   ├── BlinkPhysics.ts
+│   ├── TransformationVFX.ts
+│   └── SecondChanceVFX.ts
+├── audioSystem.ts       # Web Audio API
+├── flowCurve.ts         # Hız eğrisi
+├── patternManager.ts    # Pattern spawn
+├── difficultyProgression.ts
+├── shardPlacement.ts    # Elmas yerleşimi
+├── objectPool.ts        # Object pooling
+├── resonanceSystem.ts   # Harmonic Resonance
+├── restoreSystem.ts     # System Restore
+├── shiftProtocol.ts     # S.H.I.F.T.
+├── GlitchTokenSpawner.ts
+├── SecondChanceSystem.ts
+└── ...
 
-## Son Eklenen / Güncellenen (Phase 2 Milestone)
+store/
+└── gameStore.ts         # Zustand state
 
-- **Zone sistemi (Roguelite loop)**:
-  - `data/zones.ts`: 5 frekans zone’u + unlockCost + modifiers.
-  - `store/gameStore.ts`: Zone seçimi + unlock/persist.
-  - `App.tsx` → `components/GameEngine.tsx`: Zone modifiers (speed/spawn) uygulanıyor.
-- **Upgrades: Magnet + Shield**:
-  - `data/upgrades.ts`: `magnet`, `shield` eklendi.
-  - `components/GameEngine.tsx`: Magnet çekimi + Shield (invincibility/VFX).
-
-## Kalanlar / Belirsizler
-
-- Dokümantasyonun konsolidasyonu:
-  - `README.md` güncelleme
-  - `prd.md` gerçek ürün tanımıyla hizalama veya kaldırma
-- Storage key standardizasyonu (tek prefix/tek kaynak)
-- Phase 1 polish:
-  - Pattern authoring için `PatternChunk` → `Pattern` compile helper
-  - Shard placement’ı `positionOffset` ile “riskli köşe/iki blok arası” şeklinde daha net bağlamak
-- Phase 2 polish (opsiyonel):
-  - Shield charge ve magnet radius değerlerinin UX tuning’i (mobil denge)
-  - HUD üzerinde shield charge göstergesi (isteğe bağlı)
+data/
+├── patterns.ts          # Engel desenleri
+├── themes.ts            # Temalar
+├── skins.ts             # Ball skinleri
+├── upgrades.ts          # Yükseltmeler
+├── levels.ts            # Campaign seviyeleri
+├── rituals.ts           # Daily rituals
+└── zones.ts             # Frekans zone'ları
+```
 
 ## Bilinen Sorunlar
 
-- **Doküman uyumsuzluğu**: `README.md` ve `prd.md` mevcut “Echo Shift” kod tabanını yansıtmıyor.
-- **Storage key tutarsızlığı**: high score key’i `constants.ts` içinde legacy (`shadow_sync_highscore`), diğer persist key’ler `utils/persistence.ts` içinde `echo-shift-*`.
+- Test dosyalarında bazı TypeScript uyarıları (çalışmayı etkilemiyor)
 
-## Son Milestone
+## Sonraki Potansiyel Özellikler
 
-- **Phase 4 (Launch Polish) - TAMAMLANDI**:
-  - UI komple yenilendi (Hub tasarım, Glassmorphism).
-  - Zone seçimi optimize edildi (yatay scroll, unlock modal).
-  - Audio System eklendi (Web Audio API, procedural SFX).
-  - VFX Polish yapıldı (score popup glow, particle gradient).
+1. Multiplayer/Co-op Mode
+2. Boss Battles
+3. Seasonal Events
+4. Achievement System
+5. Custom Level Editor
+6. Localization

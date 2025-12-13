@@ -52,7 +52,7 @@ export interface PooledShard {
   id: string;
   x: number;
   y: number;
-  type: "safe" | "risky";
+  type: "safe" | "risky" | "bonus";
   value: number;
   active: boolean;
 }

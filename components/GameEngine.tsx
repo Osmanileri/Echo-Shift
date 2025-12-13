@@ -107,6 +107,15 @@ import { setCustomThemeColors } from "../systems/themeSystem";
 import * as AudioSystem from "../systems/audioSystem";
 // Orb Trail System - Skins create trail effects behind orbs
 import * as OrbTrailSystem from "../systems/orbTrailSystem";
+// Echo Constructs System Integration - Requirements 2.1, 2.3, 2.4, 3.1, 4.1, 5.1
+import * as ConstructSystem from "../systems/constructs/ConstructSystem";
+import * as GlitchTokenSpawner from "../systems/GlitchTokenSpawner";
+import * as SecondChanceSystem from "../systems/SecondChanceSystem";
+import type { InputState } from "../types";
+// Echo Constructs VFX Integration - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.6, 6.8
+import * as ConstructRenderer from "../systems/constructs/ConstructRenderer";
+import * as SecondChanceVFX from "../systems/constructs/SecondChanceVFX";
+import * as TransformationVFX from "../systems/constructs/TransformationVFX";
 
 // Campaign mode configuration for mechanics enable/disable
 export interface CampaignModeConfig {
@@ -382,6 +391,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
     hasMoved: false,
   });
 
+  // Echo Constructs - InputState for construct-specific input handling
+  // Requirements 5.2: Track touch Y coordinate for Blink ghost positioning
+  const inputStateRef = useRef<InputState>({
+    isPressed: false,
+    y: 0,
+    isTapFrame: false,
+    isReleaseFrame: false,
+  });
+  // Track previous frame's pressed state to detect tap/release frames
+  const prevInputPressed = useRef<boolean>(false);
+
+  // Echo Constructs System State - Requirements 2.1, 7.1, 7.2, 7.3
+  const constructSystemState = useRef<ConstructSystem.ConstructSystemState>(
+    ConstructSystem.createConstructSystemState()
+  );
+
+  // Glitch Tokens for Construct transformation - Requirements 1.1, 1.2, 1.3, 1.4
+  const glitchTokens = useRef<GlitchTokenSpawner.GlitchToken[]>([]);
+  const framesSinceGlitchTokenSpawn = useRef<number>(0);
+
+  // Echo Constructs VFX State - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.6, 6.8
+  const constructRenderState = useRef<ConstructRenderer.ConstructRenderState>(
+    ConstructRenderer.createConstructRenderState()
+  );
+  const transformationVFXState = useRef<TransformationVFX.TransformationVFXState>(
+    TransformationVFX.createTransformationVFXState()
+  );
+  const secondChanceVFXState = useRef<SecondChanceVFX.SecondChanceVFXState>(
+    SecondChanceVFX.createSecondChanceVFXState()
+  );
+
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
     const upgradeEffects = getActiveUpgradeEffects();
@@ -559,6 +599,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
     noSwapSurvivalTime.current = 0;
     lastRitualUpdateTime.current = 0;
     onRestoreStateUpdate?.(true, false);
+
+    // Reset Echo Constructs System State - Requirements 7.1, 7.5
+    constructSystemState.current = ConstructSystem.resetConstructSystem();
+    glitchTokens.current = [];
+    framesSinceGlitchTokenSpawn.current = 0;
+    inputStateRef.current = {
+      isPressed: false,
+      y: 0,
+      isTapFrame: false,
+      isReleaseFrame: false,
+    };
+    prevInputPressed.current = false;
+
+    // Reset Echo Constructs VFX State - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.6, 6.8
+    constructRenderState.current = ConstructRenderer.createConstructRenderState();
+    transformationVFXState.current = TransformationVFX.createTransformationVFXState();
+    secondChanceVFXState.current = SecondChanceVFX.createSecondChanceVFXState();
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -743,101 +800,150 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Mobile readability: keep polarity stable within a pattern (and across a few patterns)
   const patternPolarity = useRef<"white" | "black">("white");
   const shardSpawnSequence = useRef<number>(0);
+  // Aynı renk üst üste 4 kere gelmesin
+  const consecutivePolarityCount = useRef<number>(0);
+  const lastTopPolarity = useRef<"white" | "black">("white");
 
   // Pattern-Based Obstacle Spawn
-  // KRİTİK: Bloklar SIFIRI AGRESİF GEÇMELİ - oyun mekaniğinin özü bu
+  // BLOK SPAWN - İKİ BLOK BİRLİKTE (BEYAZ + SİYAH)
+  // KRİTİK KURAL: Bir blok sıfırı geçerse, sıfırdan itibaren max uzunluğu = çubuk uzunluğu - orb
+  // Bu sayede ters renkteki orbu her zaman kaçırabilirsin
   const spawnPatternObstacle = (
     lane: Lane,
     heightRatio: number,
     canvasHeight: number,
     canvasWidth: number
   ) => {
+    // Sadece TOP çağrıldığında ikisini birden spawn et
+    if (lane !== "TOP") return;
+
     const obsWidth = INITIAL_CONFIG.obstacleWidth;
     const spawnX = canvasWidth + 50;
     const midY = canvasHeight / 2;
     const orbRadius = INITIAL_CONFIG.orbRadius;
     const connectorLen = currentConnectorLength.current;
 
-    // Minimum boşluk = connector + 2 orb + güvenlik payı
-    const minGap = connectorLen + orbRadius * 2 + 10;
+    // MAX SIFIR GEÇİŞ = çubuk uzunluğunun yarısı - orb yarıçapı
+    // Bu, ters orbu kaçırabilmen için gereken maksimum mesafe
+    // GÜNCELLEME: Daha uzun geçiş = daha dinamik oyun
+    const maxCrossing = connectorLen / 2 - orbRadius + 8; // Artırıldı
 
-    // Max geçiş = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
-    const maxCrossDistance = connectorLen - orbRadius;
+    // BOŞLUK = çubuk uzunluğu + orb çapları (geçilebilir)
+    const minGap = connectorLen + orbRadius * 2 + 9;
 
-    // Polarity mantığı: TOP spawn edilirken polarite belirlenir, BOTTOM zıttını alır
-    let polarity: "white" | "black";
-
-    if (lane === "TOP") {
-      polarity = patternPolarity.current;
-      lastSpawnedPolarity.current = polarity;
-
-      // HeightRatio'yu kullanarak sıfır geçiş miktarını belirle
-      // %30 ile %100 arası agresif geçiş
-      const crossAmount = 0.3 + heightRatio * 0.7;
-      const actualCross = crossAmount * maxCrossDistance;
-
-      // Üst blok sıfırı geçecek şekilde hesapla
-      const topBlockHeight = midY + actualCross;
-      const bottomBlockTop = topBlockHeight + minGap;
-
-      lastGapCenter.current = topBlockHeight + minGap / 2; // Gap center for shards
-      lastHalfGap.current = minGap / 2;
-
-      // TOP BLOCK
-      const pooled = obstaclePool.current.acquire();
-      pooled.x = spawnX;
-      pooled.y = -topBlockHeight;
-      pooled.targetY = 0;
-      pooled.width = obsWidth;
-      pooled.height = Math.max(30, topBlockHeight);
-      pooled.lane = gravityState.current.isFlipped ? "bottom" : "top";
-      pooled.polarity = polarity;
-      pooled.passed = false;
-      pooled.nearMissChecked = false;
-      pooled.hasPhased = false;
-      pooled.isLatent = false;
-      pooled.initialX = spawnX;
-
-      // Phantom check
-      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
-      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
-      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        obstacles.current.push(createPhantomObstacle(pooled, spawnX, PHANTOM_CONFIG));
-      } else {
-        obstacles.current.push(pooled);
+    // RASTGELE POLARİTE - ama aynı renk üst üste 4 kere gelmesin
+    let topPolarity: "white" | "black" = nextRunRand() > 0.5 ? "white" : "black";
+    
+    // Eğer aynı renk 3 kere üst üste geldiyse, zorla değiştir
+    if (topPolarity === lastTopPolarity.current) {
+      consecutivePolarityCount.current++;
+      if (consecutivePolarityCount.current >= 3) {
+        // Zorla ters renk yap
+        topPolarity = topPolarity === "white" ? "black" : "white";
+        consecutivePolarityCount.current = 0;
       }
     } else {
-      // BOTTOM blok - üst bloğun zıttı polarite
-      polarity = lastSpawnedPolarity.current === "white" ? "black" : "white";
+      consecutivePolarityCount.current = 0;
+    }
+    lastTopPolarity.current = topPolarity;
+    
+    const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
 
-      // Üst bloktan kalan gap bilgisini kullan
-      const gapCenter = lastGapCenter.current || midY;
-      const halfGap = lastHalfGap.current || minGap / 2;
+    // RASTGELE GAP TİPİ:
+    // 0: Alt blok sıfırı yukarı geçiyor (gap üstte) - %37.5
+    // 1: Üst blok sıfırı aşağı geçiyor (gap altta) - %37.5
+    // 2: İkisi de sıfıra değmiyor (gap ortada) - %25
+    // Toplam %75 sıfır geçişi olasılığı
+    const rand = nextRunRand();
+    const gapType = rand < 0.375 ? 0 : rand < 0.75 ? 1 : 2;
 
-      const blockTop = gapCenter + halfGap;
-      const blockHeight = Math.max(30, canvasHeight - blockTop);
+    let topBlockHeight: number;
+    let bottomBlockTop: number;
 
-      const pooled = obstaclePool.current.acquire();
-      pooled.x = spawnX;
-      pooled.y = canvasHeight;
-      pooled.targetY = blockTop;
-      pooled.width = obsWidth;
-      pooled.height = blockHeight;
-      pooled.lane = gravityState.current.isFlipped ? "top" : "bottom";
-      pooled.polarity = polarity;
-      pooled.passed = false;
-      pooled.nearMissChecked = false;
-      pooled.hasPhased = false;
-      pooled.isLatent = false;
-      pooled.initialX = spawnX;
+    if (gapType === 0) {
+      // ALT BLOK SIFIRI GEÇİYOR (yukarı doğru uzanıyor)
+      // Alt blok sıfırın üstüne çıkıyor
+      const crossAmount = 0.3 * maxCrossing + nextRunRand() * 0.7 * maxCrossing; // %30-%100 arası geçiş
+      bottomBlockTop = midY - crossAmount; // Sıfırın üstüne çıkıyor
+      // Üst blok: alt bloğun üstünde, minGap kadar boşluk bırakarak
+      topBlockHeight = bottomBlockTop - minGap;
+    } else if (gapType === 1) {
+      // ÜST BLOK SIFIRI GEÇİYOR (aşağı doğru uzanıyor)
+      // Üst blok sıfırın altına iniyor
+      const crossAmount = 0.3 * maxCrossing + nextRunRand() * 0.7 * maxCrossing; // %30-%100 arası geçiş
+      topBlockHeight = midY + crossAmount; // Sıfırın altına iniyor
+      // Alt blok: üst bloğun altında, minGap kadar boşluk bırakarak
+      bottomBlockTop = topBlockHeight + minGap;
+    } else {
+      // İKİSİ DE SIFIRA DEĞMİYOR (gap ortada)
+      const offset = (nextRunRand() - 0.5) * 60; // Rastgele kayma
+      topBlockHeight = midY - minGap / 2 + offset - 10; // Sıfıra değmiyor
+      bottomBlockTop = midY + minGap / 2 + offset + 10; // Sıfıra değmiyor
+    }
 
-      // Phantom check
+    // Ekran sınırları kontrolü (ama gap'i bozmadan)
+    if (topBlockHeight < 15) {
+      topBlockHeight = 15;
+      bottomBlockTop = topBlockHeight + minGap;
+    }
+    if (bottomBlockTop > canvasHeight - 15) {
+      bottomBlockTop = canvasHeight - 15;
+      topBlockHeight = bottomBlockTop - minGap;
+    }
+
+    // Shard spawn için kaydet
+    lastGapCenter.current = (topBlockHeight + bottomBlockTop) / 2;
+    lastHalfGap.current = (bottomBlockTop - topBlockHeight) / 2;
+    lastSpawnedPolarity.current = topPolarity;
+
+    // ÜST BLOK
+    if (topBlockHeight > 15) {
+      const topPooled = obstaclePool.current.acquire();
+      topPooled.x = spawnX;
+      topPooled.y = -topBlockHeight;
+      topPooled.targetY = 0;
+      topPooled.width = obsWidth;
+      topPooled.height = topBlockHeight;
+      topPooled.lane = gravityState.current.isFlipped ? "bottom" : "top";
+      topPooled.polarity = topPolarity;
+      topPooled.passed = false;
+      topPooled.nearMissChecked = false;
+      topPooled.hasPhased = false;
+      topPooled.isLatent = false;
+      topPooled.initialX = spawnX;
+
       const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
       const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
       if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        obstacles.current.push(createPhantomObstacle(pooled, spawnX, PHANTOM_CONFIG));
+        obstacles.current.push(createPhantomObstacle(topPooled, spawnX, PHANTOM_CONFIG));
       } else {
-        obstacles.current.push(pooled);
+        obstacles.current.push(topPooled);
+      }
+    }
+
+    // ALT BLOK
+    const bottomBlockHeight = canvasHeight - bottomBlockTop;
+    if (bottomBlockHeight > 15) {
+      const bottomPooled = obstaclePool.current.acquire();
+      bottomPooled.x = spawnX;
+      bottomPooled.y = canvasHeight;
+      bottomPooled.targetY = bottomBlockTop;
+      bottomPooled.width = obsWidth;
+      bottomPooled.height = bottomBlockHeight;
+      bottomPooled.lane = gravityState.current.isFlipped ? "top" : "bottom";
+      bottomPooled.polarity = bottomPolarity;
+      bottomPooled.passed = false;
+      bottomPooled.nearMissChecked = false;
+      bottomPooled.hasPhased = false;
+      bottomPooled.isLatent = false;
+      bottomPooled.initialX = spawnX;
+
+      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
+      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
+        obstacles.current.push(createPhantomObstacle(bottomPooled, spawnX, PHANTOM_CONFIG));
+      } else {
+        obstacles.current.push(bottomPooled);
       }
     }
   };
@@ -845,6 +951,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Pattern-Based Shard Spawn - Requirements 5.1, 5.2, 5.3
   // DÜZELTME: midlineY tabanlı "Erişilebilirlik Alanı" hesaplaması
   // DİNAMİK HAREKET: Elmaslar yukarı-aşağı ve ileri-geri hareket eder
+  // GÜNCELLEME: Bonus shard tipi eklendi - patlayarak ekstra ödül verir
   const spawnPatternShard = (
     lane: Lane,
     type: "safe" | "risky",
@@ -854,7 +961,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     shardSpawnSequence.current += 1;
     // Mobile clarity: cap shards on screen (deterministic budget)
     const maxActiveShards =
-      score.current < 800 ? 1 : score.current < 2500 ? 2 : 3;
+      score.current < 800 ? 1 : score.current < 2500 ? 2 : 4; // Artırıldı
     if (activeShards.current.length >= maxActiveShards) return;
 
     // Delay risky shards until player is warmed up
@@ -871,10 +978,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
     const halfGap = lastHalfGap.current || INITIAL_CONFIG.orbRadius + 10;
     const riskyEdge = 12;
 
+    // BONUS SHARD: %15 şansla bonus shard spawn et (1500+ skor sonrası)
+    let actualType: "safe" | "risky" | "bonus" = type;
+    if (score.current >= 1500 && nextRunRand() < 0.15) {
+      actualType = "bonus";
+    }
+
     let y: number;
-    if (type === "safe") {
+    if (actualType === "safe") {
       // Safe shard: center of the passable gap (easy pickup, learnable)
       y = gapCenter;
+    } else if (actualType === "bonus") {
+      // Bonus shard: gap içinde rastgele konum (zor yakalanır)
+      const bonusOffset = (nextRunRand() - 0.5) * halfGap * 0.8;
+      y = gapCenter + bonusOffset;
     } else {
       // Risky shard: hug the edge of the gap in the requested lane
       y =
@@ -887,7 +1004,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     y = Math.max(20, Math.min(canvasHeight - 20, y));
 
     // Dinamik hareket parametreleri oluştur
-    const movement = ShardPlacement.generateShardMovement(type, nextRunRand);
+    const movement = ShardPlacement.generateShardMovement(actualType, nextRunRand);
 
     const pooled = shardPool.current.acquire();
     pooled.x = spawnX;
@@ -895,11 +1012,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
     pooled.baseX = spawnX;
     pooled.baseY = y;
     pooled.lane = lane;
-    pooled.type = type;
-    pooled.value = ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue;
+    pooled.type = actualType;
+    // Bonus shardlar 3x değer verir
+    pooled.value = actualType === "bonus" 
+      ? ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue * 3 
+      : ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue;
     pooled.collected = false;
     pooled.movement = movement;
     pooled.spawnTime = Date.now();
+    (pooled as ShardPlacement.PlacedShard).isBonus = actualType === "bonus";
     activeShards.current.push(pooled);
   };
 
@@ -1195,6 +1316,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
         touchId: touch.identifier,
         hasMoved: false,
       };
+
+      // Update InputState for Construct system - Requirements 5.2
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        isPressed: true,
+        y: touch.clientY,
+        isTapFrame: true, // Will be cleared next frame
+      };
     },
     [gameState, isMobile]
   );
@@ -1237,6 +1366,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Update start position for continuous dragging
       touchControlRef.current.startY = touch.clientY;
+
+      // Update InputState Y coordinate for Blink ghost - Requirements 5.2
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        y: touch.clientY,
+      };
     },
     [gameState, isMobile, dailyChallengeMode]
   );
@@ -1251,6 +1386,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
         (t) => t.identifier === touchControlRef.current.touchId
       );
       if (!touchEnded) return;
+
+      // Update InputState for Construct system - Requirements 5.3
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        isPressed: false,
+        isReleaseFrame: true, // Will be cleared next frame
+      };
 
       // Trigger swap on release (only if didn't move much - prevents accidental swaps)
       // Actually, always swap on release for the new mechanic
@@ -1331,6 +1473,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
     const onMouseMove = (e: MouseEvent) => {
       if (isMobile) return; // Skip for mobile
       handleInputMove(e.clientY);
+      // Update InputState Y for Blink ghost on desktop - Requirements 5.2
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        y: e.clientY,
+      };
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (isMobile) return;
+      // Update InputState for Construct system - Requirements 5.2
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        isPressed: true,
+        y: e.clientY,
+        isTapFrame: true,
+      };
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (isMobile) return;
+      // Update InputState for Construct system - Requirements 5.3
+      inputStateRef.current = {
+        ...inputStateRef.current,
+        isPressed: false,
+        isReleaseFrame: true,
+      };
     };
 
     const onClick = (e: MouseEvent) => {
@@ -1340,11 +1508,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     window.addEventListener("touchmove", onTouchMove, { passive: false });
     window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("click", onClick);
 
     return () => {
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("click", onClick);
     };
   }, [gameState, triggerSwap, isMobile]);
@@ -1420,6 +1592,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- UPDATE LOGIC ---
 
+      // --- INPUT STATE FRAME MANAGEMENT - Requirements 5.2 ---
+      // Clear tap/release frame flags from previous frame
+      if (inputStateRef.current.isTapFrame) {
+        inputStateRef.current = { ...inputStateRef.current, isTapFrame: false };
+      }
+      if (inputStateRef.current.isReleaseFrame) {
+        inputStateRef.current = { ...inputStateRef.current, isReleaseFrame: false };
+      }
+
       // --- SLOW MOTION UPDATE - Requirements 6.4 ---
       const gameTime = Date.now();
 
@@ -1452,6 +1633,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Get current speed multiplier (1.0 normally, 0.5 during slow motion)
       const slowMotionMultiplier = SlowMotion.getSpeedMultiplier(
         slowMotionState.current
+      );
+
+      // --- CONSTRUCT SYSTEM UPDATE - Requirements 2.3, 2.4, 3.1, 4.1, 4.6, 5.1 ---
+      // Update construct system state (check invincibility expiration)
+      constructSystemState.current = ConstructSystem.updateConstructState(
+        constructSystemState.current,
+        gameTime
+      );
+
+      // Get construct speed multiplier (1.0 for Standard/Titan/Blink, 1.2 for Phase)
+      const constructSpeedMultiplier = constructSystemState.current.currentStrategy.getSpeedMultiplier();
+
+      // Get construct gravity multiplier (1.0 for Standard, 2.5 for Titan, 0 for Phase/Blink)
+      const constructGravityMultiplier = constructSystemState.current.currentStrategy.getGravityMultiplier();
+
+      // --- CONSTRUCT VFX UPDATE - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.8 ---
+      // Update transformation VFX
+      transformationVFXState.current = TransformationVFX.updateTransformationVFX(
+        transformationVFXState.current,
+        Date.now()
+      );
+      
+      // Update Second Chance VFX
+      secondChanceVFXState.current = SecondChanceVFX.updateSecondChanceVFX(
+        secondChanceVFXState.current,
+        Date.now()
       );
 
       playerY.current += (targetPlayerY.current - playerY.current) * 0.15;
@@ -1673,55 +1880,76 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      // --- S.H.I.F.T. PROTOCOL SPAWN LOGIC - Requirements 3.2, 3.3, 3.4, 3.5 ---
+      // --- GLITCH TOKEN SPAWN LOGIC - Requirements 1.1, 1.2, 1.3, 1.4 ---
+      // Spawn Glitch Tokens for Construct transformation
+      framesSinceGlitchTokenSpawn.current++;
+      if (framesSinceGlitchTokenSpawn.current >= 60) { // Check every ~1 second
+        framesSinceGlitchTokenSpawn.current = 0;
+        
+        // Get unlocked constructs from store
+        const unlockedConstructs = useGameStore.getState().unlockedConstructs;
+        
+        // Try to spawn a token
+        const newToken = GlitchTokenSpawner.trySpawnToken(
+          score.current,
+          constructSystemState.current.activeConstruct,
+          unlockedConstructs,
+          obstacles.current,
+          width,
+          height
+        );
+        
+        if (newToken) {
+          glitchTokens.current.push(newToken);
+        }
+      }
+
+      // --- S.H.I.F.T. PROTOCOL SPAWN LOGIC ---
+      // GÜNCELLEME: 1500+ skordan sonra spawn, ileri doğru hareket, kovalamaca
       // Only spawn if Overdrive is not active and not all letters collected
-      if (!shiftState.current.overdriveActive) {
+      if (!shiftState.current.overdriveActive && score.current >= 1500) {
         framesSinceCollectibleSpawn.current++;
 
-        // Check spawn probability based on score - Requirements 3.4
-        const spawnProbability = ShiftProtocol.calculateSpawnProbability(
-          score.current
-        );
-
-        // Spawn check every 60 frames (1 second at 60fps)
-        if (framesSinceCollectibleSpawn.current >= 60) {
+        // Spawn check every 90 frames (~1.5 saniye at 60fps)
+        if (framesSinceCollectibleSpawn.current >= 90) {
           framesSinceCollectibleSpawn.current = 0;
 
-          // Random spawn based on probability
-          if (Math.random() < spawnProbability) {
-            // Select next letter to spawn - Requirements 3.5
+          // %20 spawn şansı
+          if (Math.random() < 0.20) {
+            // Select next letter to spawn
             const nextLetterIndex = ShiftProtocol.selectNextLetter(
               shiftState.current.collectedMask
             );
 
             if (nextLetterIndex !== -1) {
-              // Calculate reachable Y bounds - Requirements 3.1, 3.2
-              const reachableBounds = ShiftProtocol.calculateReachableY(
-                currentConnectorLength.current,
-                currentMidlineY
-              );
+              const connectorLen = currentConnectorLength.current;
+              const orbRadius = INITIAL_CONFIG.orbRadius;
+              
+              // Ulaşılabilir alan = çubuk/2 - orb
+              const maxReach = (connectorLen / 2) - orbRadius - 5;
+              const reachableMin = currentMidlineY - maxReach;
+              const reachableMax = currentMidlineY + maxReach;
 
-              // Generate random base Y within reachable bounds (accounting for oscillation)
-              const oscillationAmplitude =
-                SHIFT_CONFIG.oscillation.defaultAmplitude;
-              const safeMinY = reachableBounds.min + oscillationAmplitude + 20;
-              const safeMaxY = reachableBounds.max - oscillationAmplitude - 20;
+              // Küçük oscillation (takip edilebilir)
+              const oscillationAmplitude = 15;
+              
+              const safeMinY = reachableMin + 20;
+              const safeMaxY = reachableMax - 20;
 
               if (safeMaxY > safeMinY) {
                 const baseY = safeMinY + Math.random() * (safeMaxY - safeMinY);
 
-                // Create new collectible
+                // Create new collectible - İLERİ DOĞRU HAREKET EDECEK
                 const newCollectible: Collectible = {
                   id: Math.random().toString(36).substring(2, 11),
                   type: "LETTER",
                   value: ShiftProtocol.TARGET_WORD[nextLetterIndex],
-                  x: width + 50, // Spawn off-screen to the right
+                  x: width + 100, // Ekranın sağından spawn
                   y: baseY,
                   baseY: baseY,
                   oscillationPhase: Math.random() * Math.PI * 2,
                   oscillationAmplitude: oscillationAmplitude,
-                  oscillationFrequency:
-                    SHIFT_CONFIG.oscillation.defaultFrequency,
+                  oscillationFrequency: 2.5, // Yukarı-aşağı hareket
                   isCollected: false,
                 };
 
@@ -1732,20 +1960,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      // --- S.H.I.F.T. COLLECTIBLE UPDATE - Requirements 3.3 ---
-      // Update collectible positions with oscillation and horizontal movement
+      // --- S.H.I.F.T. COLLECTIBLE UPDATE ---
+      // GÜNCELLEME: Oyun hızından DAHA YAVAŞ hareket (kovalamaca efekti)
       const gameTimeSeconds = Date.now() / 1000;
       collectibles.current = collectibles.current.filter((collectible) => {
-        // Move collectible left with game speed
-        collectible.x -= speed.current * slowMotionMultiplier;
+        // Oyun hızının %60'ı kadar hareket et (oyuncu yaklaşabilsin) - Apply construct speed multiplier
+        const collectibleSpeed = speed.current * 0.6 * slowMotionMultiplier * constructSpeedMultiplier;
+        collectible.x -= collectibleSpeed;
 
-        // Apply oscillation - Requirements 3.3
-        collectible.y = ShiftProtocol.calculateOscillationY(
-          collectible.baseY,
-          collectible.oscillationAmplitude,
-          collectible.oscillationFrequency,
-          gameTimeSeconds + collectible.oscillationPhase
-        );
+        // Yukarı-aşağı oscillation + ileri-geri hareket
+        const elapsed = gameTimeSeconds + collectible.oscillationPhase;
+        
+        // Dikey hareket (yukarı-aşağı)
+        collectible.y = collectible.baseY + 
+          Math.sin(elapsed * collectible.oscillationFrequency) * collectible.oscillationAmplitude;
+        
+        // Yatay hareket (ileri-geri salınım) - takip zorlaştırıcı
+        const horizontalOscillation = Math.sin(elapsed * 1.5) * 20;
+        collectible.x += horizontalOscillation * 0.1; // Küçük ileri-geri
 
         // Remove if off-screen to the left
         return collectible.x > -50;
@@ -1902,6 +2134,78 @@ const GameEngine: React.FC<GameEngineProps> = ({
         blackOrb.color,
         getColor("accent"),
       ]);
+
+      // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
+      glitchTokens.current = glitchTokens.current.filter((token) => {
+        if (token.collected) return false;
+        
+        // Move token with game speed
+        const updatedToken = GlitchTokenSpawner.updateTokenPosition(
+          token,
+          -speed.current * slowMotionMultiplier * constructSpeedMultiplier
+        );
+        token.x = updatedToken.x;
+        
+        // Check if off-screen
+        if (GlitchTokenSpawner.isTokenOffScreen(token)) {
+          return false;
+        }
+        
+        // Check collision with white orb
+        const whiteTokenCollision = GlitchTokenSpawner.canCollectToken(
+          whiteOrbX, whiteOrbY, token
+        );
+        
+        // Check collision with black orb
+        const blackTokenCollision = GlitchTokenSpawner.canCollectToken(
+          blackOrbX, blackOrbY, token
+        );
+        
+        if (whiteTokenCollision || blackTokenCollision) {
+          // Mark as collected
+          token.collected = true;
+          
+          // Get position for VFX
+          const vfxX = whiteTokenCollision ? whiteOrbX : blackOrbX;
+          const vfxY = whiteTokenCollision ? whiteOrbY : blackOrbY;
+          
+          // Transform to the construct - Requirements 1.3, 2.1
+          constructSystemState.current = ConstructSystem.transformTo(
+            constructSystemState.current,
+            token.constructType,
+            Date.now()
+          );
+          
+          // Trigger transformation VFX - Requirements 2.2
+          transformationVFXState.current = TransformationVFX.triggerTransformation(
+            transformationVFXState.current,
+            vfxX,
+            vfxY,
+            Date.now()
+          );
+          
+          // Play transformation sound - Requirements 6.5
+          AudioSystem.playConstructTransform();
+          AudioSystem.playGlitchTokenCollect();
+          ScreenShake.triggerNearMiss();
+          ChromaticAberration.setStreakLevel(3); // Trigger chromatic aberration effect
+          getHapticSystem().trigger("heavy");
+          
+          // Score popup for transformation
+          scorePopups.current.push({
+            x: token.x,
+            y: token.y - 20,
+            text: `⚡ ${token.constructType} ⚡`,
+            color: "#00F0FF",
+            life: 2.0,
+            vy: -2,
+          });
+          
+          return false;
+        }
+        
+        return true;
+      });
 
       // --- S.H.I.F.T. COLLECTIBLE COLLISION DETECTION - Requirements 9.1, 9.2, 9.3, 9.4 ---
       const orbCollisionRadius = INITIAL_CONFIG.orbRadius;
@@ -2062,8 +2366,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           return false;
         }
 
-        // Move base position left with game speed
-        shard.baseX -= speed.current * slowMotionMultiplier;
+        // Move base position left with game speed - Apply construct speed multiplier
+        shard.baseX -= speed.current * slowMotionMultiplier * constructSpeedMultiplier;
 
         // Calculate dynamic position with oscillation (yukarı-aşağı + ileri-geri)
         const dynamicPos = ShardPlacement.calculateShardPosition(
@@ -2143,27 +2447,58 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Check for near miss bonus - Requirements 5.5
           const isNearMiss = nearMissState.current.streakCount > 0;
           const awardedValue = ShardPlacement.collectShard(shard, isNearMiss);
+          
+          // BONUS SHARD: Ekstra ödül ve büyük patlama efekti
+          const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
+          const finalValue = isBonus ? awardedValue * 2 : awardedValue; // Bonus 2x ekstra
 
           // Award Echo Shards
-          useGameStore.getState().addEchoShards(awardedValue);
+          useGameStore.getState().addEchoShards(finalValue);
 
-          // Visual feedback
-          ParticleSystem.emitBurst(shard.x, shard.y, [
-            "#00F0FF",
-            "#FFD700",
-            "#FFFFFF",
-          ]);
+          // Visual feedback - BONUS için büyük patlama
+          if (isBonus) {
+            // Büyük patlama efekti - 3 dalga
+            ParticleSystem.emitBurst(shard.x, shard.y, [
+              "#FFD700", "#FF6B00", "#FFFFFF",
+            ]);
+            ParticleSystem.emitBurst(shard.x, shard.y, [
+              "#FF00FF", "#00FFFF", "#FFD700",
+            ]);
+            // Ekstra parçacıklar
+            for (let i = 0; i < 15; i++) {
+              particles.current.push({
+                x: shard.x,
+                y: shard.y,
+                vx: (Math.random() - 0.5) * 12,
+                vy: (Math.random() - 0.5) * 12,
+                life: 1.2,
+                color: Math.random() > 0.5 ? "#FFD700" : "#FF6B00",
+              });
+            }
+            // Screen shake for bonus
+            ScreenShake.triggerStreakBonus();
+            // Haptic feedback - strong for bonus
+            getHapticSystem().trigger("heavy");
+            // Audio feedback
+            AudioSystem.playStreakBonus();
+          } else {
+            ParticleSystem.emitBurst(shard.x, shard.y, [
+              "#00F0FF",
+              "#FFD700",
+              "#FFFFFF",
+            ]);
+            // Haptic feedback
+            getHapticSystem().trigger("light");
+          }
+          
           scorePopups.current.push({
             x: shard.x,
             y: shard.y - 20,
-            text: `+${awardedValue} ⚡`,
-            color: shard.type === "risky" ? "#FFD700" : "#00F0FF",
-            life: 1.0,
-            vy: -2,
+            text: isBonus ? `+${finalValue} 💥` : `+${finalValue} ⚡`,
+            color: isBonus ? "#FFD700" : (shard.type === "risky" ? "#FFD700" : "#00F0FF"),
+            life: isBonus ? 1.5 : 1.0,
+            vy: isBonus ? -3 : -2,
           });
-
-          // Haptic feedback
-          getHapticSystem().trigger("light");
 
           // Remove collected shard + release to pool
           shardPool.current.release(
@@ -2239,8 +2574,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       let collisionDetected = false;
 
       obstacles.current.forEach((obs) => {
-        // Horizontal Movement - Apply slow motion multiplier - Requirements 6.4
-        obs.x -= speed.current * slowMotionMultiplier;
+        // Horizontal Movement - Apply slow motion and construct speed multipliers - Requirements 6.4, 4.6
+        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier;
 
         // Vertical Animation
         if (Math.abs(obs.y - obs.targetY) > 0.5) {
@@ -2495,6 +2830,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
           return; // Skip normal collision logic during Overdrive
         }
 
+        // Check Construct System invincibility - Requirements 2.1, 6.3
+        const constructInvincible = ConstructSystem.isInvulnerable(
+          constructSystemState.current,
+          Date.now()
+        );
+
         // Also skip if pending restore (waiting for user decision) or restore animation is playing
         if (
           isPhasing.current ||
@@ -2502,6 +2843,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           zenModeInvincible ||
           postRestoreInvincibleActive ||
           shieldInvincibleActive ||
+          constructInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current
         )
@@ -2617,6 +2959,93 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 return;
               }
 
+              // --- CONSTRUCT COLLISION RESOLUTION - Requirements 3.3, 3.4, 4.4, 5.4, 5.5 ---
+              // Check if construct is active and use its collision resolution
+              const collisionResult = constructSystemState.current.currentStrategy.resolveCollision(
+                whiteOrb.y > obs.y + obs.height // isFromAbove check for Titan stomp
+              );
+
+              if (collisionResult === 'IGNORE') {
+                // Blink teleport - ignore collision
+                return;
+              } else if (collisionResult === 'DESTROY') {
+                // Titan stomp - destroy obstacle
+                createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, ["#FFD700", "#FF6600", "#FFFFFF"]);
+                ScreenShake.triggerNearMiss();
+                getHapticSystem().trigger("medium");
+                // Audio for Titan stomp - Requirements 6.5
+                AudioSystem.playTitanStomp();
+                if (!zenMode?.enabled) {
+                  score.current += 25;
+                  onScoreUpdate(score.current);
+                }
+                scorePopups.current.push({
+                  x: obs.x + obs.width / 2,
+                  y: obs.y + obs.height / 2,
+                  text: "+25 💥",
+                  color: "#FFD700",
+                  life: 1.0,
+                  vy: -2,
+                });
+                obs.passed = true;
+                obs.x = -1000;
+                return;
+              }
+
+              // DAMAGE result - check Second Chance first
+              if (SecondChanceSystem.hasSecondChance(constructSystemState.current)) {
+                // Process Second Chance - Requirements 6.1, 6.2, 6.3, 6.7
+                const secondChanceResult = SecondChanceSystem.processSecondChance(
+                  constructSystemState.current,
+                  Date.now(),
+                  obstacles.current,
+                  playerX
+                );
+                constructSystemState.current = secondChanceResult.newState;
+
+                // Smart Bomb - destroy obstacles in radius - Requirements 6.7
+                secondChanceResult.obstaclesToDestroy.forEach(obsId => {
+                  const targetObs = obstacles.current.find(o => o.id === obsId);
+                  if (targetObs) {
+                    createExplosion(targetObs.x + targetObs.width / 2, targetObs.y + targetObs.height / 2, "#FF00FF");
+                    targetObs.passed = true;
+                    targetObs.x = -1000;
+                  }
+                });
+
+                // VFX for Second Chance - Requirements 6.4, 6.8
+                secondChanceVFXState.current = SecondChanceVFX.triggerSecondChance(
+                  secondChanceVFXState.current,
+                  whiteOrb.x,
+                  whiteOrb.y,
+                  Date.now()
+                );
+                createExplosion(whiteOrb.x, whiteOrb.y, "#FF00FF");
+                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
+                getHapticSystem().trigger("heavy");
+                
+                // Audio for Second Chance - Requirements 6.5
+                AudioSystem.playConstructDestruction();
+                AudioSystem.playSmartBombShockwave();
+                
+                scorePopups.current.push({
+                  x: whiteOrb.x,
+                  y: whiteOrb.y - 20,
+                  text: "💥 SECOND CHANCE",
+                  color: "#FF00FF",
+                  life: 1.5,
+                  vy: -2,
+                });
+
+                // Reset streak systems
+                rhythmState.current = createInitialRhythmState();
+                onRhythmStateUpdate?.(1, 0);
+                ChromaticAberration.endStreak();
+                resonanceState.current = ResonanceSystem.createInitialResonanceState();
+                return;
+              }
+
               // Normal collision - game over
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
@@ -2724,6 +3153,93 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
                 obs.passed = true;
                 obs.x = -1000;
+                return;
+              }
+
+              // --- CONSTRUCT COLLISION RESOLUTION - Requirements 3.3, 3.4, 4.4, 5.4, 5.5 ---
+              // Check if construct is active and use its collision resolution
+              const blackCollisionResult = constructSystemState.current.currentStrategy.resolveCollision(
+                blackOrb.y > obs.y + obs.height // isFromAbove check for Titan stomp
+              );
+
+              if (blackCollisionResult === 'IGNORE') {
+                // Blink teleport - ignore collision
+                return;
+              } else if (blackCollisionResult === 'DESTROY') {
+                // Titan stomp - destroy obstacle
+                createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, ["#FFD700", "#FF6600", "#FFFFFF"]);
+                ScreenShake.triggerNearMiss();
+                getHapticSystem().trigger("medium");
+                // Audio for Titan stomp - Requirements 6.5
+                AudioSystem.playTitanStomp();
+                if (!zenMode?.enabled) {
+                  score.current += 25;
+                  onScoreUpdate(score.current);
+                }
+                scorePopups.current.push({
+                  x: obs.x + obs.width / 2,
+                  y: obs.y + obs.height / 2,
+                  text: "+25 💥",
+                  color: "#FFD700",
+                  life: 1.0,
+                  vy: -2,
+                });
+                obs.passed = true;
+                obs.x = -1000;
+                return;
+              }
+
+              // DAMAGE result - check Second Chance first
+              if (SecondChanceSystem.hasSecondChance(constructSystemState.current)) {
+                // Process Second Chance - Requirements 6.1, 6.2, 6.3, 6.7
+                const blackSecondChanceResult = SecondChanceSystem.processSecondChance(
+                  constructSystemState.current,
+                  Date.now(),
+                  obstacles.current,
+                  playerX
+                );
+                constructSystemState.current = blackSecondChanceResult.newState;
+
+                // Smart Bomb - destroy obstacles in radius - Requirements 6.7
+                blackSecondChanceResult.obstaclesToDestroy.forEach(obsId => {
+                  const targetObs = obstacles.current.find(o => o.id === obsId);
+                  if (targetObs) {
+                    createExplosion(targetObs.x + targetObs.width / 2, targetObs.y + targetObs.height / 2, "#FF00FF");
+                    targetObs.passed = true;
+                    targetObs.x = -1000;
+                  }
+                });
+
+                // VFX for Second Chance - Requirements 6.4, 6.8
+                secondChanceVFXState.current = SecondChanceVFX.triggerSecondChance(
+                  secondChanceVFXState.current,
+                  blackOrb.x,
+                  blackOrb.y,
+                  Date.now()
+                );
+                createExplosion(blackOrb.x, blackOrb.y, "#FF00FF");
+                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
+                getHapticSystem().trigger("heavy");
+                
+                // Audio for Second Chance - Requirements 6.5
+                AudioSystem.playConstructDestruction();
+                AudioSystem.playSmartBombShockwave();
+                
+                scorePopups.current.push({
+                  x: blackOrb.x,
+                  y: blackOrb.y - 20,
+                  text: "💥 SECOND CHANCE",
+                  color: "#FF00FF",
+                  life: 1.5,
+                  vy: -2,
+                });
+
+                // Reset streak systems
+                rhythmState.current = createInitialRhythmState();
+                onRhythmStateUpdate?.(1, 0);
+                ChromaticAberration.endStreak();
+                resonanceState.current = ResonanceSystem.createInitialResonanceState();
                 return;
               }
 
@@ -3401,19 +3917,35 @@ const GameEngine: React.FC<GameEngineProps> = ({
       });
 
       // --- PATTERN SHARD RENDERING - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
+      // GÜNCELLEME: Bonus shard görünümü eklendi
       activeShards.current.forEach((shard) => {
         if (shard.collected) return;
 
         const shardTime = Date.now() * 0.003;
-        const pulseScale = 1 + Math.sin(shardTime) * 0.1;
-        const shardSize = 12 * pulseScale;
+        const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
+        
+        // Bonus shardlar daha büyük ve daha hızlı pulse
+        const pulseSpeed = isBonus ? 2.5 : 1;
+        const pulseScale = 1 + Math.sin(shardTime * pulseSpeed) * (isBonus ? 0.2 : 0.1);
+        const baseSize = isBonus ? 16 : 12;
+        const shardSize = baseSize * pulseScale;
 
         ctx.save();
         ctx.translate(shard.x, shard.y);
+        
+        // Bonus shardlar döner
+        if (isBonus) {
+          ctx.rotate(shardTime * 2);
+        }
 
-        // Draw outer glow
-        ctx.shadowColor = shard.type === "risky" ? "#FFD700" : "#00F0FF";
-        ctx.shadowBlur = 15;
+        // Draw outer glow - bonus için daha güçlü
+        if (isBonus) {
+          ctx.shadowColor = "#FF6B00";
+          ctx.shadowBlur = 25 + Math.sin(shardTime * 3) * 10;
+        } else {
+          ctx.shadowColor = shard.type === "risky" ? "#FFD700" : "#00F0FF";
+          ctx.shadowBlur = 15;
+        }
 
         // Draw diamond shape
         ctx.beginPath();
@@ -3430,7 +3962,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
           shardSize,
           shardSize
         );
-        if (shard.type === "risky") {
+        if (isBonus) {
+          // Bonus: Turuncu-altın gradient
+          gradient.addColorStop(0, "#FF6B00");
+          gradient.addColorStop(0.5, "#FFD700");
+          gradient.addColorStop(1, "#FF6B00");
+        } else if (shard.type === "risky") {
           gradient.addColorStop(0, "#FFD700");
           gradient.addColorStop(1, "#FFA500");
         } else {
@@ -3441,10 +3978,88 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fill();
 
         // Draw border
-        ctx.strokeStyle = shard.type === "risky" ? "#FFFFFF" : "#FFFFFF";
+        ctx.strokeStyle = isBonus ? "#FFFFFF" : "#FFFFFF";
+        ctx.lineWidth = isBonus ? 3 : 2;
+        ctx.stroke();
+        
+        // Bonus için ekstra iç yıldız
+        if (isBonus) {
+          ctx.beginPath();
+          const innerSize = shardSize * 0.5;
+          ctx.moveTo(0, -innerSize);
+          ctx.lineTo(innerSize, 0);
+          ctx.lineTo(0, innerSize);
+          ctx.lineTo(-innerSize, 0);
+          ctx.closePath();
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fill();
+        }
+
+        ctx.restore();
+      });
+
+      // --- GLITCH TOKEN RENDERING - Requirements 1.2 ---
+      const tokenTime = Date.now() * 0.001;
+      glitchTokens.current.forEach((token) => {
+        if (token.collected) return;
+        
+        // Pulsing glow effect
+        const pulseIntensity = 0.5 + 0.5 * Math.sin(tokenTime * 5);
+        const glowSize = 20 + pulseIntensity * 15;
+        
+        ctx.save();
+        ctx.shadowColor = "#00F0FF";
+        ctx.shadowBlur = glowSize;
+        
+        // Draw rotating hexagon
+        ctx.translate(token.x, token.y);
+        ctx.rotate(tokenTime * 3);
+        
+        // Outer hexagon
+        ctx.beginPath();
+        const hexSize = 25;
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          const x = Math.cos(angle) * hexSize;
+          const y = Math.sin(angle) * hexSize;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = "#00F0FF";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // Inner hexagon with different color
+        ctx.beginPath();
+        const innerHexSize = 15;
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          const x = Math.cos(angle) * innerHexSize;
+          const y = Math.sin(angle) * innerHexSize;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(255, 0, 255, ${0.5 + pulseIntensity * 0.5})`;
         ctx.lineWidth = 2;
         ctx.stroke();
-
+        
+        ctx.rotate(-tokenTime * 3);
+        ctx.translate(-token.x, -token.y);
+        
+        // Draw construct type indicator
+        ctx.font = "bold 12px Arial";
+        ctx.fillStyle = "#00F0FF";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.shadowColor = "#FF00FF";
+        ctx.shadowBlur = 8;
+        
+        // Show first letter of construct type
+        const typeLabel = token.constructType.charAt(0);
+        ctx.fillText(typeLabel, token.x, token.y);
+        
         ctx.restore();
       });
 
@@ -3756,9 +4371,47 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Render trails BEFORE orbs so they appear behind
       OrbTrailSystem.renderTrails(ctx, trailConfig);
 
-      // Draw the orbs
-      drawOrb(blackOrb, false);
-      drawOrb(whiteOrb, true);
+      // --- CONSTRUCT RENDERING - Requirements 3.5, 4.5, 5.6 ---
+      // Update construct render state for animations
+      const playerCenterX = playerX;
+      const playerCenterY = playerY.current * height;
+      constructRenderState.current = ConstructRenderer.updateConstructRenderState(
+        constructRenderState.current,
+        16.67, // Assume ~60fps
+        playerCenterX,
+        playerCenterY
+      );
+      
+      // Render construct sprite if active (instead of normal orbs)
+      const activeConstruct = constructSystemState.current.activeConstruct;
+      const isConstructInvulnerable = ConstructSystem.isInvulnerable(
+        constructSystemState.current,
+        Date.now()
+      );
+      
+      if (activeConstruct !== 'NONE') {
+        // Get ghost Y for Blink construct (from input state)
+        const blinkGhostY = activeConstruct === 'BLINK' && inputStateRef.current.isPressed
+          ? inputStateRef.current.y
+          : null;
+        
+        // Render the construct at player position
+        ConstructRenderer.renderConstruct(
+          ctx,
+          activeConstruct,
+          playerCenterX,
+          playerCenterY,
+          INITIAL_CONFIG.orbRadius,
+          constructRenderState.current,
+          isConstructInvulnerable,
+          blinkGhostY,
+          1 // gravityDirection - could be from PhasePhysics state
+        );
+      } else {
+        // Draw the normal orbs when no construct is active
+        drawOrb(blackOrb, false);
+        drawOrb(whiteOrb, true);
+      }
 
       // Post-restore invincibility visual effect - cyan glow and countdown
       if (postRestoreInvincible.current) {
@@ -3804,6 +4457,61 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // No center symbol - clean design
+
+      // --- CONSTRUCT INVINCIBILITY VFX - Requirements 6.6 ---
+      // Flashing effect when invulnerable after transformation or Second Chance
+      if (ConstructSystem.isInvulnerable(constructSystemState.current, Date.now())) {
+        const remainingInvincibility = ConstructSystem.getRemainingInvincibility(
+          constructSystemState.current,
+          Date.now()
+        );
+        
+        // Pulsing magenta glow around orbs
+        const pulseIntensity = 15 + 10 * Math.sin(Date.now() * 0.02);
+        const flashOpacity = 0.3 + 0.4 * Math.sin(Date.now() * 0.015);
+        
+        ctx.save();
+        ctx.shadowColor = "#FF00FF";
+        ctx.shadowBlur = pulseIntensity;
+        ctx.globalAlpha = flashOpacity;
+        
+        // Glow around white orb
+        ctx.beginPath();
+        ctx.arc(whiteOrb.x, whiteOrb.y, whiteOrb.radius + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = "#FF00FF";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        
+        // Glow around black orb
+        ctx.beginPath();
+        ctx.arc(blackOrb.x, blackOrb.y, blackOrb.radius + 8, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.restore();
+        
+        // Show active construct indicator
+        if (constructSystemState.current.activeConstruct !== 'NONE') {
+          ctx.fillStyle = `rgba(255, 0, 255, ${0.5 + 0.3 * Math.sin(Date.now() * 0.01)})`;
+          ctx.font = "bold 20px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            `⚡ ${constructSystemState.current.activeConstruct} ⚡`,
+            width / 2,
+            50
+          );
+        }
+      }
+
+      // --- CONSTRUCT VFX RENDERING - Requirements 2.2, 6.4, 6.8 ---
+      // Render transformation VFX
+      if (TransformationVFX.isTransformationActive(transformationVFXState.current)) {
+        TransformationVFX.renderTransformationVFX(ctx, canvas, transformationVFXState.current);
+      }
+      
+      // Render Second Chance VFX (shockwave, explosion)
+      if (SecondChanceVFX.isSecondChanceVFXActive(secondChanceVFXState.current)) {
+        SecondChanceVFX.renderSecondChanceVFX(ctx, secondChanceVFXState.current);
+      }
 
       // Particles - Requirements 12.1, 12.2, 12.3
       // Zen Mode: Reduce visual intensity - Requirements 9.4

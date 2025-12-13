@@ -1,50 +1,84 @@
-# Welcome to your Expo app 👋
+# Echo Shift 🎮
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Ritim tabanlı procedural arcade oyunu. İki zıt orb'u yönet, engelleri geç, yüksek skor kovala!
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 🚀 Başlangıç
 
 ```bash
-npm run reset-project
+npm install
+npm run dev
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## 🎯 Oynanış
 
-## Learn more
+- **Temel Mekanik**: Ekrana dokun/tıkla → orblar yer değiştirir
+- **Hedef**: Doğru renkli orb ile aynı renkli engelden geç
+- **Skor**: Engel geçişi = puan, streak = çarpan bonus
 
-To learn more about developing your project with Expo, look at the following resources:
+## ✨ Özellikler
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### 🔮 Echo Constructs
+- **Glitch Token**: 500+ skorda %3 şansla belirir
+- **Titan**: Ağır yerçekimi, stomp ile engel patlatma
+- **Phase**: Yerçekimi ters çevirme, tavan/zemin geçişi
+- **Blink**: Teleport mekaniği
+- **Second Chance**: Construct formunda ölmezsin, Smart Bomb patlar
 
-## Join the community
+### 🎵 Ritim & Streak
+- **Harmonic Resonance**: 10 streak → 10 saniye god mode
+- **Near Miss**: Engele yakın geç → bonus puan
+- **Rhythm Multiplier**: Zamanlamalı geçişler → x2, x3 çarpan
 
-Join our community of developers creating universal apps.
+### 🛒 Meta Sistemler
+- **Echo Shards**: Skorun %10'u kadar para
+- **Shop**: Skin, tema, upgrade satın al
+- **Campaign**: 100 seviye
+- **Daily Challenge**: Günlük özel challenge
+- **Ghost Racer**: Önceki rekorunla yarış
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### ⚡ S.H.I.F.T. Protocol
+- 5 harf topla → Overdrive mode (10 saniye invincibility)
+
+### 🔄 System Restore
+- Öldüğünde 100 Echo Shard ile 3 saniye geri sar
+
+## 🛠️ Teknolojiler
+
+- **Frontend**: React 18 + TypeScript
+- **Build**: Vite 5
+- **State**: Zustand
+- **Test**: Vitest (364 test)
+- **PWA**: vite-plugin-pwa
+- **Audio**: Web Audio API (procedural)
+
+## 📁 Proje Yapısı
+
+```
+├── components/          # React bileşenleri
+│   ├── GameEngine.tsx   # Oyun loop + canvas render
+│   ├── GameUI.tsx       # Ana UI
+│   └── ...              # Shop, Campaign, Tutorial, etc.
+├── systems/             # Oyun sistemleri
+│   ├── constructs/      # Echo Constructs sistemi
+│   ├── audioSystem.ts   # Ses efektleri
+│   └── ...              # Diğer sistemler
+├── store/               # Zustand state
+├── data/                # Oyun verileri (patterns, themes, etc.)
+├── utils/               # Yardımcı fonksiyonlar
+└── .kiro/specs/         # Özellik spesifikasyonları
+```
+
+## 🧪 Test
+
+```bash
+npm run test        # Vitest watch mode
+npx vitest run      # Tek seferlik çalıştır
+```
+
+## 📱 PWA
+
+Oyun PWA olarak çalışır - mobilde "Ana Ekrana Ekle" ile uygulama gibi kullanılabilir.
+
+## 📄 Lisans
+
+MIT
