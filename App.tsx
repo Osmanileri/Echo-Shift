@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
     DailyChallengeMode,
-    RestoreModeConfig,
+    RestoreModeConfig
 } from "./components/GameEngine";
 import GameUI from "./components/GameUI";
 import MissionComplete from "./components/Missions/MissionComplete";
@@ -38,7 +38,11 @@ import {
     createAnalyticsSystem,
 } from "./systems/analyticsSystem";
 // Daily Rituals System - Requirements 5.5
-import { setupRitualAnalytics } from "./systems/dailyRituals";
+import RitualsPanel from "./components/Rituals/RitualsPanel";
+import { DailyRitualsState, getDailyRitualsSystem, setupRitualAnalytics } from "./systems/dailyRituals";
+// Campaign Mode - Requirements 7.1
+import LevelMap from "./components/Campaign/LevelMap";
+import { LevelConfig } from "./data/levels";
 // Rate Us System - Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8
 import RatePrompt from "./components/RateUs/RatePrompt";
 import ThemeCreatorModal from "./components/ThemeCreator/ThemeCreatorModal";
@@ -134,6 +138,25 @@ const App: React.FC = () => {
   const [dailyRewardAmount, setDailyRewardAmount] = useState<number>(0);
   const [showSyncComplete, setShowSyncComplete] = useState<boolean>(false);
 
+  // Daily Rituals state
+  const [showRitualsPanel, setShowRitualsPanel] = useState<boolean>(false);
+  const [ritualsState, setRitualsState] = useState<DailyRitualsState>(() => getDailyRitualsSystem().state);
+  
+  // Campaign Mode state
+  const [showCampaignMap, setShowCampaignMap] = useState<boolean>(false);
+  const [campaignLevelConfig, setCampaignLevelConfig] = useState<LevelConfig | null>(null);
+  // Campaign Update v2.5 - Level unlock animation state - Requirements 13.1
+  const [newlyUnlockedLevel, setNewlyUnlockedLevel] = useState<number | undefined>(undefined);
+  const [justCompletedLevel, setJustCompletedLevel] = useState<number | undefined>(undefined);
+  // Campaign Update v2.5 - Distance tracking state for HUD - Requirements 6.1, 6.2, 6.3, 6.4
+  const [currentDistance, setCurrentDistance] = useState<number>(0);
+  const [targetDistance, setTargetDistance] = useState<number>(0);
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [isNearFinish, setIsNearFinish] = useState<boolean>(false);
+  
+  // Game start notification state
+  const [gameStartNotification, setGameStartNotification] = useState<string | null>(null);
+
   // Global store for Echo Shards - Requirements 1.3, 1.4
   const echoShards = useGameStore((state) => state.echoShards);
   const addEchoShards = useGameStore((state) => state.addEchoShards);
@@ -216,7 +239,19 @@ const App: React.FC = () => {
     prevSyncRate.current = syncRate;
   }, [syncRate]);
 
+  // Campaign Update v2.5 - Requirements 1.1, 1.2, 1.3, 1.4
+  // "Start Game" now opens level selection directly (campaign-first flow)
   const handleStart = () => {
+    // Audio: Initialize and play button click sound
+    AudioSystem.initialize();
+    AudioSystem.playButtonClick();
+    
+    // Open campaign level selection directly - Requirements 1.1
+    setShowCampaignMap(true);
+  };
+  
+  // Legacy endless mode start (for internal use or future features)
+  const handleStartEndlessMode = () => {
     // Audio: Initialize and play game start sound - Phase 4
     AudioSystem.initialize();
     AudioSystem.playGameStart();
@@ -239,6 +274,24 @@ const App: React.FC = () => {
     // Analytics: Track session start - Requirements 5.6
     sessionStartTime.current = Date.now();
     currentLevelId.current = 0; // Endless mode
+    
+    // Reset campaign mode
+    setCampaignLevelConfig(null);
+    
+    // Show active ritual notification at game start
+    const ritualSystem = getDailyRitualsSystem();
+    ritualSystem.checkDayChange(); // Check if day changed
+    const activeRitual = ritualSystem.state.rituals.find(r => !r.completed);
+    if (activeRitual && soundCheckComplete) {
+      // Find ritual definition for display
+      const { RITUAL_POOL } = require('./data/rituals');
+      const ritualDef = RITUAL_POOL.find((r: { id: string }) => r.id === activeRitual.ritualId);
+      if (ritualDef) {
+        setGameStartNotification(`🎯 ${ritualDef.name}: ${ritualDef.description}`);
+        // Auto-hide after 3 seconds
+        setTimeout(() => setGameStartNotification(null), 3000);
+      }
+    }
   };
 
   // Handle contextual tutorial for campaign levels - Requirements 17.5
@@ -278,6 +331,12 @@ const App: React.FC = () => {
     setScore(0);
     // Reset daily challenge mode when returning to menu
     setDailyChallengeMode({ enabled: false });
+    
+    // Campaign Update v2.5 - Open campaign map with unlock animation if returning from victory
+    // Requirements 13.1: Show path unlock animation when returning to level map after victory
+    if (campaignLevelConfig && newlyUnlockedLevel) {
+      setShowCampaignMap(true);
+    }
   };
 
   // Shop handlers - Requirements 2.1
@@ -464,6 +523,172 @@ const App: React.FC = () => {
     setShowMissionPanel(false);
   }, []);
 
+  // Daily Rituals handlers
+  const handleOpenRituals = useCallback(() => {
+    // Refresh state from system
+    setRitualsState({ ...getDailyRitualsSystem().state });
+    setShowRitualsPanel(true);
+  }, []);
+
+  const handleCloseRituals = useCallback(() => {
+    setShowRitualsPanel(false);
+  }, []);
+
+  const handleClaimRitualBonus = useCallback(() => {
+    const system = getDailyRitualsSystem();
+    const bonus = system.claimBonus();
+    if (bonus > 0) {
+      addEchoShards(bonus);
+      setRitualsState({ ...system.state });
+      AudioSystem.playNewHighScore();
+    }
+  }, [addEchoShards]);
+
+  // Campaign Mode handlers
+  const handleOpenCampaign = useCallback(() => {
+    setShowCampaignMap(true);
+  }, []);
+
+  const handleCloseCampaign = useCallback(() => {
+    setShowCampaignMap(false);
+    // Clear unlock animation state - Requirements 13.1
+    setNewlyUnlockedLevel(undefined);
+    setJustCompletedLevel(undefined);
+  }, []);
+
+  const handleSelectCampaignLevel = useCallback((levelConfig: LevelConfig, showTutorial?: 'phantom' | 'midline' | 'rhythm' | 'gravity') => {
+    setCampaignLevelConfig(levelConfig);
+    setShowCampaignMap(false);
+    
+    // Show tutorial if needed
+    if (showTutorial) {
+      handleStartWithTutorial(showTutorial);
+    }
+    
+    // Start the game with campaign config
+    AudioSystem.initialize();
+    AudioSystem.playGameStart();
+    setGameState(GameState.PLAYING);
+    setScore(0);
+    setEarnedShards(0);
+    
+    // Initialize slow motion uses from upgrade
+    const effects = getActiveUpgradeEffects();
+    setSlowMotionUsesRemaining(effects.slowMotionUses);
+    setSlowMotionActive(false);
+    
+    // Reset restore state
+    setShowRestorePrompt(false);
+    setRestoreHasBeenUsed(false);
+    setRestoreRequested(false);
+    setRestoreCanRestore(true);
+    
+    sessionStartTime.current = Date.now();
+    currentLevelId.current = levelConfig.id;
+  }, []);
+
+  // Campaign level completion handler (legacy score-based)
+  const handleCampaignLevelComplete = useCallback((finalScore: number) => {
+    if (!campaignLevelConfig) return;
+    
+    // Calculate stars based on score
+    const [oneStar, twoStar, threeStar] = campaignLevelConfig.starThresholds;
+    let stars = 0;
+    if (finalScore >= threeStar) stars = 3;
+    else if (finalScore >= twoStar) stars = 2;
+    else if (finalScore >= oneStar) stars = 1;
+    
+    if (stars > 0) {
+      // Check if next level will be newly unlocked - Requirements 13.1
+      const currentLevelId = campaignLevelConfig.id;
+      const nextLevelId = currentLevelId + 1;
+      const wasNextLevelUnlocked = useGameStore.getState().completedLevels.includes(currentLevelId);
+      
+      // Update store with level completion
+      const completeLevel = useGameStore.getState().completeLevel;
+      completeLevel(campaignLevelConfig.id, stars);
+      
+      // Track newly unlocked level for animation - Requirements 13.1
+      if (!wasNextLevelUnlocked && nextLevelId <= 100) {
+        setJustCompletedLevel(currentLevelId);
+        setNewlyUnlockedLevel(nextLevelId);
+      }
+      
+      // Calculate and award shards
+      const baseReward = campaignLevelConfig.rewards.echoShards;
+      const starBonus = campaignLevelConfig.rewards.bonusPerStar * stars;
+      const totalReward = baseReward + starBonus;
+      addEchoShards(totalReward);
+      setEarnedShards(totalReward);
+      
+      // Play celebration sound
+      AudioSystem.playNewHighScore();
+    }
+  }, [campaignLevelConfig, addEchoShards]);
+
+  // Campaign Update v2.5 - Distance-based level completion handler
+  // Requirements: 2.2, 4.1, 4.2, 4.3, 4.4, 9.1, 9.2, 9.3
+  const handleDistanceLevelComplete = useCallback((result: {
+    distanceTraveled: number;
+    shardsCollected: number;
+    totalShardsSpawned: number;
+    damageTaken: number;
+    healthRemaining: number;
+  }) => {
+    if (!campaignLevelConfig) return;
+    
+    // Import star rating calculation from campaign system
+    const { calculateStarRating, calculateLevelReward } = require('./systems/campaignSystem');
+    
+    // Calculate star rating based on distance-mode criteria
+    const levelResult = {
+      completed: true,
+      distanceTraveled: result.distanceTraveled,
+      shardsCollected: result.shardsCollected,
+      totalShardsAvailable: result.totalShardsSpawned,
+      damageTaken: result.damageTaken,
+      healthRemaining: result.healthRemaining,
+    };
+    
+    const starRating = calculateStarRating(levelResult);
+    const stars = starRating.stars;
+    
+    if (stars > 0) {
+      // Check if next level will be newly unlocked - Requirements 13.1
+      const currentLevelId = campaignLevelConfig.id;
+      const nextLevelId = currentLevelId + 1;
+      const state = useGameStore.getState();
+      const wasNextLevelUnlocked = state.completedLevels.includes(currentLevelId);
+      const previousStars = state.levelStars[currentLevelId] || 0;
+      const isFirstClear = !state.completedLevels.includes(currentLevelId);
+      
+      // Update store with level completion
+      state.completeLevel(campaignLevelConfig.id, stars);
+      
+      // Track newly unlocked level for animation - Requirements 13.1
+      if (!wasNextLevelUnlocked && nextLevelId <= 100) {
+        setJustCompletedLevel(currentLevelId);
+        setNewlyUnlockedLevel(nextLevelId);
+      }
+      
+      // Calculate reward using new formula - Requirements 9.1, 9.2, 9.3
+      const rewardResult = calculateLevelReward(
+        currentLevelId,
+        stars,
+        isFirstClear,
+        previousStars
+      );
+      
+      if (rewardResult.totalReward > 0) {
+        addEchoShards(rewardResult.totalReward);
+        setEarnedShards(rewardResult.totalReward);
+      }
+      
+      // Play celebration sound
+      AudioSystem.playNewHighScore();
+    }
+  }, [campaignLevelConfig, addEchoShards]);
+
   const handleClaimMission = useCallback((missionId: string) => {
     // Find the mission to show completion modal
     let mission = missions.soundCheck.missions.find(m => m.id === missionId);
@@ -565,6 +790,22 @@ const App: React.FC = () => {
         onNearMissStateUpdate={handleNearMissStateUpdate}
         slowMotionActive={slowMotionActive}
         onSlowMotionStateUpdate={handleSlowMotionStateUpdate}
+        campaignMode={campaignLevelConfig ? {
+          enabled: true,
+          levelConfig: campaignLevelConfig,
+          targetScore: campaignLevelConfig.targetScore,
+          // Campaign Update v2.5 - Enable distance-based mode
+          useDistanceMode: true,
+          targetDistance: campaignLevelConfig.targetDistance,
+          onLevelComplete: handleCampaignLevelComplete,
+          onDistanceLevelComplete: handleDistanceLevelComplete,
+          onDistanceUpdate: (current, target, percent) => {
+            setCurrentDistance(current);
+            setTargetDistance(target);
+            setProgressPercent(percent);
+            setIsNearFinish(target - current <= 50 && target - current > 0);
+          },
+        } : undefined}
         dailyChallengeMode={dailyChallengeMode}
         zoneConfig={getZoneById(selectedZoneId)}
         restoreMode={restoreMode}
@@ -578,7 +819,7 @@ const App: React.FC = () => {
         highScore={highScore}
         speed={gameSpeed}
         onStart={handleStart}
-        onRestart={handleStart}
+        onRestart={handleStartEndlessMode}
         onPause={handlePause}
         onResume={handleResume}
         onMainMenu={handleMainMenu}
@@ -586,6 +827,7 @@ const App: React.FC = () => {
         onOpenStudio={handleOpenStudio}
         onOpenDailyChallenge={handleOpenDailyChallenge}
         onOpenMissions={handleOpenMissionPanel}
+        onOpenRituals={handleOpenRituals}
         rhythmMultiplier={rhythmMultiplier}
         rhythmStreak={rhythmStreak}
         nearMissStreak={nearMissStreak}
@@ -603,6 +845,12 @@ const App: React.FC = () => {
         lastLoginDate={lastLoginDate}
         onClaimDailyReward={handleClaimDailyReward}
         soundCheckComplete={soundCheckComplete}
+        // Campaign Update v2.5 - Distance Mode props - Requirements 6.1, 6.2, 6.3, 6.4
+        distanceMode={!!campaignLevelConfig}
+        currentDistance={currentDistance}
+        targetDistance={targetDistance}
+        progressPercent={progressPercent}
+        isNearFinish={isNearFinish}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />
@@ -648,6 +896,24 @@ const App: React.FC = () => {
           mission={completedMission}
           onClose={handleMissionCompleteClose}
           onClaim={handleMissionRewardClaim}
+        />
+      )}
+      {/* Daily Rituals Panel */}
+      {showRitualsPanel && (
+        <RitualsPanel
+          state={ritualsState}
+          onClaimBonus={handleClaimRitualBonus}
+          onClose={handleCloseRituals}
+        />
+      )}
+      {/* Campaign Level Map */}
+      {showCampaignMap && (
+        <LevelMap
+          isOpen={showCampaignMap}
+          onClose={handleCloseCampaign}
+          onSelectLevel={handleSelectCampaignLevel}
+          newlyUnlockedLevel={newlyUnlockedLevel}
+          justCompletedLevel={justCompletedLevel}
         />
       )}
       {/* Daily Reward Claim Modal - Requirements 5.1 */}
@@ -722,6 +988,16 @@ const App: React.FC = () => {
             </p>
             <p className="text-lg text-white/70 mt-2">
               Günlük Görevler Açıldı!
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Game Start Notification - Active Ritual Reminder */}
+      {gameStartNotification && gameState === GameState.PLAYING && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-down pointer-events-none">
+          <div className="px-6 py-3 bg-gradient-to-r from-purple-900/90 to-purple-800/90 backdrop-blur-md rounded-xl border border-purple-500/40 shadow-[0_0_30px_rgba(168,85,247,0.3)]">
+            <p className="text-white font-bold text-sm tracking-wide whitespace-nowrap">
+              {gameStartNotification}
             </p>
           </div>
         </div>

@@ -13,6 +13,7 @@ import {
     RotateCcw,
     Settings,
     ShoppingCart,
+    Star,
     Target,
     Trophy,
     Volume2,
@@ -40,6 +41,9 @@ interface GameUIProps {
   onOpenStudio?: () => void;
   onOpenDailyChallenge?: () => void;
   onOpenMissions?: () => void;
+  onOpenRituals?: () => void;
+  // Campaign Update v2.5 - Requirements 1.3: Removed onOpenCampaign
+  // Campaign is now the primary mode, accessed via "Start Game" button
   rhythmMultiplier?: number;
   rhythmStreak?: number;
   nearMissStreak?: number;
@@ -58,6 +62,13 @@ interface GameUIProps {
   lastLoginDate?: string;
   onClaimDailyReward?: () => void;
   soundCheckComplete?: boolean;
+  // Campaign Update v2.5 - Distance Mode props - Requirements 6.1, 6.2, 6.3, 6.4
+  distanceMode?: boolean;
+  currentDistance?: number;
+  targetDistance?: number;
+  progressPercent?: number;
+  isNearFinish?: boolean;
+  shardsCollectedInRun?: number;
 }
 
 const GameUI: React.FC<GameUIProps> = ({
@@ -74,6 +85,8 @@ const GameUI: React.FC<GameUIProps> = ({
   onOpenStudio,
   onOpenDailyChallenge,
   onOpenMissions,
+  onOpenRituals,
+  // Campaign Update v2.5 - Requirements 1.3: Removed onOpenCampaign
   rhythmMultiplier = 1,
   rhythmStreak = 0,
   nearMissStreak = 0,
@@ -92,6 +105,13 @@ const GameUI: React.FC<GameUIProps> = ({
   lastLoginDate = '',
   onClaimDailyReward,
   soundCheckComplete = false,
+  // Campaign Update v2.5 - Distance Mode props
+  distanceMode = false,
+  currentDistance = 0,
+  targetDistance = 0,
+  progressPercent = 0,
+  isNearFinish = false,
+  shardsCollectedInRun = 0,
 }) => {
   const [showContent, setShowContent] = useState(false);
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
@@ -208,14 +228,59 @@ const GameUI: React.FC<GameUIProps> = ({
     return (
       <>
         <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">
-          <div className="flex flex-col items-start">
-            <span className="text-3xl md:text-4xl font-black text-white mix-blend-difference tracking-widest drop-shadow-lg">
-              {score.toString().padStart(5, "0")}
-            </span>
-            <span className="text-[10px] md:text-xs text-gray-400 font-bold mt-1 uppercase tracking-widest">
-              Skor
-            </span>
-          </div>
+          {/* Campaign Update v2.5 - Distance Mode HUD - Requirements 6.1, 6.2, 6.3, 6.4 */}
+          {distanceMode ? (
+            <div className="flex flex-col items-start">
+              {/* Distance Counter - Requirements 6.1 */}
+              <span className="text-3xl md:text-4xl font-black text-white mix-blend-difference tracking-widest drop-shadow-lg">
+                {Math.floor(currentDistance)}m
+              </span>
+              <span className="text-[10px] md:text-xs text-gray-400 font-bold mt-1 uppercase tracking-widest">
+                Mesafe
+              </span>
+              {/* Distance Bar - Requirements 6.2, 6.3, 6.4 */}
+              <div className="mt-2 w-32 md:w-40">
+                <div 
+                  className={`relative h-2 bg-white/10 rounded-full overflow-hidden border border-white/20 ${
+                    isNearFinish ? 'animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.5)]' : ''
+                  }`}
+                >
+                  {/* Progress fill */}
+                  <div 
+                    className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${
+                      isNearFinish 
+                        ? 'bg-gradient-to-r from-cyan-400 to-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.6)]' 
+                        : 'bg-gradient-to-r from-cyan-500 to-cyan-400'
+                    }`}
+                    style={{ width: `${Math.min(100, progressPercent)}%` }}
+                  />
+                  {/* Position indicator */}
+                  <div 
+                    className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg transition-all duration-300 ${
+                      isNearFinish ? 'bg-cyan-300 animate-ping' : 'bg-white'
+                    }`}
+                    style={{ left: `calc(${Math.min(100, progressPercent)}% - 6px)` }}
+                  />
+                </div>
+                {/* Distance labels - Requirements 6.3 */}
+                <div className="flex justify-between mt-1">
+                  <span className="text-[8px] text-white/40 font-mono">0m</span>
+                  <span className={`text-[8px] font-mono ${isNearFinish ? 'text-cyan-400' : 'text-white/40'}`}>
+                    {Math.floor(targetDistance)}m
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start">
+              <span className="text-3xl md:text-4xl font-black text-white mix-blend-difference tracking-widest drop-shadow-lg">
+                {score.toString().padStart(5, "0")}
+              </span>
+              <span className="text-[10px] md:text-xs text-gray-400 font-bold mt-1 uppercase tracking-widest">
+                Skor
+              </span>
+            </div>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -675,6 +740,23 @@ const GameUI: React.FC<GameUIProps> = ({
             )}
           </div>
 
+          {/* ===== SECONDARY NAV - Rituals ===== */}
+          {/* Campaign Update v2.5 - Requirements 1.3: Removed "Kampanya" button */}
+          {/* Campaign is now the primary mode, accessed via "Start Game" button */}
+          <div className="flex items-center justify-center gap-4 mb-4">
+            {onOpenRituals && soundCheckComplete && (
+              <button
+                onClick={() => handleButtonClick(onOpenRituals)}
+                className="group flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-xl hover:bg-purple-500/20 hover:border-purple-400/50 active:scale-95 transition-all duration-200"
+              >
+                <Star className="w-4 h-4 text-purple-400 group-hover:text-purple-300" />
+                <span className="text-xs text-purple-400 font-bold tracking-wider uppercase group-hover:text-purple-300">
+                  Günlük Görevler
+                </span>
+              </button>
+            )}
+          </div>
+
           {/* ===== TUTORIAL CARDS ===== */}
           <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full mb-3">
             <div className="space-y-2">
@@ -845,7 +927,8 @@ const GameUI: React.FC<GameUIProps> = ({
             </div>
           </div>
 
-          {/* ===== START BUTTON - Premium Style ===== */}
+          {/* ===== START BUTTON - Campaign First Flow ===== */}
+          {/* Campaign Update v2.5 - Requirements 1.1, 1.2: "Start Game" opens level selection directly */}
           <div className="w-full max-w-xs mx-auto">
             <button
               onClick={() => handleButtonClick(onStart)}
@@ -872,13 +955,18 @@ const GameUI: React.FC<GameUIProps> = ({
                   className="text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)] group-hover:scale-110 transition-transform duration-300"
                 />
                 <span className="text-xl font-black text-white tracking-[0.2em] drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)] group-hover:tracking-[0.25em] transition-all duration-300">
-                  BAŞLA
+                  OYNA
                 </span>
               </div>
 
               {/* Bottom edge for depth */}
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-t from-black/25 to-transparent" />
             </button>
+            
+            {/* Subtitle hint */}
+            <p className="text-center text-[9px] text-white/30 mt-2 tracking-wider uppercase">
+              Seviye Seç ve Başla
+            </p>
           </div>
         </div>
 
@@ -929,14 +1017,52 @@ const GameUI: React.FC<GameUIProps> = ({
             </span>
           </h2>
 
-          <div className="flex flex-col items-center gap-1 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
-            <span className="text-4xl sm:text-5xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
-              {score}
-            </span>
-            <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
-              Final Skor
-            </span>
-          </div>
+          {/* Campaign Update v2.5 - Distance Mode Game Over - Requirements 6.1 */}
+          {distanceMode ? (
+            <div className="flex flex-col items-center gap-3 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
+              {/* Distance traveled / Target distance */}
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl sm:text-4xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
+                    {Math.floor(currentDistance)}m
+                  </span>
+                  <span className="text-lg text-white/40">/</span>
+                  <span className="text-lg text-white/60 font-bold">
+                    {Math.floor(targetDistance)}m
+                  </span>
+                </div>
+                <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
+                  Gidilen Mesafe / Hedef Mesafe
+                </span>
+              </div>
+              
+              {/* Progress percentage */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                <span className="text-sm font-bold text-cyan-400">
+                  %{Math.floor(progressPercent)} tamamlandı
+                </span>
+              </div>
+              
+              {/* Shards collected during run */}
+              {shardsCollectedInRun > 0 && (
+                <div className="flex items-center gap-2">
+                  <Gem className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm text-cyan-400 font-bold">
+                    {shardsCollectedInRun} parça toplandı
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
+              <span className="text-4xl sm:text-5xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
+                {score}
+              </span>
+              <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
+                Final Skor
+              </span>
+            </div>
+          )}
 
           {score >= highScore && score > 0 && (
             <div className="flex items-center gap-2 mb-3 px-4 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-full border border-yellow-500/30 animate-pulse">

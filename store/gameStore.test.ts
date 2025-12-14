@@ -56,6 +56,10 @@ const resetStore = () => {
     activeConstruct: 'NONE',
     isConstructInvulnerable: false,
     constructInvulnerabilityEndTime: 0,
+    // Campaign Update v2.5 State
+    lastPlayedLevel: 1,
+    levelStats: {},
+    levelSession: null,
     tutorialCompleted: false,
     soundEnabled: true,
     musicEnabled: true,
@@ -327,6 +331,258 @@ describe('Echo Constructs Unlock Persistence Properties', () => {
           const blinkNotUnlocked = !state.unlockedConstructs.includes('BLINK');
           
           return titanUnlocked && phaseNotUnlocked && blinkNotUnlocked;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// ============================================================================
+// Campaign Update v2.5 Persistence Properties - Requirements 1.4, 10.2, 10.4
+// ============================================================================
+
+// Arbitrary for level IDs (1-100)
+const levelIdArb = fc.integer({ min: 1, max: 100 });
+
+// Arbitrary for star ratings (1-3, 0 means not completed)
+const starRatingArb = fc.integer({ min: 1, max: 3 });
+
+// Arbitrary for LevelResult
+const levelResultArb = fc.record({
+  completed: fc.constant(true),
+  distanceTraveled: fc.integer({ min: 100, max: 10000 }),
+  shardsCollected: fc.integer({ min: 0, max: 100 }),
+  totalShardsAvailable: fc.integer({ min: 10, max: 100 }),
+  damageTaken: fc.integer({ min: 0, max: 10 }),
+  healthRemaining: fc.integer({ min: 1, max: 3 }),
+});
+
+describe('Campaign Update v2.5 Persistence Properties', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 21: Star rating persistence**
+   * **Validates: Requirements 10.2**
+   *
+   * For any level completion, the star rating SHALL be persisted to storage
+   * and retrievable after a save/load cycle.
+   */
+  test('Star rating persists after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        levelIdArb,
+        starRatingArb,
+        (levelId, stars) => {
+          // Reset store
+          resetStore();
+          
+          // Complete the level with the given star rating
+          useGameStore.getState().completeLevel(levelId, stars);
+          
+          // Verify star rating was set
+          const stateBeforeSave = useGameStore.getState();
+          const starsSet = stateBeforeSave.levelStars[levelId] === stars;
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Reset state to simulate fresh load
+          useGameStore.setState({
+            levelStars: {},
+            completedLevels: [],
+          });
+          
+          // Load from storage
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, star rating should be preserved
+          const stateAfterLoad = useGameStore.getState();
+          const starsPreserved = stateAfterLoad.levelStars[levelId] === stars;
+          
+          return starsSet && starsPreserved;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 22: Higher star rating update**
+   * **Validates: Requirements 10.4**
+   *
+   * For any replay achieving higher stars, the stored rating SHALL be updated
+   * to the new value. Lower ratings should not overwrite higher ones.
+   */
+  test('Higher star rating updates stored value, lower does not', () => {
+    fc.assert(
+      fc.property(
+        levelIdArb,
+        starRatingArb,
+        starRatingArb,
+        (levelId, firstStars, secondStars) => {
+          // Reset store
+          resetStore();
+          
+          // Complete the level with first star rating
+          useGameStore.getState().completeLevel(levelId, firstStars);
+          
+          // Verify first rating was set
+          const stateAfterFirst = useGameStore.getState();
+          const firstRatingSet = stateAfterFirst.levelStars[levelId] === firstStars;
+          
+          // Complete the level again with second star rating
+          useGameStore.getState().completeLevel(levelId, secondStars);
+          
+          // After second completion, the stored rating should be the maximum
+          const stateAfterSecond = useGameStore.getState();
+          const expectedStars = Math.max(firstStars, secondStars);
+          const maxRatingStored = stateAfterSecond.levelStars[levelId] === expectedStars;
+          
+          return firstRatingSet && maxRatingStored;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 23: Last played level persistence**
+   * **Validates: Requirements 1.4**
+   *
+   * For any level played, the lastPlayedLevel SHALL be persisted and restored
+   * on game launch.
+   */
+  test('Last played level persists after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        levelIdArb,
+        (levelId) => {
+          // Reset store
+          resetStore();
+          
+          // Set last played level
+          useGameStore.getState().setLastPlayedLevel(levelId);
+          
+          // Verify last played level was set
+          const stateBeforeSave = useGameStore.getState();
+          const levelSet = stateBeforeSave.lastPlayedLevel === levelId;
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Reset state to simulate fresh load
+          useGameStore.setState({
+            lastPlayedLevel: 1, // Reset to default
+          });
+          
+          // Load from storage
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, last played level should be preserved
+          const stateAfterLoad = useGameStore.getState();
+          const levelPreserved = stateAfterLoad.lastPlayedLevel === levelId;
+          
+          return levelSet && levelPreserved;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 21+: Level stats persistence**
+   * **Validates: Requirements 10.2, 10.4**
+   *
+   * For any level completion using completeLevelWithResult, the level stats
+   * SHALL be persisted and retrievable after a save/load cycle.
+   */
+  test('Level stats persist after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        levelIdArb,
+        levelResultArb,
+        (levelId, result) => {
+          // Reset store
+          resetStore();
+          
+          // Ensure totalShardsAvailable >= shardsCollected
+          const adjustedResult = {
+            ...result,
+            totalShardsAvailable: Math.max(result.totalShardsAvailable, result.shardsCollected),
+          };
+          
+          // Complete the level with result
+          useGameStore.getState().completeLevelWithResult(levelId, adjustedResult);
+          
+          // Verify level stats were set
+          const stateBeforeSave = useGameStore.getState();
+          const statsExist = stateBeforeSave.levelStats[levelId] !== undefined;
+          const statsCorrect = statsExist && 
+            stateBeforeSave.levelStats[levelId].bestDistance === adjustedResult.distanceTraveled &&
+            stateBeforeSave.levelStats[levelId].bestShardsCollected === adjustedResult.shardsCollected;
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Reset state to simulate fresh load
+          useGameStore.setState({
+            levelStats: {},
+          });
+          
+          // Load from storage
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, level stats should be preserved
+          const stateAfterLoad = useGameStore.getState();
+          const statsPreserved = stateAfterLoad.levelStats[levelId] !== undefined &&
+            stateAfterLoad.levelStats[levelId].bestDistance === adjustedResult.distanceTraveled &&
+            stateAfterLoad.levelStats[levelId].bestShardsCollected === adjustedResult.shardsCollected;
+          
+          return statsExist && statsCorrect && statsPreserved;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Session state not persisted**
+   * **Validates: Requirements 2.2, 2.3, 2.4**
+   *
+   * For any serialization, levelSession SHALL NOT be persisted (session-only).
+   * After save/load cycle, levelSession should be null.
+   */
+  test('Level session resets after save/load cycle', () => {
+    fc.assert(
+      fc.property(
+        levelIdArb,
+        fc.integer({ min: 100, max: 10000 }),
+        (levelId, targetDistance) => {
+          // Reset store
+          resetStore();
+          
+          // Start a level session
+          useGameStore.getState().startLevelSession(levelId, targetDistance);
+          
+          // Verify session was started
+          const stateBeforeSave = useGameStore.getState();
+          const sessionStarted = stateBeforeSave.levelSession !== null &&
+            stateBeforeSave.levelSession.levelId === levelId;
+          
+          // Save to storage
+          useGameStore.getState().saveToStorage();
+          
+          // Load from storage (simulates app restart)
+          useGameStore.getState().loadFromStorage();
+          
+          // After load, session should be null (session-only state)
+          const stateAfterLoad = useGameStore.getState();
+          const sessionReset = stateAfterLoad.levelSession === null;
+          
+          return sessionStarted && sessionReset;
         }
       ),
       { numRuns: 100 }

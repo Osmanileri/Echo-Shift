@@ -119,4 +119,88 @@ safeLoad(key, default)  // JSON deserialize + fallback
 - `vitest` ile unit/property test
 - `fast-check` ile property-based testing
 - Her sistem için `*.test.ts` dosyası
-- 364 test geçiyor
+- 526 test geçiyor
+
+## Campaign Update v2.5 Sistemi
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 Campaign Mode Flow                       │
+├─────────────────────────────────────────────────────────┤
+│  Level Selection → Play → Complete → Victory → Return   │
+└─────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │  Distance    │ │    Speed     │ │   Campaign   │
+    │  Tracker     │ │  Controller  │ │   System     │
+    ├──────────────┤ ├──────────────┤ ├──────────────┤
+    │ currentDist  │ │ baseSpeed    │ │ starRating   │
+    │ targetDist   │ │ progressive  │ │ rewards      │
+    │ climaxZone   │ │ climaxBoost  │ │ firstClear   │
+    │ nearFinish   │ │ transition   │ │ replay       │
+    └──────────────┘ └──────────────┘ └──────────────┘
+                           │
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+    │  Climax VFX  │ │ Holographic  │ │ Environment  │
+    │              │ │    Gate      │ │   Effects    │
+    ├──────────────┤ ├──────────────┤ ├──────────────┤
+    │ starfield    │ │ visibility   │ │ collection   │
+    │ chromatic    │ │ pulse        │ │ damage       │
+    │ FOV          │ │ shatter      │ │ BPM sync     │
+    │ screenFlash  │ │ warpJump     │ │ haptic       │
+    └──────────────┘ └──────────────┘ └──────────────┘
+```
+
+### Distance-Based Formulas
+
+```typescript
+// Target Distance (Requirements 2.1)
+targetDistance = 350 + (level * 100) * Math.pow(level, 0.1);
+
+// Base Speed (Requirements 3.4)
+baseSpeed = 10 + (level * 0.4);
+
+// Progressive Speed (Requirements 3.1)
+speed = baseSpeed * (1 + (currentDistance / targetDistance) * 0.3);
+
+// Climax Speed (Requirements 3.2)
+climaxSpeed = progressiveSpeed * 1.2; // Final 20%
+
+// Obstacle Density (Requirements 5.4)
+density = Math.min(1.0, 0.5 + (level * 0.02));
+```
+
+### Star Rating System
+
+| Stars | Criteria | Name |
+|-------|----------|------|
+| 1★ | Complete with health > 0 | Survivor |
+| 2★ | Collect >= 80% shards | Collector |
+| 3★ | No damage taken | Perfectionist |
+
+### Reward Formulas
+
+```typescript
+// First-Clear Bonus (Requirements 9.1)
+firstClearBonus = 50 + (level * 10);
+
+// Base Reward (Requirements 9.3)
+baseReward = 10 + (level * 3) + (stars * 5);
+
+// Replay Reward (Requirements 9.2)
+replayReward = newBaseReward - previousBaseReward; // Only if improved
+```
+
+### Chapter System
+
+| Chapter | Levels | Theme | New Mechanic |
+|---------|--------|-------|--------------|
+| SUB_BASS | 1-10 | Deep frequencies | Basic |
+| BASS | 11-20 | Bass waves | Phantom obstacles |
+| MID | 21-30 | Shifting midrange | Moving obstacles |
+| HIGH | 31-40 | Higher frequencies | Rhythm |
+| PRESENCE | 41-50 | Presence zone | Gravity |

@@ -3,22 +3,20 @@
  * Uses fast-check for property-based testing
  */
 
-import { describe, test, expect, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
-import { 
-  getLevel, 
-  isLevelUnlocked, 
-  completeLevel,
-  calculateStars,
-  calculateReward,
-} from './campaignSystem';
-import { 
-  getLevelById, 
-  LEVELS, 
-  LevelConfig,
-  isValidLevelId,
-} from '../data/levels';
+import { beforeEach, describe, test } from 'vitest';
 import { useGameStore } from '../store/gameStore';
+import {
+    calculateBaseReward,
+    calculateFirstClearBonus,
+    calculateLevelReward,
+    calculateReplayReward,
+    calculateStarRating,
+    completeLevel,
+    getLevel,
+    isLevelUnlocked,
+    LevelResult,
+} from './campaignSystem';
 
 describe('Campaign System Properties', () => {
   beforeEach(() => {
@@ -243,6 +241,387 @@ describe('Campaign System Properties', () => {
           const expectedUnlocked = previousCompleted || levelId <= useGameStore.getState().currentLevel;
           
           return isUnlocked === expectedUnlocked;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+/**
+ * Star Rating System Property Tests
+ * Requirements: 4.1, 4.2, 4.3, 4.4
+ */
+describe('Star Rating System Properties', () => {
+  // Generator for valid LevelResult
+  const levelResultArb = fc.record({
+    completed: fc.boolean(),
+    distanceTraveled: fc.integer({ min: 0, max: 10000 }),
+    shardsCollected: fc.integer({ min: 0, max: 100 }),
+    totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+    damageTaken: fc.integer({ min: 0, max: 10 }),
+    healthRemaining: fc.integer({ min: 0, max: 3 }),
+  }).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+
+  /**
+   * **Feature: campaign-update-v25, Property 9: Survivor star (1 star)**
+   * **Validates: Requirements 4.1**
+   *
+   * For any level completion with health > 0, at least 1 star SHALL be awarded.
+   */
+  test('Property 9: Survivor star - completing with health > 0 awards at least 1 star', () => {
+    // Generator for completed levels with health > 0
+    const survivorResultArb = fc.record({
+      completed: fc.constant(true),
+      distanceTraveled: fc.integer({ min: 100, max: 10000 }),
+      shardsCollected: fc.integer({ min: 0, max: 100 }),
+      totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+      damageTaken: fc.integer({ min: 0, max: 10 }),
+      healthRemaining: fc.integer({ min: 1, max: 3 }), // health > 0
+    }).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+
+    fc.assert(
+      fc.property(
+        survivorResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Must have at least 1 star
+          return rating.stars >= 1 && rating.survivor === true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 10: Collector star (2 stars)**
+   * **Validates: Requirements 4.2**
+   *
+   * For any level completion where shardsCollected >= 80% of totalShardsAvailable, 
+   * at least 2 stars SHALL be awarded.
+   */
+  test('Property 10: Collector star - collecting >= 80% shards awards at least 2 stars', () => {
+    // Generator for completed levels with >= 80% shards collected
+    const collectorResultArb = fc.integer({ min: 1, max: 100 }).chain(totalShards => {
+      const minShards = Math.ceil(totalShards * 0.8);
+      return fc.record({
+        completed: fc.constant(true),
+        distanceTraveled: fc.integer({ min: 100, max: 10000 }),
+        shardsCollected: fc.integer({ min: minShards, max: totalShards }),
+        totalShardsAvailable: fc.constant(totalShards),
+        damageTaken: fc.integer({ min: 1, max: 10 }), // Some damage to ensure not perfectionist
+        healthRemaining: fc.integer({ min: 1, max: 3 }), // health > 0
+      });
+    });
+
+    fc.assert(
+      fc.property(
+        collectorResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Must have at least 2 stars and collector flag true
+          return rating.stars >= 2 && rating.collector === true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 11: Perfectionist star (3 stars)**
+   * **Validates: Requirements 4.3**
+   *
+   * For any level completion with damageTaken = 0, 3 stars SHALL be awarded.
+   */
+  test('Property 11: Perfectionist star - no damage taken awards 3 stars', () => {
+    // Generator for completed levels with no damage
+    const perfectionistResultArb = fc.record({
+      completed: fc.constant(true),
+      distanceTraveled: fc.integer({ min: 100, max: 10000 }),
+      shardsCollected: fc.integer({ min: 0, max: 100 }),
+      totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+      damageTaken: fc.constant(0), // No damage
+      healthRemaining: fc.integer({ min: 1, max: 3 }), // health > 0
+    }).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+
+    fc.assert(
+      fc.property(
+        perfectionistResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Must have exactly 3 stars and perfectionist flag true
+          return rating.stars === 3 && rating.perfectionist === true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 12: Star rating maximum selection**
+   * **Validates: Requirements 4.4**
+   *
+   * For any combination of completion criteria, the star rating SHALL be 
+   * the highest applicable value (1, 2, or 3).
+   */
+  test('Property 12: Star rating is the highest applicable value', () => {
+    fc.assert(
+      fc.property(
+        levelResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Calculate expected criteria
+          const isSurvivor = result.completed && result.healthRemaining > 0;
+          const shardPercentage = result.totalShardsAvailable > 0 
+            ? result.shardsCollected / result.totalShardsAvailable 
+            : 0;
+          const isCollector = isSurvivor && shardPercentage >= 0.8;
+          const isPerfectionist = isSurvivor && result.damageTaken === 0;
+          
+          // Determine expected stars (highest applicable)
+          let expectedStars = 0;
+          if (isPerfectionist) {
+            expectedStars = 3;
+          } else if (isCollector) {
+            expectedStars = 2;
+          } else if (isSurvivor) {
+            expectedStars = 1;
+          }
+          
+          // Verify rating matches expected
+          return rating.stars === expectedStars &&
+                 rating.survivor === isSurvivor &&
+                 rating.collector === isCollector &&
+                 rating.perfectionist === isPerfectionist;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Additional edge case: Failed level (not completed or health = 0) gets 0 stars
+   */
+  test('Failed level gets 0 stars', () => {
+    // Generator for failed levels
+    const failedResultArb = fc.oneof(
+      // Not completed
+      fc.record({
+        completed: fc.constant(false),
+        distanceTraveled: fc.integer({ min: 0, max: 10000 }),
+        shardsCollected: fc.integer({ min: 0, max: 100 }),
+        totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+        damageTaken: fc.integer({ min: 0, max: 10 }),
+        healthRemaining: fc.integer({ min: 0, max: 3 }),
+      }),
+      // Health = 0
+      fc.record({
+        completed: fc.constant(true),
+        distanceTraveled: fc.integer({ min: 0, max: 10000 }),
+        shardsCollected: fc.integer({ min: 0, max: 100 }),
+        totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+        damageTaken: fc.integer({ min: 1, max: 10 }),
+        healthRemaining: fc.constant(0),
+      })
+    ).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+
+    fc.assert(
+      fc.property(
+        failedResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Must have 0 stars and survivor flag false
+          return rating.stars === 0 && rating.survivor === false;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+/**
+ * Reward Calculation System Property Tests
+ * Requirements: 9.1, 9.2, 9.3
+ */
+describe('Reward Calculation System Properties', () => {
+  /**
+   * **Feature: campaign-update-v25, Property 18: First-clear bonus formula**
+   * **Validates: Requirements 9.1**
+   *
+   * For any first-time level completion, the bonus SHALL equal `50 + (level * 10)` Echo Shards.
+   */
+  test('Property 18: First-clear bonus formula correctness', () => {
+    // Generator for valid level numbers (1-100)
+    const levelArb = fc.integer({ min: 1, max: 100 });
+
+    fc.assert(
+      fc.property(
+        levelArb,
+        (level) => {
+          const bonus = calculateFirstClearBonus(level);
+          const expectedBonus = 50 + (level * 10);
+          
+          return bonus === expectedBonus;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 19: Replay reward difference**
+   * **Validates: Requirements 9.2**
+   *
+   * For any replay with higher star rating, the reward SHALL be the difference 
+   * between new and previous reward amounts.
+   */
+  test('Property 19: Replay reward is difference when improving stars', () => {
+    // Generator for level and star improvement scenarios
+    const replayScenarioArb = fc.record({
+      level: fc.integer({ min: 1, max: 100 }),
+      previousStars: fc.integer({ min: 0, max: 2 }),
+    }).chain(({ level, previousStars }) => 
+      fc.record({
+        level: fc.constant(level),
+        previousStars: fc.constant(previousStars),
+        newStars: fc.integer({ min: previousStars + 1, max: 3 }),
+      })
+    );
+
+    fc.assert(
+      fc.property(
+        replayScenarioArb,
+        ({ level, previousStars, newStars }) => {
+          const replayReward = calculateReplayReward(level, newStars, previousStars);
+          
+          // Calculate expected difference
+          const newBaseReward = calculateBaseReward(level, newStars);
+          const previousBaseReward = calculateBaseReward(level, previousStars);
+          const expectedDifference = newBaseReward - previousBaseReward;
+          
+          return replayReward === expectedDifference;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 19: Replay reward difference (no improvement)**
+   * **Validates: Requirements 9.2**
+   *
+   * For any replay without star improvement, the reward SHALL be zero.
+   */
+  test('Property 19: Replay reward is zero when not improving', () => {
+    // Generator for level and non-improvement scenarios
+    const noImprovementArb = fc.record({
+      level: fc.integer({ min: 1, max: 100 }),
+      previousStars: fc.integer({ min: 1, max: 3 }),
+    }).chain(({ level, previousStars }) => 
+      fc.record({
+        level: fc.constant(level),
+        previousStars: fc.constant(previousStars),
+        newStars: fc.integer({ min: 0, max: previousStars }),
+      })
+    );
+
+    fc.assert(
+      fc.property(
+        noImprovementArb,
+        ({ level, previousStars, newStars }) => {
+          const replayReward = calculateReplayReward(level, newStars, previousStars);
+          
+          // No improvement means zero reward
+          return replayReward === 0;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 20: Base reward formula**
+   * **Validates: Requirements 9.3**
+   *
+   * For any level and star count, the base reward SHALL equal 
+   * `10 + (level * 3) + (stars * 5)` Echo Shards.
+   */
+  test('Property 20: Base reward formula correctness', () => {
+    // Generator for valid level and star combinations
+    const levelStarsArb = fc.record({
+      level: fc.integer({ min: 1, max: 100 }),
+      stars: fc.integer({ min: 0, max: 3 }),
+    });
+
+    fc.assert(
+      fc.property(
+        levelStarsArb,
+        ({ level, stars }) => {
+          const reward = calculateBaseReward(level, stars);
+          const expectedReward = 10 + (level * 3) + (stars * 5);
+          
+          return reward === expectedReward;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 18+20: First clear total reward**
+   * **Validates: Requirements 9.1, 9.3**
+   *
+   * For any first-time level completion, total reward SHALL equal 
+   * base reward + first-clear bonus.
+   */
+  test('First clear total reward combines base and bonus', () => {
+    // Generator for first clear scenarios
+    const firstClearArb = fc.record({
+      level: fc.integer({ min: 1, max: 100 }),
+      stars: fc.integer({ min: 1, max: 3 }), // Must have at least 1 star to complete
+    });
+
+    fc.assert(
+      fc.property(
+        firstClearArb,
+        ({ level, stars }) => {
+          const result = calculateLevelReward(level, stars, true, 0);
+          
+          const expectedBase = calculateBaseReward(level, stars);
+          const expectedBonus = calculateFirstClearBonus(level);
+          const expectedTotal = expectedBase + expectedBonus;
+          
+          return result.baseReward === expectedBase &&
+                 result.firstClearBonus === expectedBonus &&
+                 result.totalReward === expectedTotal &&
+                 result.isFirstClear === true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Zero stars means zero reward
+   */
+  test('Zero stars results in zero reward', () => {
+    const levelArb = fc.integer({ min: 1, max: 100 });
+
+    fc.assert(
+      fc.property(
+        levelArb,
+        (level) => {
+          const result = calculateLevelReward(level, 0, true, 0);
+          
+          return result.baseReward === 0 &&
+                 result.firstClearBonus === 0 &&
+                 result.totalReward === 0 &&
+                 result.isFirstClear === false;
         }
       ),
       { numRuns: 100 }

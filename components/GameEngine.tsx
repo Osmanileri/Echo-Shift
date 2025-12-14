@@ -1,66 +1,66 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  GRAVITY_CONFIG,
-  INITIAL_CONFIG,
-  MIDLINE_CONFIG,
-  PHANTOM_CONFIG,
+    GRAVITY_CONFIG,
+    INITIAL_CONFIG,
+    MIDLINE_CONFIG,
+    PHANTOM_CONFIG,
 } from "../constants";
 import { getSkinById } from "../data/skins";
 import { useGameStore } from "../store/gameStore";
 import { applyTheme, getColor, hasEffect } from "../systems/themeSystem";
 import {
-  EnhancedResonanceState,
-  GameState,
-  GravityState,
-  MidlineConfig,
-  MidlineState,
-  MissionEvent,
-  NearMissState,
-  Obstacle,
-  Particle,
-  RhythmState,
-  ScorePopup,
-  SnapshotBuffer,
-  VisualEffect
+    EnhancedResonanceState,
+    GameState,
+    GravityState,
+    MidlineConfig,
+    MidlineState,
+    MissionEvent,
+    NearMissState,
+    Obstacle,
+    Particle,
+    RhythmState,
+    ScorePopup,
+    SnapshotBuffer,
+    VisualEffect
 } from "../types";
 import {
-  checkCollision,
-  checkNearMiss,
-  createInitialGravityState,
-  createInitialNearMissState,
-  getFlippedLane,
-  mirrorPlayerPosition,
-  randomRange,
-  shouldTriggerFlip,
-  updateNearMissState,
+    checkCollision,
+    checkNearMiss,
+    createInitialGravityState,
+    createInitialNearMissState,
+    getFlippedLane,
+    mirrorPlayerPosition,
+    randomRange,
+    shouldTriggerFlip,
+    updateNearMissState,
 } from "../utils/gameMath";
 import {
-  calculateDynamicAmplitude,
-  calculateDynamicFrequency,
-  calculateMidlineY,
-  calculateMovementBounds,
-  calculateNormalBounds,
-  calculateNormalizedOffset,
-  calculateTensionIntensity,
-  createInitialMidlineState,
-  getOrbZone,
-  isAtPeak,
-  isCriticalSpace,
-  predictPeakTime,
-  shouldApplyMicroPhasing,
+    calculateDynamicAmplitude,
+    calculateDynamicFrequency,
+    calculateMidlineY,
+    calculateMovementBounds,
+    calculateNormalBounds,
+    calculateNormalizedOffset,
+    calculateTensionIntensity,
+    createInitialMidlineState,
+    getOrbZone,
+    isAtPeak,
+    isCriticalSpace,
+    predictPeakTime,
+    shouldApplyMicroPhasing,
 } from "../utils/midlineSystem";
 import {
-  calculatePhantomBonus,
-  calculatePhantomOpacity,
-  createPhantomObstacle,
-  getEffectiveOpacity,
-  shouldSpawnAsPhantom,
+    calculatePhantomBonus,
+    calculatePhantomOpacity,
+    createPhantomObstacle,
+    getEffectiveOpacity,
+    shouldSpawnAsPhantom,
 } from "../utils/phantomSystem";
 import {
-  calculateExpectedInterval,
-  checkRhythmTiming,
-  createInitialRhythmState,
-  updateRhythmState,
+    calculateExpectedInterval,
+    checkRhythmTiming,
+    createInitialRhythmState,
+    updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
 
@@ -78,6 +78,12 @@ import { getActiveUpgradeEffects } from "../systems/upgradeSystem";
 import * as SlowMotion from "../systems/slowMotion";
 // Campaign System Integration - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
 import { LevelConfig } from "../data/levels";
+// Distance Tracking System Integration - Campaign Update v2.5
+// Requirements: 2.2, 2.3, 2.4, 3.2
+import { DistanceState, DistanceTracker, createDistanceTracker } from "../systems/distanceTracker";
+// Speed Controller System Integration - Campaign Update v2.5
+// Requirements: 3.1, 3.2, 3.3
+import { SpeedController, createSpeedController } from "../systems/speedController";
 // Daily Challenge System Integration - Requirements 8.1, 8.2, 8.3
 import { DailyChallengeConfig } from "../systems/dailyChallenge";
 // Zen Mode System Integration - Requirements 9.1, 9.2, 9.4
@@ -120,13 +126,28 @@ import type { InputState } from "../types";
 import * as ConstructRenderer from "../systems/constructs/ConstructRenderer";
 import * as SecondChanceVFX from "../systems/constructs/SecondChanceVFX";
 import * as TransformationVFX from "../systems/constructs/TransformationVFX";
+// Environmental Effects System Integration - Campaign Update v2.5
+// Requirements: 14.1, 14.2, 14.3, 14.4
+import * as EnvironmentalEffects from "../systems/environmentalEffects";
 
 // Campaign mode configuration for mechanics enable/disable
+// Campaign Update v2.5 - Distance-based progression
+// Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
 export interface CampaignModeConfig {
   enabled: boolean;
   levelConfig?: LevelConfig;
-  targetScore?: number;
+  targetScore?: number;  // Legacy: score-based completion
+  targetDistance?: number;  // New: distance-based completion (meters)
+  useDistanceMode?: boolean;  // Enable distance-based mode
   onLevelComplete?: (score: number) => void;
+  onDistanceLevelComplete?: (result: {
+    distanceTraveled: number;
+    shardsCollected: number;
+    totalShardsSpawned: number;
+    damageTaken: number;
+    healthRemaining: number;
+  }) => void;
+  onDistanceUpdate?: (currentDistance: number, targetDistance: number, progressPercent: number) => void;
 }
 
 // Daily Challenge mode configuration - Requirements 8.1, 8.2
@@ -297,6 +318,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Campaign Mode State - Requirements 7.3
   const levelCompleted = useRef<boolean>(false);
+
+  // Campaign Update v2.5 - Distance Tracking State
+  // Requirements: 2.2, 2.3, 2.4, 3.1, 3.2, 3.3
+  const distanceTrackerRef = useRef<DistanceTracker | null>(null);
+  const speedControllerRef = useRef<SpeedController | null>(null);
+  const distanceStateRef = useRef<DistanceState>({
+    currentDistance: 0,
+    targetDistance: 0,
+    progressPercent: 0,
+    isInClimaxZone: false,
+    isNearFinish: false,
+  });
+  // Track shards collected and damage taken for star rating
+  const shardsCollectedRef = useRef<number>(0);
+  const totalShardsSpawnedRef = useRef<number>(0);
+  const damageTakenRef = useRef<number>(0);
+  const playerHealthRef = useRef<number>(1); // 1 = full health, 0 = dead
+  const lastDistanceUpdateTime = useRef<number>(0);
 
   // Zen Mode State - Requirements 9.1, 9.2, 9.4
   const zenModeState = useRef<ZenMode.ZenModeState>(
@@ -519,6 +558,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Campaign Mode State - Requirements 7.3
     levelCompleted.current = false;
 
+    // Campaign Update v2.5 - Initialize Distance Tracking
+    // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
+    if (campaignMode?.enabled && campaignMode.useDistanceMode && campaignMode.targetDistance) {
+      // Initialize distance tracker with target distance
+      distanceTrackerRef.current = createDistanceTracker(campaignMode.targetDistance);
+      
+      // Initialize speed controller for the level
+      const levelId = campaignMode.levelConfig?.id || 1;
+      speedControllerRef.current = createSpeedController(levelId);
+      
+      // Reset distance state
+      distanceStateRef.current = {
+        currentDistance: 0,
+        targetDistance: campaignMode.targetDistance,
+        progressPercent: 0,
+        isInClimaxZone: false,
+        isNearFinish: false,
+      };
+      
+      // Reset star rating tracking
+      shardsCollectedRef.current = 0;
+      totalShardsSpawnedRef.current = 0;
+      damageTakenRef.current = 0;
+      playerHealthRef.current = 1;
+      lastDistanceUpdateTime.current = Date.now();
+    } else {
+      // Non-distance mode: clear refs
+      distanceTrackerRef.current = null;
+      speedControllerRef.current = null;
+    }
+
     // Reset Rhythm State - Requirements 1.1
     rhythmState.current = createInitialRhythmState();
 
@@ -639,6 +709,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     constructRenderState.current = ConstructRenderer.createConstructRenderState();
     transformationVFXState.current = TransformationVFX.createTransformationVFXState();
     secondChanceVFXState.current = SecondChanceVFX.createSecondChanceVFXState();
+    
+    // Reset Environmental Effects State - Requirements 14.1, 14.2, 14.3, 14.4
+    EnvironmentalEffects.resetGlobalEnvironmentalEffects();
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -1049,6 +1122,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
     pooled.spawnTime = Date.now();
     (pooled as ShardPlacement.PlacedShard).isBonus = actualType === "bonus";
     activeShards.current.push(pooled);
+    
+    // Campaign Update v2.5 - Track total shards spawned for star rating
+    // Requirements: 4.2
+    if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+      totalShardsSpawnedRef.current += 1;
+    }
   };
 
   const createExplosion = (x: number, y: number, color: string) => {
@@ -1816,8 +1895,70 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const spawnTime = Date.now();
 
       if (usePatternBasedSpawning.current) {
-        // Update speed using Flow Curve early (used for deterministic pacing)
-        speed.current = FlowCurve.calculateGameSpeed(score.current);
+        // Campaign Update v2.5 - Distance-based speed calculation
+        // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
+        if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current && speedControllerRef.current) {
+          const currentTime = Date.now();
+          const deltaTimeMs = currentTime - lastDistanceUpdateTime.current;
+          const deltaTimeSec = deltaTimeMs / 1000;
+          lastDistanceUpdateTime.current = currentTime;
+          
+          // Get current distance state
+          const distState = distanceTrackerRef.current.getState();
+          
+          // Update speed controller transition (for smooth climax zone entry)
+          speedControllerRef.current.update(deltaTimeMs, distState.isInClimaxZone);
+          
+          // Calculate speed using progressive formula with climax boost
+          const levelId = campaignMode.levelConfig?.id || 1;
+          speed.current = speedControllerRef.current.calculateSpeed(distState, levelId);
+          
+          // Update distance based on current speed
+          // Convert speed from pixels/frame to meters/second
+          // Factor 1.0 gives ~43 seconds for Level 1 (450m at ~10.4 speed)
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 1.0;
+          distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
+          
+          // Update distance state ref
+          distanceStateRef.current = distanceTrackerRef.current.getState();
+          
+          // Notify parent of distance update
+          campaignMode.onDistanceUpdate?.(
+            distanceStateRef.current.currentDistance,
+            distanceStateRef.current.targetDistance,
+            distanceStateRef.current.progressPercent
+          );
+          
+          // Environmental Effects: Haptic feedback on distance bar pulse - Requirements 14.4
+          // Trigger haptic when near finish (within 50m of target)
+          if (distanceStateRef.current.isNearFinish) {
+            const envState = EnvironmentalEffects.getEnvironmentalEffectsState();
+            if (EnvironmentalEffects.shouldTriggerDistanceBarPulseHaptic(
+              distanceStateRef.current.isNearFinish,
+              envState,
+              currentTime
+            )) {
+              EnvironmentalEffects.triggerDistanceBarPulseHaptic(envState, currentTime);
+            }
+          }
+          
+          // Check for level completion
+          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current) {
+            levelCompleted.current = true;
+            
+            // Trigger distance-based level completion callback
+            campaignMode.onDistanceLevelComplete?.({
+              distanceTraveled: distanceStateRef.current.currentDistance,
+              shardsCollected: shardsCollectedRef.current,
+              totalShardsSpawned: totalShardsSpawnedRef.current,
+              damageTaken: damageTakenRef.current,
+              healthRemaining: playerHealthRef.current,
+            });
+          }
+        } else {
+          // Legacy: Update speed using Flow Curve (score-based)
+          speed.current = FlowCurve.calculateGameSpeed(score.current);
+        }
 
         // Pattern-Based Spawning
         // Check if we need to select a new pattern
@@ -2431,6 +2572,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
           const finalValue = isBonus ? awardedValue * 2 : awardedValue; // Bonus 2x ekstra
 
+          // Campaign Update v2.5 - Track shards collected for star rating
+          // Requirements: 4.2
+          if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+            shardsCollectedRef.current += 1;
+          }
+
           // Award Echo Shards
           useGameStore.getState().addEchoShards(finalValue);
 
@@ -2464,6 +2611,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Audio feedback
             AudioSystem.playStreakBonus();
           } else {
+            // Particle burst on shard collection - Requirements 14.1
             ParticleSystem.emitBurst(shard.x, shard.y, [
               "#00F0FF",
               "#FFD700",
@@ -2471,6 +2619,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
             ]);
             // Haptic feedback
             getHapticSystem().trigger("light");
+            // Audio: Collection SFX on shard pickup - Requirements 14.1
+            AudioSystem.playShardCollect();
           }
           
           scorePopups.current.push({
@@ -3031,6 +3181,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Normal collision - game over
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
+              
+              // Campaign Update v2.5 - Track damage taken for star rating
+              // Requirements: 4.3
+              if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+                damageTakenRef.current += 1;
+                playerHealthRef.current = 0; // Player died
+              }
+              
+              // Environmental Effects: Glitch artifact on damage - Requirements 14.3
+              EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
+              // Audio: Glitch damage SFX - Requirements 14.3
+              AudioSystem.playGlitchDamage();
+              
               // Screen Shake on collision - Requirements 10.1
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
@@ -3230,6 +3393,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Normal collision - game over
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
               collisionDetected = true;
+              
+              // Campaign Update v2.5 - Track damage taken for star rating
+              // Requirements: 4.3
+              if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+                damageTakenRef.current += 1;
+                playerHealthRef.current = 0; // Player died
+              }
+              
+              // Environmental Effects: Glitch artifact on damage - Requirements 14.3
+              EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
+              // Audio: Glitch damage SFX - Requirements 14.3
+              AudioSystem.playGlitchDamage();
+              
               // Screen Shake on collision - Requirements 10.1
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
@@ -3451,6 +3627,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Update Chromatic Aberration - Requirements 11.2, 11.3
       ChromaticAberration.update(Date.now());
+
+      // Update Environmental Effects - Requirements 14.2, 14.3
+      // BPM-synced pulse and glitch artifact updates
+      EnvironmentalEffects.updateGlobalEnvironmentalEffects();
 
       // Update Resonance System - Requirements 1.7, 1.8, 1.9
       const resonanceDeltaTime = 16.67; // ~60fps
@@ -3845,6 +4025,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Apply opacity to context
         ctx.globalAlpha = obstacleOpacity;
 
+        // BPM-synced pulse effect - Requirements 14.2
+        // Obstacles pulse (scale slightly up/down) in sync with BPM
+        const pulseScale = EnvironmentalEffects.calculateBPMPulseScale(
+          Date.now(),
+          EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM
+        );
+        
+        // Apply pulse scale transform centered on obstacle
+        const obsCenterX = obs.x + obs.width / 2;
+        const obsCenterY = obs.y + obs.height / 2;
+        ctx.save();
+        ctx.translate(obsCenterX, obsCenterY);
+        ctx.scale(pulseScale, pulseScale);
+        ctx.translate(-obsCenterX, -obsCenterY);
+
         // Draw the block body - Theme System Integration
         ctx.fillStyle = obstacleColor;
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
@@ -3904,6 +4099,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.setLineDash([]); // Reset dash
         }
 
+        // Restore context from BPM pulse transform - Requirements 14.2
+        ctx.restore();
+        
         // Reset opacity
         ctx.globalAlpha = 1.0;
       });
@@ -4619,6 +4817,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Apply Chromatic Aberration post-process effect - Requirements 11.1, 11.2
       // This must be applied after ctx.restore() to affect the entire frame
       ChromaticAberration.applyEffect(ctx, canvas);
+
+      // Apply Glitch Artifact post-process effect - Requirements 14.3
+      // This creates a digital distortion effect when damage is taken
+      const envEffectsState = EnvironmentalEffects.getEnvironmentalEffectsState();
+      if (EnvironmentalEffects.isGlitchActive(envEffectsState)) {
+        EnvironmentalEffects.applyGlitchArtifact(ctx, canvas, envEffectsState);
+      }
 
       if (collisionDetected && !DEBUG_IMMORTAL_MODE) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2

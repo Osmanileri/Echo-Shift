@@ -3,19 +3,29 @@
  * Uses fast-check for property-based testing
  * 
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
+ * Campaign Update Requirements: 7.1, 7.2, 7.3, 7.4
  */
 
 import * as fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import {
+    calculateCampaignGemSize,
+    calculateCampaignSpawnInterval,
     calculateRiskyShardPosition,
     calculateSafeShardPosition,
     calculateShardPosition,
+    CampaignShardConfig,
     collectShard,
+    createCampaignShard,
     createPlacedShard,
+    DEFAULT_CAMPAIGN_SHARD_CONFIG,
     DEFAULT_SHARD_CONFIG,
+    generateCampaignShards,
     generateShardMovement,
+    getHorizontalSpreadX,
+    HorizontalSpreadPosition,
     isPositionInPlayableArea,
+    isWithinSafeHorizontalBounds,
     PlacedShard,
     PlayableArea,
     SHARD_MOVEMENT_CONFIG,
@@ -648,5 +658,394 @@ describe('Shard Placement System - Edge Cases', () => {
     
     expect(normalValue).toBe(1);
     expect(nearMissValue).toBe(1 + DEFAULT_SHARD_CONFIG.nearMissBonus);
+  });
+});
+
+
+// ============================================================================
+// Campaign Mode Generators
+// ============================================================================
+
+/**
+ * Generator for campaign shard config
+ */
+const campaignShardConfigGenerator: fc.Arbitrary<CampaignShardConfig> = fc.record({
+  sizeMultiplier: fc.double({ min: 0.1, max: 1.0, noNaN: true }),
+  spawnRateMultiplier: fc.double({ min: 1.0, max: 5.0, noNaN: true }),
+  horizontalSpreadEnabled: fc.boolean(),
+  safeMargin: fc.integer({ min: 10, max: 100 }),
+});
+
+/**
+ * Generator for horizontal spread positions
+ */
+const horizontalSpreadPositionGenerator: fc.Arbitrary<HorizontalSpreadPosition> = 
+  fc.constantFrom('left' as const, 'center' as const, 'right' as const, 'random' as const);
+
+/**
+ * Generator for base spawn interval (ms)
+ */
+const baseSpawnIntervalGenerator = fc.integer({ min: 100, max: 5000 });
+
+/**
+ * Generator for base gem size (pixels)
+ */
+const baseGemSizeGenerator = fc.integer({ min: 10, max: 100 });
+
+// ============================================================================
+// Property Tests - Campaign Mode Gem Spawning
+// Requirements: 7.1, 7.2, 7.3, 7.4
+// ============================================================================
+
+describe('Shard Placement System - Campaign Mode Properties', () => {
+  /**
+   * **Feature: campaign-update-v25, Property 16: Gem spawn rate increase**
+   * **Validates: Requirements 7.2**
+   *
+   * For any spawn interval, the campaign mode spawn rate SHALL be 2x the base rate.
+   * This means the spawn interval should be halved (interval / 2).
+   */
+  test('Campaign mode spawn interval is halved (2x spawn rate)', () => {
+    fc.assert(
+      fc.property(
+        baseSpawnIntervalGenerator,
+        (baseInterval) => {
+          const campaignInterval = calculateCampaignSpawnInterval(baseInterval);
+          const expectedInterval = baseInterval / DEFAULT_CAMPAIGN_SHARD_CONFIG.spawnRateMultiplier;
+          
+          // Campaign interval should be exactly half of base interval (2x rate)
+          return Math.abs(campaignInterval - expectedInterval) < 0.001;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 16: Gem spawn rate increase**
+   * **Validates: Requirements 7.2**
+   *
+   * For any spawn rate multiplier, the campaign interval should be inversely proportional.
+   */
+  test('Campaign spawn interval is inversely proportional to rate multiplier', () => {
+    fc.assert(
+      fc.property(
+        baseSpawnIntervalGenerator,
+        campaignShardConfigGenerator,
+        (baseInterval, config) => {
+          const campaignInterval = calculateCampaignSpawnInterval(baseInterval, config);
+          const expectedInterval = baseInterval / config.spawnRateMultiplier;
+          
+          // Interval should be base / multiplier
+          return Math.abs(campaignInterval - expectedInterval) < 0.001;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 16: Gem spawn rate increase**
+   * **Validates: Requirements 7.2**
+   *
+   * Campaign spawn interval should always be less than or equal to base interval.
+   */
+  test('Campaign spawn interval is always less than or equal to base interval', () => {
+    fc.assert(
+      fc.property(
+        baseSpawnIntervalGenerator,
+        campaignShardConfigGenerator.filter(c => c.spawnRateMultiplier >= 1.0),
+        (baseInterval, config) => {
+          const campaignInterval = calculateCampaignSpawnInterval(baseInterval, config);
+          
+          // Campaign interval should be <= base interval (faster spawning)
+          return campaignInterval <= baseInterval;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * For any spawned gem, its x-position SHALL be within the safe play bounds.
+   */
+  test('Horizontal spread positions are within safe bounds', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        horizontalSpreadPositionGenerator,
+        campaignShardConfigGenerator,
+        ({ width }, position, config) => {
+          // Use a seeded random for deterministic testing
+          let seed = 0.5;
+          const deterministicRand = () => {
+            seed = (seed * 9301 + 49297) % 233280;
+            return seed / 233280;
+          };
+          
+          const x = getHorizontalSpreadX(width, position, config, deterministicRand);
+          
+          // Position should be within safe bounds
+          return isWithinSafeHorizontalBounds(x, width, config);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * Left zone positions should be in the left third of the safe area.
+   */
+  test('Left spread position is in left zone', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        campaignShardConfigGenerator,
+        ({ width }, config) => {
+          // Use deterministic random
+          const x = getHorizontalSpreadX(width, 'left', config, () => 0.5);
+          
+          const safeMin = config.safeMargin;
+          const safeMax = width - config.safeMargin;
+          const safeWidth = safeMax - safeMin;
+          const leftZoneEnd = safeMin + safeWidth * 0.33;
+          
+          // Left position should be in left zone
+          return x >= safeMin && x <= leftZoneEnd;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * Center zone positions should be in the middle third of the safe area.
+   */
+  test('Center spread position is in center zone', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        campaignShardConfigGenerator,
+        ({ width }, config) => {
+          // Use deterministic random
+          const x = getHorizontalSpreadX(width, 'center', config, () => 0.5);
+          
+          const safeMin = config.safeMargin;
+          const safeMax = width - config.safeMargin;
+          const safeWidth = safeMax - safeMin;
+          const leftZoneEnd = safeMin + safeWidth * 0.33;
+          const centerZoneEnd = safeMin + safeWidth * 0.66;
+          
+          // Center position should be in center zone
+          return x >= leftZoneEnd && x <= centerZoneEnd;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * Right zone positions should be in the right third of the safe area.
+   */
+  test('Right spread position is in right zone', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        campaignShardConfigGenerator,
+        ({ width }, config) => {
+          // Use deterministic random
+          const x = getHorizontalSpreadX(width, 'right', config, () => 0.5);
+          
+          const safeMin = config.safeMargin;
+          const safeMax = width - config.safeMargin;
+          const safeWidth = safeMax - safeMin;
+          const centerZoneEnd = safeMin + safeWidth * 0.66;
+          
+          // Right position should be in right zone
+          return x >= centerZoneEnd && x <= safeMax;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * Generated campaign shards should have varied horizontal positions.
+   */
+  test('Generated campaign shards have varied horizontal positions', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        laneGenerator,
+        fc.integer({ min: 3, max: 10 }),
+        ({ width, height }, lane, count) => {
+          const shards = generateCampaignShards(
+            'test',
+            count,
+            lane,
+            width,
+            height
+          );
+          
+          // All shards should be within safe bounds
+          const allWithinBounds = shards.every(shard => 
+            isWithinSafeHorizontalBounds(shard.x, width)
+          );
+          
+          // Should have the correct count
+          const correctCount = shards.length === count;
+          
+          return allWithinBounds && correctCount;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * **Feature: campaign-update-v25, Property 17: Gem horizontal spread**
+   * **Validates: Requirements 7.3, 7.4**
+   *
+   * Campaign shards created with createCampaignShard should be within safe bounds.
+   */
+  test('createCampaignShard produces shards within safe bounds', () => {
+    fc.assert(
+      fc.property(
+        canvasDimensionsGenerator,
+        laneGenerator,
+        horizontalSpreadPositionGenerator,
+        ({ width, height }, lane, position) => {
+          const shard = createCampaignShard(
+            'test-shard',
+            lane,
+            width,
+            height,
+            position
+          );
+          
+          // Shard should be within safe horizontal bounds
+          return isWithinSafeHorizontalBounds(shard.x, width);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// ============================================================================
+// Campaign Mode Edge Cases and Unit Tests
+// ============================================================================
+
+describe('Shard Placement System - Campaign Mode Edge Cases', () => {
+  /**
+   * Edge case: Default campaign config produces correct gem size
+   */
+  test('Default campaign config produces 60% gem size', () => {
+    const baseSize = 100;
+    const campaignSize = calculateCampaignGemSize(baseSize);
+    
+    expect(campaignSize).toBe(60); // 60% of 100
+  });
+
+  /**
+   * Edge case: Default campaign config produces correct spawn interval
+   */
+  test('Default campaign config produces halved spawn interval', () => {
+    const baseInterval = 1000;
+    const campaignInterval = calculateCampaignSpawnInterval(baseInterval);
+    
+    expect(campaignInterval).toBe(500); // 1000 / 2
+  });
+
+  /**
+   * Edge case: Safe margin is respected
+   */
+  test('Safe margin is respected in horizontal spread', () => {
+    const canvasWidth = 800;
+    const config: CampaignShardConfig = {
+      ...DEFAULT_CAMPAIGN_SHARD_CONFIG,
+      safeMargin: 100,
+    };
+    
+    // Test multiple random positions
+    for (let i = 0; i < 10; i++) {
+      const x = getHorizontalSpreadX(canvasWidth, 'random', config);
+      expect(x).toBeGreaterThanOrEqual(100);
+      expect(x).toBeLessThanOrEqual(700);
+    }
+  });
+
+  /**
+   * Edge case: isWithinSafeHorizontalBounds correctly validates positions
+   */
+  test('isWithinSafeHorizontalBounds validates correctly', () => {
+    const canvasWidth = 800;
+    const config: CampaignShardConfig = {
+      ...DEFAULT_CAMPAIGN_SHARD_CONFIG,
+      safeMargin: 50,
+    };
+    
+    // Valid positions
+    expect(isWithinSafeHorizontalBounds(50, canvasWidth, config)).toBe(true);
+    expect(isWithinSafeHorizontalBounds(400, canvasWidth, config)).toBe(true);
+    expect(isWithinSafeHorizontalBounds(750, canvasWidth, config)).toBe(true);
+    
+    // Invalid positions
+    expect(isWithinSafeHorizontalBounds(49, canvasWidth, config)).toBe(false);
+    expect(isWithinSafeHorizontalBounds(751, canvasWidth, config)).toBe(false);
+  });
+
+  /**
+   * Edge case: createCampaignShard creates valid shard structure
+   */
+  test('createCampaignShard creates valid shard structure', () => {
+    const shard = createCampaignShard(
+      'test-id',
+      'TOP',
+      800,
+      600,
+      'center'
+    );
+    
+    expect(shard.id).toBe('test-id');
+    expect(shard.lane).toBe('TOP');
+    expect(shard.type).toBe('safe');
+    expect(shard.collected).toBe(false);
+    expect(shard.movement).toBeDefined();
+    expect(shard.y).toBe(150); // 25% of 600
+  });
+
+  /**
+   * Edge case: generateCampaignShards creates correct number of shards
+   */
+  test('generateCampaignShards creates correct number of shards', () => {
+    const shards = generateCampaignShards(
+      'test',
+      5,
+      'BOTTOM',
+      800,
+      600
+    );
+    
+    expect(shards.length).toBe(5);
+    shards.forEach((shard, i) => {
+      expect(shard.id).toBe(`test-${i}`);
+      expect(shard.lane).toBe('BOTTOM');
+    });
   });
 });
