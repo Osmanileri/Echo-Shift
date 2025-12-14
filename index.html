@@ -51,6 +51,30 @@
         display: block;
         touch-action: none;
       }
+      
+      /* Game start notification animation */
+      @keyframes slide-down {
+        0% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-100%);
+        }
+        10% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+        90% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+        100% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-100%);
+        }
+      }
+      
+      .animate-slide-down {
+        animation: slide-down 3s ease-in-out forwards;
+      }
     </style>
   <script type="importmap">
 {

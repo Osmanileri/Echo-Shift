@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
+import { calculateLevelReward, calculateStarRating, type LevelResult } from "../systems/campaignSystem";
 import { calculateDailyReward, checkLevelUp } from "../systems/levelSystem";
 import {
     checkMissionReset,
@@ -35,6 +36,39 @@ export interface GhostFrame {
   score: number;
   playerY: number;
   isSwapped: boolean;
+}
+
+// ============================================================================
+// Campaign Update v2.5 Types - Requirements 1.4, 10.2, 10.4
+// ============================================================================
+
+/**
+ * Level statistics tracking for campaign mode
+ * Requirements: 10.2, 10.4
+ */
+export interface LevelStats {
+  bestDistance: number;
+  bestShardsCollected: number;
+  bestStars: number;
+  timesPlayed: number;
+  firstClearBonus: boolean;     // Whether first-clear bonus has been awarded
+}
+
+/**
+ * Distance-based session state for campaign gameplay
+ * Requirements: 2.2, 2.3, 2.4
+ */
+export interface LevelSession {
+  levelId: number;
+  startTime: number;
+  currentDistance: number;
+  targetDistance: number;
+  shardsCollected: number;
+  totalShardsSpawned: number;
+  damageTaken: number;
+  currentHealth: number;
+  isComplete: boolean;
+  isGameOver: boolean;
 }
 
 // ============================================================================
@@ -95,10 +129,15 @@ export interface GameStore {
   equippedEffect: string;
   equippedTheme: string;
 
-  // Campaign Progress
+  // Campaign Progress - Requirements 1.4, 10.2, 10.4
   completedLevels: number[];
   currentLevel: number;
   levelStars: Record<number, number>;
+  lastPlayedLevel: number;                    // Requirements 1.4: Remember last played level
+  levelStats: Record<number, LevelStats>;     // Requirements 10.2, 10.4: Track level statistics
+
+  // Distance-based session state (session-only, not persisted)
+  levelSession: LevelSession | null;
 
   // Daily Challenge
   lastDailyChallengeDate: string;
@@ -144,6 +183,19 @@ export interface GameStore {
   completeLevel: (levelId: number, stars: number) => void;
   recordGhostFrame: (frame: GhostFrame) => void;
   resetGhost: () => void;
+
+  // Campaign Update v2.5 Actions - Requirements 1.4, 10.2, 10.4
+  completeLevelWithResult: (levelId: number, result: LevelResult) => {
+    stars: number;
+    reward: number;
+    isFirstClear: boolean;
+    isNewBest: boolean;
+  };
+  setLastPlayedLevel: (levelId: number) => void;
+  startLevelSession: (levelId: number, targetDistance: number) => void;
+  updateLevelSession: (updates: Partial<LevelSession>) => void;
+  endLevelSession: () => void;
+  getLevelStats: (levelId: number) => LevelStats | undefined;
 
   // Upgrade Actions
   purchaseUpgrade: (upgradeId: string, cost: number) => boolean;
@@ -203,6 +255,9 @@ const DEFAULT_STATE = {
   completedLevels: [] as number[],
   currentLevel: 1,
   levelStars: {} as Record<number, number>,
+  lastPlayedLevel: 1,                                    // Requirements 1.4
+  levelStats: {} as Record<number, LevelStats>,          // Requirements 10.2, 10.4
+  levelSession: null as LevelSession | null,             // Session-only
   lastDailyChallengeDate: "",
   dailyChallengeCompleted: false,
   dailyChallengeBestScore: 0,
@@ -232,6 +287,7 @@ const DEFAULT_STATE = {
 
 // Persisted state interface (subset of GameStore that gets saved)
 // NOTE: activeConstruct, isConstructInvulnerable, constructInvulnerabilityEndTime are NOT persisted (session-only) - Requirements 7.4
+// NOTE: levelSession is NOT persisted (session-only)
 interface PersistedState {
   echoShards: number;
   ownedSkins: string[];
@@ -246,6 +302,9 @@ interface PersistedState {
   completedLevels: number[];
   currentLevel: number;
   levelStars: Record<number, number>;
+  // Campaign Update v2.5 - Requirements 1.4, 10.2, 10.4
+  lastPlayedLevel: number;
+  levelStats: Record<number, LevelStats>;
   lastDailyChallengeDate: string;
   dailyChallengeCompleted: boolean;
   dailyChallengeBestScore: number;
@@ -587,6 +646,160 @@ export const useGameStore = create<GameStore>()(
       get().saveToStorage();
     },
 
+    // ========================================================================
+    // Campaign Update v2.5 Actions - Requirements 1.4, 10.2, 10.4
+    // ========================================================================
+
+    /**
+     * Complete a level using the new star rating system
+     * Requirements: 4.1, 4.2, 4.3, 4.4, 9.1, 9.2, 9.3, 10.2, 10.4
+     * @param levelId - Level number (1-100)
+     * @param result - Level result containing completion stats
+     * @returns Star rating, reward, and status flags
+     */
+    completeLevelWithResult: (levelId: number, result: LevelResult) => {
+      const state = get();
+      
+      // Calculate star rating using new criteria
+      const starRating = calculateStarRating(result);
+      const previousStars = state.levelStars[levelId] || 0;
+      const isFirstClear = !state.completedLevels.includes(levelId);
+      
+      // Calculate reward
+      const rewardResult = calculateLevelReward(
+        levelId,
+        starRating.stars,
+        isFirstClear,
+        previousStars
+      );
+      
+      // Get existing level stats or create new
+      const existingStats = state.levelStats[levelId] || {
+        bestDistance: 0,
+        bestShardsCollected: 0,
+        bestStars: 0,
+        timesPlayed: 0,
+        firstClearBonus: false,
+      };
+      
+      // Check if this is a new best
+      const isNewBest = starRating.stars > existingStats.bestStars;
+      
+      // Update level stats
+      const newLevelStats: LevelStats = {
+        bestDistance: Math.max(existingStats.bestDistance, result.distanceTraveled),
+        bestShardsCollected: Math.max(existingStats.bestShardsCollected, result.shardsCollected),
+        bestStars: Math.max(existingStats.bestStars, starRating.stars),
+        timesPlayed: existingStats.timesPlayed + 1,
+        firstClearBonus: existingStats.firstClearBonus || isFirstClear,
+      };
+      
+      // Update state
+      set((s) => {
+        const newCompletedLevels = s.completedLevels.includes(levelId)
+          ? s.completedLevels
+          : [...s.completedLevels, levelId];
+        
+        const newLevelStars = {
+          ...s.levelStars,
+          [levelId]: Math.max(s.levelStars[levelId] || 0, starRating.stars),
+        };
+        
+        const newCurrentLevel = Math.max(s.currentLevel, levelId + 1);
+        
+        return {
+          completedLevels: newCompletedLevels,
+          levelStars: newLevelStars,
+          currentLevel: Math.min(newCurrentLevel, 100),
+          levelStats: {
+            ...s.levelStats,
+            [levelId]: newLevelStats,
+          },
+          echoShards: s.echoShards + rewardResult.totalReward,
+        };
+      });
+      
+      get().saveToStorage();
+      
+      return {
+        stars: starRating.stars,
+        reward: rewardResult.totalReward,
+        isFirstClear,
+        isNewBest,
+      };
+    },
+
+    /**
+     * Set the last played level for quick continuation
+     * Requirements: 1.4
+     * @param levelId - Level number (1-100)
+     */
+    setLastPlayedLevel: (levelId: number) => {
+      if (levelId < 1 || levelId > 100) return;
+      set({ lastPlayedLevel: levelId });
+      get().saveToStorage();
+    },
+
+    /**
+     * Start a new level session
+     * Requirements: 2.2, 2.3, 2.4
+     * @param levelId - Level number (1-100)
+     * @param targetDistance - Target distance for the level
+     */
+    startLevelSession: (levelId: number, targetDistance: number) => {
+      const session: LevelSession = {
+        levelId,
+        startTime: Date.now(),
+        currentDistance: 0,
+        targetDistance,
+        shardsCollected: 0,
+        totalShardsSpawned: 0,
+        damageTaken: 0,
+        currentHealth: 3, // Default starting health
+        isComplete: false,
+        isGameOver: false,
+      };
+      set({ 
+        levelSession: session,
+        lastPlayedLevel: levelId,
+      });
+      get().saveToStorage();
+    },
+
+    /**
+     * Update the current level session
+     * Requirements: 2.2, 2.3, 2.4
+     * @param updates - Partial session updates
+     */
+    updateLevelSession: (updates: Partial<LevelSession>) => {
+      set((state) => {
+        if (!state.levelSession) return state;
+        return {
+          levelSession: {
+            ...state.levelSession,
+            ...updates,
+          },
+        };
+      });
+      // Note: Session state is not persisted
+    },
+
+    /**
+     * End the current level session
+     */
+    endLevelSession: () => {
+      set({ levelSession: null });
+    },
+
+    /**
+     * Get level statistics for a specific level
+     * @param levelId - Level number (1-100)
+     * @returns LevelStats or undefined if not played
+     */
+    getLevelStats: (levelId: number) => {
+      return get().levelStats[levelId];
+    },
+
     // Ghost Actions
     recordGhostFrame: (frame: GhostFrame) => {
       set((state) => ({
@@ -728,6 +941,10 @@ export const useGameStore = create<GameStore>()(
           savedState.completedLevels ?? DEFAULT_STATE.completedLevels,
         currentLevel: savedState.currentLevel ?? DEFAULT_STATE.currentLevel,
         levelStars: savedState.levelStars ?? DEFAULT_STATE.levelStars,
+        // Campaign Update v2.5 - Requirements 1.4, 10.2, 10.4
+        lastPlayedLevel: savedState.lastPlayedLevel ?? DEFAULT_STATE.lastPlayedLevel,
+        levelStats: savedState.levelStats ?? DEFAULT_STATE.levelStats,
+        levelSession: DEFAULT_STATE.levelSession, // Session-only, always reset
         lastDailyChallengeDate:
           savedState.lastDailyChallengeDate ??
           DEFAULT_STATE.lastDailyChallengeDate,
@@ -787,6 +1004,10 @@ export const useGameStore = create<GameStore>()(
         completedLevels: state.completedLevels,
         currentLevel: state.currentLevel,
         levelStars: state.levelStars,
+        // Campaign Update v2.5 - Requirements 1.4, 10.2, 10.4
+        lastPlayedLevel: state.lastPlayedLevel,
+        levelStats: state.levelStats,
+        // NOTE: levelSession is NOT saved (session-only)
         lastDailyChallengeDate: state.lastDailyChallengeDate,
         dailyChallengeCompleted: state.dailyChallengeCompleted,
         dailyChallengeBestScore: state.dailyChallengeBestScore,

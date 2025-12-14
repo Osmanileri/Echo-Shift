@@ -5,6 +5,7 @@
  * risk/reward choices for players through safe and risky shard positions.
  *
  * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
+ * Campaign Update Requirements: 7.1, 7.2, 7.3, 7.4
  */
 
 import { Lane } from "../data/patterns";
@@ -23,6 +24,23 @@ export interface ShardConfig {
   nearMissBonus: number; // 5 - Near miss bonus çarpanı
   baseShardValue: number; // 1 - Temel shard değeri
 }
+
+/**
+ * Campaign mode shard configuration
+ * Requirements: 7.1, 7.2, 7.3, 7.4
+ */
+export interface CampaignShardConfig {
+  sizeMultiplier: number; // 0.6 - 60% of original size
+  spawnRateMultiplier: number; // 2.0 - 2x spawn frequency
+  horizontalSpreadEnabled: boolean; // Enable left/center/right spread
+  safeMargin: number; // Pixels from screen edge
+}
+
+/**
+ * Horizontal spread position for campaign mode
+ * Requirements: 7.3
+ */
+export type HorizontalSpreadPosition = 'left' | 'center' | 'right' | 'random';
 
 /**
  * Movement configuration for dynamic shards
@@ -92,6 +110,17 @@ export const DEFAULT_SHARD_CONFIG: ShardConfig = {
   riskyEdgeDistance: 20,
   nearMissBonus: 5,
   baseShardValue: 1,
+};
+
+/**
+ * Default campaign mode shard configuration
+ * Requirements: 7.1, 7.2, 7.3, 7.4
+ */
+export const DEFAULT_CAMPAIGN_SHARD_CONFIG: CampaignShardConfig = {
+  sizeMultiplier: 0.6, // 60% of original size (Requirement 7.1)
+  spawnRateMultiplier: 2.0, // 2x spawn frequency (Requirement 7.2)
+  horizontalSpreadEnabled: true, // Enable horizontal spread (Requirement 7.3)
+  safeMargin: 50, // 50px from screen edge (Requirement 7.4)
 };
 
 /**
@@ -531,4 +560,191 @@ export function markShardCollected(shard: PlacedShard): PlacedShard {
     ...shard,
     collected: true,
   };
+}
+
+// ============================================================================
+// Campaign Mode Functions
+// Requirements: 7.1, 7.2, 7.3, 7.4
+// ============================================================================
+
+/**
+ * Calculate gem size for campaign mode
+ * Requirements: 7.1
+ * 
+ * @param baseSize - Original gem size
+ * @param config - Campaign shard configuration
+ * @returns Reduced gem size (60% of original)
+ */
+export function calculateCampaignGemSize(
+  baseSize: number,
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG
+): number {
+  return baseSize * config.sizeMultiplier;
+}
+
+/**
+ * Calculate spawn interval for campaign mode
+ * Requirements: 7.2
+ * 
+ * @param baseInterval - Original spawn interval in ms
+ * @param config - Campaign shard configuration
+ * @returns Reduced spawn interval (2x frequency = 0.5x interval)
+ */
+export function calculateCampaignSpawnInterval(
+  baseInterval: number,
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG
+): number {
+  return baseInterval / config.spawnRateMultiplier;
+}
+
+/**
+ * Get horizontal spread position for campaign mode
+ * Requirements: 7.3
+ * 
+ * @param canvasWidth - Width of the game canvas
+ * @param position - Desired spread position (left, center, right, random)
+ * @param config - Campaign shard configuration
+ * @param rand - Optional RNG function (defaults to Math.random)
+ * @returns X coordinate for the shard
+ */
+export function getHorizontalSpreadX(
+  canvasWidth: number,
+  position: HorizontalSpreadPosition,
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG,
+  rand: () => number = Math.random
+): number {
+  const safeMin = config.safeMargin;
+  const safeMax = canvasWidth - config.safeMargin;
+  const safeWidth = safeMax - safeMin;
+  
+  // Divide into three zones: left (0-33%), center (33-66%), right (66-100%)
+  const leftZoneEnd = safeMin + safeWidth * 0.33;
+  const centerZoneEnd = safeMin + safeWidth * 0.66;
+  
+  let targetPosition: HorizontalSpreadPosition = position;
+  
+  // If random, pick one of the three positions
+  if (position === 'random') {
+    const roll = rand();
+    if (roll < 0.33) {
+      targetPosition = 'left';
+    } else if (roll < 0.66) {
+      targetPosition = 'center';
+    } else {
+      targetPosition = 'right';
+    }
+  }
+  
+  // Calculate base X for each zone, then add random offset within zone
+  switch (targetPosition) {
+    case 'left':
+      return safeMin + rand() * (leftZoneEnd - safeMin);
+    case 'center':
+      return leftZoneEnd + rand() * (centerZoneEnd - leftZoneEnd);
+    case 'right':
+      return centerZoneEnd + rand() * (safeMax - centerZoneEnd);
+    default:
+      return safeMin + rand() * safeWidth;
+  }
+}
+
+/**
+ * Check if a horizontal position is within safe play bounds
+ * Requirements: 7.4
+ * 
+ * @param x - X coordinate to check
+ * @param canvasWidth - Width of the game canvas
+ * @param config - Campaign shard configuration
+ * @returns True if position is within safe bounds
+ */
+export function isWithinSafeHorizontalBounds(
+  x: number,
+  canvasWidth: number,
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG
+): boolean {
+  return x >= config.safeMargin && x <= canvasWidth - config.safeMargin;
+}
+
+/**
+ * Create a campaign mode shard with horizontal spread
+ * Requirements: 7.1, 7.2, 7.3, 7.4
+ * 
+ * @param id - Unique identifier for the shard
+ * @param lane - Lane the shard is in
+ * @param canvasWidth - Width of the game canvas
+ * @param canvasHeight - Height of the game canvas
+ * @param spreadPosition - Horizontal spread position
+ * @param type - Safe, risky, or bonus shard
+ * @param config - Campaign shard configuration
+ * @param shardConfig - Base shard configuration
+ * @param rand - Optional RNG function
+ * @returns New PlacedShard with campaign mode positioning
+ */
+export function createCampaignShard(
+  id: string,
+  lane: Lane,
+  canvasWidth: number,
+  canvasHeight: number,
+  spreadPosition: HorizontalSpreadPosition = 'random',
+  type: "safe" | "risky" | "bonus" = "safe",
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG,
+  shardConfig: ShardConfig = DEFAULT_SHARD_CONFIG,
+  rand: () => number = Math.random
+): PlacedShard {
+  // Get horizontal position with spread
+  const x = getHorizontalSpreadX(canvasWidth, spreadPosition, config, rand);
+  
+  // Calculate Y position based on lane
+  const y = lane === "TOP" ? canvasHeight * 0.25 : canvasHeight * 0.75;
+  
+  const position: ShardPosition = { x, y };
+  
+  return createPlacedShard(id, position, lane, type, shardConfig);
+}
+
+/**
+ * Generate multiple campaign shards with varied horizontal positions
+ * Requirements: 7.2, 7.3, 7.4
+ * 
+ * @param baseId - Base ID for shard generation
+ * @param count - Number of shards to generate
+ * @param lane - Lane for the shards
+ * @param canvasWidth - Width of the game canvas
+ * @param canvasHeight - Height of the game canvas
+ * @param config - Campaign shard configuration
+ * @param shardConfig - Base shard configuration
+ * @param rand - Optional RNG function
+ * @returns Array of PlacedShards with varied horizontal positions
+ */
+export function generateCampaignShards(
+  baseId: string,
+  count: number,
+  lane: Lane,
+  canvasWidth: number,
+  canvasHeight: number,
+  config: CampaignShardConfig = DEFAULT_CAMPAIGN_SHARD_CONFIG,
+  shardConfig: ShardConfig = DEFAULT_SHARD_CONFIG,
+  rand: () => number = Math.random
+): PlacedShard[] {
+  const shards: PlacedShard[] = [];
+  const positions: HorizontalSpreadPosition[] = ['left', 'center', 'right'];
+  
+  for (let i = 0; i < count; i++) {
+    // Cycle through positions to ensure spread
+    const position = positions[i % positions.length];
+    const shard = createCampaignShard(
+      `${baseId}-${i}`,
+      lane,
+      canvasWidth,
+      canvasHeight,
+      position,
+      'safe',
+      config,
+      shardConfig,
+      rand
+    );
+    shards.push(shard);
+  }
+  
+  return shards;
 }

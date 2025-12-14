@@ -2,47 +2,75 @@
 
 ## Mevcut Odak
 
-- **Progression System** - DEVAM EDİYOR
-  - Task 11: GameEngine Integration - TAMAMLANDI
-  - Task 12: Checkpoint - TAMAMLANDI
-  - Task 13: Create UI Components - TAMAMLANDI
-  - Task 14: Wire UI to App.tsx - TAMAMLANDI
-    - 14.1: Mission panel button in GameUI menu
-    - 14.2: Level-up notification with auto-hide
-    - 14.3: Daily reward claim modal on first login
-    - 14.4: Sound Check completion celebration
-  - 410 test geçiyor
-  - Kalan: Task 15 (Final Checkpoint)
+- **Campaign Update v2.5** - TAMAMLANDI ✅
+  - Distance-based gameplay (skor yerine mesafe)
+  - Progressive speed system (hız artışı + climax boost)
+  - Star rating system (Survivor/Collector/Perfectionist)
+  - Holographic gate ve climax VFX
+  - Victory screen animasyonları
+  - 526 test geçiyor
 
 ## Son Yapılanlar
 
-### Documentation Polish
-- `README.md`: Expo template'inden Echo Shift dokümantasyonuna dönüştürüldü
-- `prd.md`: Planned Eat projesinden Echo Shift PRD'sine dönüştürüldü
-- Tüm özellikler, dosya yapısı ve teknik detaylar dokümante edildi
-
-### Storage Key Standardizasyonu
-- `constants.ts`: Legacy key (`shadow_sync_highscore`) → standardize key (`echo-shift-high-score`)
-- Tüm key'ler `echo-shift-` prefix'i kullanıyor
-- Backward compatibility için legacy key korundu
-
-### Memory Bank Güncellemesi
-- `projectbrief.md`: Tamamlanan tüm özellikler eklendi
-- `productContext.md`: Oyun akışı ve deneyim detaylandırıldı
-- `techContext.md`: Storage key standardizasyonu eklendi
-- `systemPatterns.md`: Mimari diyagramlar ve pattern'ler güncellendi
+### Campaign Update v2.5 (Tamamlandı)
+- `data/levels.ts`: Distance-based level configuration
+  - `calculateTargetDistance()`: 350 + (level * 100) * (level ^ 0.1)
+  - `calculateBaseSpeed()`: 10 + (level * 0.4)
+  - `calculateObstacleDensity()`: min(1.0, 0.5 + (level * 0.02))
+  - Chapter sistemi: SUB_BASS, BASS, MID, HIGH, PRESENCE
+- `systems/distanceTracker.ts`: Mesafe takip sistemi
+  - Climax zone detection (son %20)
+  - Near finish detection (son 50m)
+- `systems/speedController.ts`: Progressive speed
+  - Formula: baseSpeed * (1 + (currentDistance / targetDistance) * 0.3)
+  - Climax multiplier: 1.2x (500ms smooth transition)
+- `systems/campaignSystem.ts`: Star rating ve reward sistemi
+  - 1 star: Survivor (health > 0)
+  - 2 stars: Collector (>= 80% shards)
+  - 3 stars: Perfectionist (no damage)
+  - First-clear bonus: 50 + (level * 10)
+  - Base reward: 10 + (level * 3) + (stars * 5)
+- `systems/climaxVFX.ts`: Climax zone visual effects
+  - Starfield stretch (1.0 - 2.0)
+  - Chromatic aberration (0 - 10px)
+  - FOV increase (1.0 - 1.15)
+  - Screen flash on finish
+- `systems/holographicGate.ts`: Finish line gate
+  - Visible within 100m of target
+  - BPM-synced pulse animation
+  - Shatter animation on pass-through
+  - Warp jump acceleration
+- `components/VictoryScreen/VictoryScreen.tsx`: Victory animations
+  - Slow motion effect (0.2x for 1 second)
+  - Sequential star reveal (300ms delay)
+  - Flying currency animation (10-20 particles)
+- `components/Campaign/LevelMap.tsx`: Level map animations
+  - Path unlock animation
+  - Unlock pop animation
+  - Chapter background cross-fade
+- `systems/environmentalEffects.ts`: Environmental effects
+  - Shard collection particle burst
+  - BPM-synced obstacle pulse
+  - Glitch artifact on damage
+  - Haptic feedback integration
+- `systems/campaignIntegration.test.ts`: Integration tests
+  - Complete level flow testing
+  - First-clear vs replay scenarios
+  - Chapter transitions
+  - VFX trigger verification
 
 ## Tamamlanan Spec'ler
 
 | Spec | Durum | Test |
 |------|-------|------|
-| echo-constructs | ✅ TAMAMLANDI | 364 test |
+| campaign-update-v25 | ✅ TAMAMLANDI | 526 test |
+| echo-constructs | ✅ TAMAMLANDI | ✅ |
 | procedural-gameplay | ✅ TAMAMLANDI | ✅ |
 | echo-shift-professionalization | ✅ TAMAMLANDI | ✅ |
 | echo-shift-engagement | ✅ TAMAMLANDI | ✅ |
 | echo-shift-v2-mechanics | ✅ TAMAMLANDI | ✅ |
 | advanced-game-mechanics | ✅ TAMAMLANDI | ✅ |
-| progression-system | 🔄 DEVAM EDİYOR | Task 14 ✅ |
+| progression-system | ✅ TAMAMLANDI | ✅ |
 
 ## Bilinen Konular / Riskler
 
@@ -52,19 +80,45 @@
 
 ## Sonraki Adımlar (Opsiyonel)
 
-1. **Yeni Özellikler**:
+1. **Bekleyen Özellikler (Kodlanmış ama UI'a bağlanmamış)**:
+   - Leaderboard (Skor Tablosu)
+   - Zen Mode (Rahat Mod)
+   - Ghost Racer (Hayalet Yarışçı)
+
+2. **Yeni Özellikler**:
    - Multiplayer/Co-op Mode
    - Boss Battles
    - Seasonal Events
    - Achievement System
    - Custom Level Editor
 
-2. **Performans Optimizasyonu**:
+3. **Performans Optimizasyonu**:
    - Object pooling genişletme
    - Canvas rendering optimizasyonu
    - Memory profiling
 
-3. **UX İyileştirmeleri**:
+4. **UX İyileştirmeleri**:
    - Onboarding flow geliştirme
    - Accessibility iyileştirmeleri
    - Localization (çoklu dil desteği)
+
+## Campaign Update v2.5 Özellikleri
+
+### Ana Değişiklikler
+- **Distance-Based Gameplay**: Skor yerine mesafe (metre) ana metrik
+- **Campaign as Main Mode**: "Başla" butonu direkt level selection açıyor
+- **Progressive Speed**: Seviye boyunca hız artışı + climax boost
+- **Star Rating**: Survivor (1★), Collector (2★), Perfectionist (3★)
+- **Visual Feedback**: Warp effects, chromatic aberration, holographic gate
+
+### Yeni Sistemler
+- `distanceTracker.ts`: Mesafe takibi ve climax zone detection
+- `speedController.ts`: Progressive speed ve climax multiplier
+- `climaxVFX.ts`: Climax zone visual effects
+- `holographicGate.ts`: Finish line gate sistemi
+- `environmentalEffects.ts`: Collection/damage effects
+
+### Test Coverage
+- 27 property-based test (fast-check)
+- 12 integration test
+- Toplam 526 test geçiyor

@@ -767,6 +767,53 @@ export function playGlitchTokenCollect() {
   playNoise(0.06, 4000, 'highpass', 0.08);
 }
 
+/**
+ * Glitch damage - distorted digital damage sound
+ * Requirements 14.3: Trigger glitch SFX on damage taken
+ */
+export function playGlitchDamage() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Harsh digital distortion
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  
+  osc1.type = 'square';
+  osc2.type = 'sawtooth';
+  
+  // Chaotic frequency jumps
+  osc1.frequency.setValueAtTime(200, ctx.currentTime);
+  osc1.frequency.setValueAtTime(800, ctx.currentTime + 0.02);
+  osc1.frequency.setValueAtTime(100, ctx.currentTime + 0.05);
+  osc1.frequency.setValueAtTime(600, ctx.currentTime + 0.08);
+  osc1.frequency.setValueAtTime(150, ctx.currentTime + 0.12);
+  
+  osc2.frequency.setValueAtTime(400, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
+  
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+  
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.2);
+  osc2.stop(ctx.currentTime + 0.2);
+  
+  // Heavy noise burst
+  playNoise(0.15, 1000, 'bandpass', 0.2);
+  
+  // High frequency glitch
+  setTimeout(() => playNoise(0.08, 6000, 'highpass', 0.1), 50);
+}
+
 // ============ SETTINGS CONTROL ============
 
 /**
@@ -872,6 +919,9 @@ export const AudioSystem = {
   playConstructDestruction,
   playSmartBombShockwave,
   playGlitchTokenCollect,
+  
+  // Environmental Effects - Requirements 14.3
+  playGlitchDamage,
 };
 
 export default AudioSystem;

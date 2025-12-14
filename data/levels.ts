@@ -1,17 +1,25 @@
 /**
  * Level Data Definitions for Campaign Mode
- * Requirements: 7.1, 7.2, 7.4, 7.5, 7.6
+ * Campaign Update v2.5 - Distance-based progression
+ * Requirements: 2.1, 3.4, 5.1, 5.3, 5.4
  */
 
 /**
+ * Chapter types for campaign organization
+ * Requirements: 5.1
+ */
+export type ChapterType = 'SUB_BASS' | 'BASS' | 'MID' | 'HIGH' | 'PRESENCE';
+
+/**
  * Level mechanics configuration
- * Requirements: 7.4, 7.5, 7.6
+ * Requirements: 5.3
  */
 export interface LevelMechanics {
-  phantom: boolean;    // Phantom obstacles enabled (introduced at level 11)
-  midline: boolean;    // Dynamic midline enabled (introduced at level 20)
-  rhythm: boolean;     // Rhythm system enabled
-  gravity: boolean;    // Gravity flip enabled
+  phantom: boolean;          // Phantom obstacles enabled (introduced at level 11)
+  midline: boolean;          // Dynamic midline enabled (introduced at level 20)
+  rhythm: boolean;           // Rhythm system enabled
+  gravity: boolean;          // Gravity flip enabled
+  movingObstacles: boolean;  // Moving obstacles (introduced at MID chapter, level 21+)
 }
 
 /**
@@ -31,84 +39,155 @@ export interface LevelRewards {
 }
 
 /**
+ * Star criteria for level completion
+ * Requirements: 4.1, 4.2, 4.3
+ */
+export interface StarCriteria {
+  survivor: boolean;            // Complete level (always true for 1 star)
+  collectorThreshold: number;   // 80% of available shards for 2 stars
+  perfectionist: boolean;       // No damage taken for 3 stars
+}
+
+/**
  * Complete level configuration
- * Requirements: 7.2
+ * Requirements: 2.1, 3.4, 5.4
  */
 export interface LevelConfig {
   id: number;
   name: string;
   description: string;
+  chapter: ChapterType;
+  targetDistance: number;       // Distance in meters to complete level
+  baseSpeed: number;            // Base speed for the level
+  obstacleDensity: number;      // Obstacle spawn density (0.5 - 1.0)
+  // Legacy fields for backward compatibility
   targetScore: number;
-  starThresholds: [number, number, number]; // Score thresholds for 1, 2, 3 stars
+  starThresholds: [number, number, number];
   mechanics: LevelMechanics;
   modifiers: LevelModifiers;
   rewards: LevelRewards;
+  starCriteria: StarCriteria;
+}
+
+
+/**
+ * Calculate target distance for a level
+ * Level 1: 100m (tutorial/intro level)
+ * Level 2+: Progressive increase
+ * Requirements: 2.1
+ * @param level - Level number (1-100)
+ * @returns Target distance in meters
+ */
+export function calculateTargetDistance(level: number): number {
+  if (level === 1) return 100; // First level is short intro
+  // Level 2+: starts at 200m and increases progressively
+  return 150 + (level * 75) * Math.pow(level, 0.08);
 }
 
 /**
- * Generate level name based on level number and mechanics
+ * Calculate base speed for a level
+ * Level 1: Slower intro speed (6)
+ * Level 2+: Progressive increase
+ * Requirements: 3.4
+ * @param level - Level number (1-100)
+ * @returns Base speed in pixels per frame
+ */
+export function calculateBaseSpeed(level: number): number {
+  if (level === 1) return 6; // Slow intro speed for first level
+  return 8 + (level * 0.35);
+}
+
+/**
+ * Calculate obstacle density for a level
+ * Formula: min(1.0, 0.5 + (level * 0.02))
+ * Requirements: 5.4
+ * @param level - Level number (1-100)
+ * @returns Obstacle density (0.5 - 1.0)
+ */
+export function calculateObstacleDensity(level: number): number {
+  return Math.min(1.0, 0.5 + (level * 0.02));
+}
+
+/**
+ * Get chapter type for a level
+ * Requirements: 5.1
+ * @param level - Level number (1-100)
+ * @returns ChapterType
+ */
+export function getChapterForLevel(level: number): ChapterType {
+  if (level <= 10) return 'SUB_BASS';
+  if (level <= 20) return 'BASS';
+  if (level <= 30) return 'MID';
+  if (level <= 40) return 'HIGH';
+  return 'PRESENCE';
+}
+
+/**
+ * Generate level name based on level number and chapter
  */
 function generateLevelName(id: number): string {
-  if (id <= 10) return `Tutorial ${id}`;
-  if (id === 11) return 'Ghost Protocol';
-  if (id <= 20) return `Phantom ${id - 10}`;
-  if (id === 21) return 'Shifting Grounds';
-  if (id <= 30) return `Dynamic ${id - 20}`;
-  if (id <= 50) return `Challenge ${id - 30}`;
-  if (id <= 75) return `Expert ${id - 50}`;
-  if (id <= 99) return `Master ${id - 75}`;
-  return 'Final Challenge';
+  const chapter = getChapterForLevel(id);
+  const chapterNames: Record<ChapterType, string> = {
+    'SUB_BASS': 'Sub-Bass',
+    'BASS': 'Bass',
+    'MID': 'Mid',
+    'HIGH': 'High',
+    'PRESENCE': 'Presence',
+  };
+  const levelInChapter = ((id - 1) % 10) + 1;
+  return `${chapterNames[chapter]} ${levelInChapter}`;
 }
 
 /**
- * Generate level description based on mechanics
+ * Generate level description based on chapter
  */
-function generateLevelDescription(id: number, mechanics: LevelMechanics): string {
-  if (id <= 10) return 'Learn the basics of Echo Shift';
-  if (id === 11) return 'Phantom obstacles appear from the shadows';
-  if (id <= 20) return 'Master the phantom obstacles';
-  if (id === 21) return 'The midline begins to shift';
-  if (id <= 30) return 'Adapt to the dynamic midline';
-  if (id <= 50) return 'Test your skills with all mechanics';
-  if (id <= 75) return 'Expert-level challenge awaits';
-  if (id <= 99) return 'Only masters can survive';
-  return 'The ultimate test of skill';
+function generateLevelDescription(id: number): string {
+  const chapter = getChapterForLevel(id);
+  const descriptions: Record<ChapterType, string> = {
+    'SUB_BASS': 'Feel the deep frequencies',
+    'BASS': 'Ride the bass waves',
+    'MID': 'Navigate the shifting midrange',
+    'HIGH': 'Ascend to higher frequencies',
+    'PRESENCE': 'Master the presence zone',
+  };
+  return descriptions[chapter];
 }
 
 /**
- * Calculate target score based on level
+ * Calculate target score based on level (legacy support)
  */
 function calculateTargetScore(id: number): number {
-  if (id <= 10) return 50 + (id * 50);           // 100 - 550
-  if (id <= 20) return 500 + ((id - 10) * 100);  // 600 - 1500
-  if (id <= 30) return 1500 + ((id - 20) * 150); // 1650 - 3000
-  if (id <= 50) return 3000 + ((id - 30) * 200); // 3200 - 7000
-  if (id <= 75) return 7000 + ((id - 50) * 300); // 7300 - 14500
-  if (id <= 99) return 14500 + ((id - 75) * 400); // 14900 - 24100
-  return 25000; // Level 100
+  if (id <= 10) return 50 + (id * 50);
+  if (id <= 20) return 500 + ((id - 10) * 100);
+  if (id <= 30) return 1500 + ((id - 20) * 150);
+  if (id <= 50) return 3000 + ((id - 30) * 200);
+  if (id <= 75) return 7000 + ((id - 50) * 300);
+  if (id <= 99) return 14500 + ((id - 75) * 400);
+  return 25000;
 }
 
 /**
- * Calculate star thresholds based on target score
+ * Calculate star thresholds based on target score (legacy support)
  */
 function calculateStarThresholds(targetScore: number): [number, number, number] {
   return [
-    targetScore,                          // 1 star: reach target
-    Math.floor(targetScore * 1.5),        // 2 stars: 150% of target
-    Math.floor(targetScore * 2),          // 3 stars: 200% of target
+    targetScore,
+    Math.floor(targetScore * 1.5),
+    Math.floor(targetScore * 2),
   ];
 }
 
 /**
  * Determine mechanics for a level
- * Requirements: 7.4, 7.5, 7.6
+ * Requirements: 5.3
  */
 function getMechanicsForLevel(id: number): LevelMechanics {
   return {
-    phantom: id >= 11,   // Phantom introduced at level 11
-    midline: id >= 21,   // Dynamic midline introduced at level 21
-    rhythm: id >= 31,    // Rhythm system introduced at level 31
-    gravity: id >= 41,   // Gravity flip introduced at level 41
+    phantom: id >= 11,
+    midline: id >= 21,
+    rhythm: id >= 31,
+    gravity: id >= 41,
+    movingObstacles: id >= 21,  // Introduced at MID chapter (level 21+)
   };
 }
 
@@ -116,11 +195,16 @@ function getMechanicsForLevel(id: number): LevelMechanics {
  * Calculate difficulty modifiers based on level
  */
 function getModifiersForLevel(id: number): LevelModifiers {
-  // Speed increases gradually from 0.6 to 1.4
-  const speedMultiplier = Math.min(1.4, 0.6 + (id * 0.008));
+  // Level 1: Very slow and easy
+  if (id === 1) {
+    return {
+      speedMultiplier: 0.5,
+      spawnRateMultiplier: 0.4,
+    };
+  }
   
-  // Spawn rate increases from 0.5 to 1.3
-  const spawnRateMultiplier = Math.min(1.3, 0.5 + (id * 0.008));
+  const speedMultiplier = Math.min(1.4, 0.65 + (id * 0.008));
+  const spawnRateMultiplier = Math.min(1.3, 0.55 + (id * 0.008));
   
   return {
     speedMultiplier: Math.round(speedMultiplier * 100) / 100,
@@ -132,15 +216,24 @@ function getModifiersForLevel(id: number): LevelModifiers {
  * Calculate rewards based on level
  */
 function getRewardsForLevel(id: number): LevelRewards {
-  // Base shards increase with level
   const echoShards = 10 + Math.floor(id * 2);
-  
-  // Bonus per star also increases
   const bonusPerStar = 5 + Math.floor(id * 0.5);
   
   return {
     echoShards,
     bonusPerStar,
+  };
+}
+
+/**
+ * Get star criteria for a level
+ * Requirements: 4.1, 4.2, 4.3
+ */
+function getStarCriteriaForLevel(): StarCriteria {
+  return {
+    survivor: true,           // 1 star: complete with health > 0
+    collectorThreshold: 0.8,  // 2 stars: collect >= 80% shards
+    perfectionist: true,      // 3 stars: no damage taken
   };
 }
 
@@ -154,18 +247,22 @@ function generateLevelConfig(id: number): LevelConfig {
   return {
     id,
     name: generateLevelName(id),
-    description: generateLevelDescription(id, mechanics),
+    description: generateLevelDescription(id),
+    chapter: getChapterForLevel(id),
+    targetDistance: calculateTargetDistance(id),
+    baseSpeed: calculateBaseSpeed(id),
+    obstacleDensity: calculateObstacleDensity(id),
     targetScore,
     starThresholds: calculateStarThresholds(targetScore),
     mechanics,
     modifiers: getModifiersForLevel(id),
     rewards: getRewardsForLevel(id),
+    starCriteria: getStarCriteriaForLevel(),
   };
 }
 
 /**
  * All 100 level configurations
- * Requirements: 7.1
  */
 export const LEVELS: LevelConfig[] = Array.from(
   { length: 100 },
