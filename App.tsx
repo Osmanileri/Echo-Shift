@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
-  DailyChallengeMode,
-  RestoreModeConfig,
+    DailyChallengeMode,
+    RestoreModeConfig,
 } from "./components/GameEngine";
 import GameUI from "./components/GameUI";
+import MissionComplete from "./components/Missions/MissionComplete";
+import MissionPanel from "./components/Missions/MissionPanel";
 import RestorePrompt from "./components/Restore/RestorePrompt";
 import Shop from "./components/Shop/Shop";
 import TutorialOverlay from "./components/Tutorial/TutorialOverlay";
@@ -12,19 +14,19 @@ import { STORAGE_KEYS } from "./constants";
 import { getZoneById } from "./data/zones";
 import { useGameStore } from "./store/gameStore";
 import { getActiveUpgradeEffects } from "./systems/upgradeSystem";
-import { GameState } from "./types";
+import { GameState, Mission, MissionEvent } from "./types";
 import { calculateEchoShards } from "./utils/echoShards";
 // Daily Challenge System - Requirements 8.1, 8.2, 8.3
 import {
-  DailyChallengeConfig,
-  submitScore as submitDailyChallengeScore,
+    DailyChallengeConfig,
+    submitScore as submitDailyChallengeScore,
 } from "./systems/dailyChallenge";
 // Tutorial System - Requirements 17.1, 17.3, 17.4, 17.5
 import {
-  shouldShowMainTutorial,
-  startContextualTutorial,
-  startMainTutorial,
-  TutorialState,
+    shouldShowMainTutorial,
+    startContextualTutorial,
+    startMainTutorial,
+    TutorialState,
 } from "./systems/tutorialSystem";
 // Restore System - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
 import { RESTORE_CONFIG } from "./systems/restoreSystem";
@@ -32,8 +34,8 @@ import { RESTORE_CONFIG } from "./systems/restoreSystem";
 import { getHapticSystem } from "./systems/hapticSystem";
 // Analytics System - Requirements 5.1, 5.2, 5.4, 5.5, 5.6
 import {
-  AnalyticsSystem,
-  createAnalyticsSystem,
+    AnalyticsSystem,
+    createAnalyticsSystem,
 } from "./systems/analyticsSystem";
 // Daily Rituals System - Requirements 5.5
 import { setupRitualAnalytics } from "./systems/dailyRituals";
@@ -123,6 +125,15 @@ const App: React.FC = () => {
   // Rate Us System state - Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6
   const [showRatePrompt, setShowRatePrompt] = useState<boolean>(false);
 
+  // Progression System state - Requirements 1.1, 2.1, 4.3, 5.1
+  const [showMissionPanel, setShowMissionPanel] = useState<boolean>(false);
+  const [completedMission, setCompletedMission] = useState<Mission | null>(null);
+  const [showLevelUpNotification, setShowLevelUpNotification] = useState<boolean>(false);
+  const [newLevel, setNewLevel] = useState<number>(1);
+  const [showDailyRewardClaim, setShowDailyRewardClaim] = useState<boolean>(false);
+  const [dailyRewardAmount, setDailyRewardAmount] = useState<number>(0);
+  const [showSyncComplete, setShowSyncComplete] = useState<boolean>(false);
+
   // Global store for Echo Shards - Requirements 1.3, 1.4
   const echoShards = useGameStore((state) => state.echoShards);
   const addEchoShards = useGameStore((state) => state.addEchoShards);
@@ -136,6 +147,17 @@ const App: React.FC = () => {
 
   // Haptic Settings - Requirements 4.6
   const hapticEnabled = useGameStore((state) => state.hapticEnabled);
+
+  // Progression System store - Requirements 1.1, 2.1, 4.1, 5.1
+  const syncRate = useGameStore((state) => state.syncRate);
+  const totalXP = useGameStore((state) => state.totalXP);
+  const missions = useGameStore((state) => state.missions);
+  const lastLoginDate = useGameStore((state) => state.lastLoginDate);
+  const soundCheckComplete = useGameStore((state) => state.soundCheckComplete);
+  const processMissionEvent = useGameStore((state) => state.processMissionEvent);
+  const completeMission = useGameStore((state) => state.completeMission);
+  const claimDailyReward = useGameStore((state) => state.claimDailyReward);
+  const addXP = useGameStore((state) => state.addXP);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.HIGH_SCORE);
@@ -156,6 +178,43 @@ const App: React.FC = () => {
       setShowTutorial(true);
     }
   }, [gameState]);
+
+  // Check for daily reward on app load - Requirements 5.1
+  useEffect(() => {
+    if (gameState === GameState.MENU) {
+      const today = new Date().toISOString().split('T')[0];
+      if (lastLoginDate !== today) {
+        setShowDailyRewardClaim(true);
+      }
+    }
+  }, [gameState, lastLoginDate]);
+
+  // Track Sound Check completion for celebration - Requirements 1.5
+  const prevSoundCheckComplete = useRef(soundCheckComplete);
+  useEffect(() => {
+    if (soundCheckComplete && !prevSoundCheckComplete.current) {
+      setShowSyncComplete(true);
+      // Play celebration sound
+      AudioSystem.playNewHighScore();
+      // Auto-hide after 3 seconds
+      setTimeout(() => setShowSyncComplete(false), 3000);
+    }
+    prevSoundCheckComplete.current = soundCheckComplete;
+  }, [soundCheckComplete]);
+
+  // Track level-up for notification - Requirements 4.3
+  const prevSyncRate = useRef(syncRate);
+  useEffect(() => {
+    if (syncRate > prevSyncRate.current) {
+      setNewLevel(syncRate);
+      setShowLevelUpNotification(true);
+      // Play level up sound
+      AudioSystem.playNewHighScore();
+      // Auto-hide after 3 seconds
+      setTimeout(() => setShowLevelUpNotification(false), 3000);
+    }
+    prevSyncRate.current = syncRate;
+  }, [syncRate]);
 
   const handleStart = () => {
     // Audio: Initialize and play game start sound - Phase 4
@@ -396,6 +455,62 @@ const App: React.FC = () => {
     []
   );
 
+  // Progression System handlers - Requirements 1.1, 2.1, 4.3, 5.1
+  const handleOpenMissionPanel = useCallback(() => {
+    setShowMissionPanel(true);
+  }, []);
+
+  const handleCloseMissionPanel = useCallback(() => {
+    setShowMissionPanel(false);
+  }, []);
+
+  const handleClaimMission = useCallback((missionId: string) => {
+    // Find the mission to show completion modal
+    let mission = missions.soundCheck.missions.find(m => m.id === missionId);
+    if (!mission) {
+      mission = missions.daily.missions.find(m => m.id === missionId);
+    }
+    if (!mission && missions.marathon.mission?.id === missionId) {
+      mission = missions.marathon.mission;
+    }
+    
+    if (mission && mission.completed) {
+      setCompletedMission(mission);
+    }
+  }, [missions]);
+
+  const handleMissionRewardClaim = useCallback(() => {
+    if (completedMission) {
+      // completeMission handles XP and shard rewards internally
+      // Level-up notification is handled by the syncRate useEffect
+      completeMission(completedMission.id);
+      setCompletedMission(null);
+    }
+  }, [completedMission, completeMission]);
+
+  const handleMissionCompleteClose = useCallback(() => {
+    setCompletedMission(null);
+  }, []);
+
+  // Mission event handler from GameEngine - Requirements 7.1-7.5
+  const handleMissionEvent = useCallback((event: MissionEvent) => {
+    processMissionEvent(event);
+    
+    // Check if any mission just completed and show notification
+    // This is handled by the mission panel UI
+  }, [processMissionEvent]);
+
+  // Daily reward claim handler - Requirements 5.1
+  const handleClaimDailyReward = useCallback(() => {
+    const result = claimDailyReward();
+    if (result.claimed) {
+      setDailyRewardAmount(result.amount);
+      setShowDailyRewardClaim(false);
+      // Show a brief notification (could be enhanced with a modal)
+      console.log(`Daily reward claimed: ${result.amount} shards`);
+    }
+  }, [claimDailyReward]);
+
   // Rate Us System handlers - Requirements 6.3, 6.4, 6.5, 6.6
   const handleRatePositive = useCallback(() => {
     // Requirements 6.4: Open app store rating page
@@ -455,6 +570,7 @@ const App: React.FC = () => {
         restoreMode={restoreMode}
         restoreRequested={restoreRequested}
         onRestoreStateUpdate={handleRestoreStateUpdate}
+        onMissionEvent={handleMissionEvent}
       />
       <GameUI
         gameState={gameState}
@@ -469,6 +585,7 @@ const App: React.FC = () => {
         onOpenShop={handleOpenShop}
         onOpenStudio={handleOpenStudio}
         onOpenDailyChallenge={handleOpenDailyChallenge}
+        onOpenMissions={handleOpenMissionPanel}
         rhythmMultiplier={rhythmMultiplier}
         rhythmStreak={rhythmStreak}
         nearMissStreak={nearMissStreak}
@@ -481,6 +598,11 @@ const App: React.FC = () => {
         slowMotionUsesRemaining={slowMotionUsesRemaining}
         slowMotionActive={slowMotionActive}
         onActivateSlowMotion={handleActivateSlowMotion}
+        syncRate={syncRate}
+        totalXP={totalXP}
+        lastLoginDate={lastLoginDate}
+        onClaimDailyReward={handleClaimDailyReward}
+        soundCheckComplete={soundCheckComplete}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />
@@ -510,6 +632,99 @@ const App: React.FC = () => {
           onNegative={handleRateNegative}
           onDismiss={handleRateDismiss}
         />
+      )}
+      {/* Mission Panel - Requirements 1.1, 2.1 */}
+      {showMissionPanel && (
+        <MissionPanel
+          missionState={missions}
+          soundCheckComplete={soundCheckComplete}
+          onClaimMission={handleClaimMission}
+          onClose={handleCloseMissionPanel}
+        />
+      )}
+      {/* Mission Complete Modal - Requirements 2.5, 3.3 */}
+      {completedMission && (
+        <MissionComplete
+          mission={completedMission}
+          onClose={handleMissionCompleteClose}
+          onClaim={handleMissionRewardClaim}
+        />
+      )}
+      {/* Daily Reward Claim Modal - Requirements 5.1 */}
+      {showDailyRewardClaim && gameState === GameState.MENU && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm bg-gradient-to-b from-yellow-900/90 to-black rounded-2xl border border-yellow-500/30 overflow-hidden shadow-[0_0_40px_rgba(255,200,0,0.2)]">
+            {/* Header */}
+            <div className="p-6 text-center">
+              <div className="inline-flex p-4 rounded-full bg-yellow-500/20 ring-2 ring-yellow-500/50 mb-4">
+                <svg className="w-10 h-10 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-black text-yellow-400 tracking-wider mb-2">
+                GÜNLÜK ÖDÜL
+              </h2>
+              <p className="text-white/60 text-sm">
+                Tekrar hoş geldin! Günlük giriş bonusunu al.
+              </p>
+            </div>
+            
+            {/* Reward Display */}
+            <div className="px-6 pb-4">
+              <div className="p-4 bg-yellow-500/10 rounded-xl border border-yellow-500/20 text-center">
+                <p className="text-xs text-white/50 mb-2">Senkron Oranı {syncRate} bazında</p>
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-8 h-8 text-cyan-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  <span className="text-4xl font-black text-cyan-400">
+                    +{(() => {
+                      // Calculate reward based on level
+                      if (syncRate < 10) return 100 + 10 * syncRate;
+                      if (syncRate < 50) return 200 + 8 * (syncRate - 10);
+                      return 600 + 5 * (syncRate - 50);
+                    })().toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-xs text-cyan-400/70 mt-1">Eko Parçası</p>
+              </div>
+            </div>
+            
+            {/* Claim Button */}
+            <div className="p-6 pt-2">
+              <button
+                onClick={handleClaimDailyReward}
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-400 text-black font-black text-sm tracking-[0.2em] hover:shadow-[0_0_25px_rgba(255,200,0,0.4)] active:scale-[0.98] transition-all"
+              >
+                ÖDÜLÜ AL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Level Up Notification - Requirements 4.3 */}
+      {showLevelUpNotification && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-bounce">
+          <div className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-xl shadow-[0_0_30px_rgba(0,240,255,0.4)]">
+            <p className="text-black font-black text-lg tracking-wider">
+              SEVİYE ATLADI! SENKRON ORANI {newLevel}
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Sound Check Complete Celebration - Requirements 1.5 */}
+      {showSyncComplete && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
+          <div className="text-center animate-pulse">
+            <p className="text-4xl font-black text-green-400 tracking-[0.3em] drop-shadow-[0_0_20px_rgba(34,197,94,0.6)]">
+              SENKRON TAMAM
+            </p>
+            <p className="text-lg text-white/70 mt-2">
+              Günlük Görevler Açıldı!
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

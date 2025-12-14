@@ -148,4 +148,8 @@ export const STORAGE_KEYS = {
   GHOST_DATA: 'echo-shift-ghost',
   DAILY_CHALLENGE: 'echo-shift-daily',
   LEADERBOARD: 'echo-shift-leaderboard',
+  // Progression System Keys - Requirements 8.1
+  MISSIONS: 'echo-shift-missions',
+  SYNC_RATE: 'echo-shift-sync-rate',
+  LAST_LOGIN: 'echo-shift-last-login',
 } as const;

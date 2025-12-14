@@ -122,17 +122,17 @@ describe('Flow Curve System - Speed Cap Properties', () => {
    * **Validates: Requirements 1.3**
    *
    * For extremely high scores, the speed SHALL be capped at exactly MAX_SPEED.
-   * Note: With slower progression config (scaleFactor: 2.5, scoreBase: 500),
-   * we need much higher scores to reach the cap.
+   * Note: With current config (minSpeed=1.5, maxSpeed=8.0, scaleFactor=1.2, scoreBase=2000),
+   * we need very high scores to reach the cap.
+   * Formula: 1.5 + log10(score/2000 + 1) * 1.2 = 8.0 => log10(score/2000 + 1) = 5.417
+   * score/2000 + 1 = 10^5.417 ≈ 261,015 => score ≈ 522,028,000
    */
   test('Very high scores result in MAX_SPEED cap', () => {
     fc.assert(
       fc.property(
         // Generate extremely high scores that would exceed cap
-        // With new config: minSpeed=3, maxSpeed=14, scaleFactor=2.5, scoreBase=500
-        // Formula: 3 + log10(score/500 + 1) * 2.5 = 14 => log10(score/500 + 1) = 4.4
-        // score/500 + 1 = 10^4.4 ≈ 25119 => score ≈ 12,559,000
-        fc.integer({ min: 50000000, max: 1000000000 }),
+        // With current config, scores above ~522 million will hit the cap
+        fc.integer({ min: 600000000, max: 2000000000 }),
         (score) => {
           const config = DEFAULT_FLOW_CURVE_CONFIG;
           const speed = calculateGameSpeed(score, config);

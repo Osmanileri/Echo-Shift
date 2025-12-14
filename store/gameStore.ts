@@ -7,9 +7,20 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
-import { initializeShiftState } from "../systems/shiftProtocol";
+import { calculateDailyReward, checkLevelUp } from "../systems/levelSystem";
 import {
+    checkMissionReset,
+    getDefaultMissionState,
+    loadMissionState,
+    saveMissionState,
+    updateMissionProgress
+} from "../systems/missionSystem";
+import { initializeShiftState } from "../systems/shiftProtocol";
+import type {
+    ConstructType,
     EnhancedResonanceState,
+    MissionEvent,
+    MissionState,
     ShiftProtocolState,
     SnapshotBuffer
 } from "../types";
@@ -108,6 +119,13 @@ export interface GameStore {
   isConstructInvulnerable: boolean;      // Session-only - Requirements 2.1, 6.3
   constructInvulnerabilityEndTime: number; // Session-only - Requirements 2.1, 6.3
 
+  // Progression System State - Requirements 4.1, 5.1, 6.6
+  syncRate: number;                      // Player's level (Sync Rate)
+  totalXP: number;                       // Total accumulated XP
+  missions: MissionState;                // Mission tracking state
+  lastLoginDate: string;                 // Last daily reward claim date
+  soundCheckComplete: boolean;           // Whether Sound Check is completed
+
   // Settings
   tutorialCompleted: boolean;
   soundEnabled: boolean;
@@ -150,6 +168,13 @@ export interface GameStore {
   setConstructInvulnerable: (endTime: number) => void;
   resetConstructState: () => void;
 
+  // Progression System Actions - Requirements 4.1, 5.1, 6.6
+  addXP: (amount: number) => { levelUp: boolean; newLevel: number };
+  completeMission: (missionId: string) => { xp: number; shards: number; cosmetic?: string };
+  processMissionEvent: (event: MissionEvent) => void;
+  claimDailyReward: () => { claimed: boolean; amount: number };
+  initializeMissions: () => void;
+
   // Settings Actions
   setTutorialCompleted: (completed: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
@@ -191,6 +216,12 @@ const DEFAULT_STATE = {
   activeConstruct: 'NONE' as ConstructType,          // Session-only - Requirements 7.1
   isConstructInvulnerable: false,                    // Session-only
   constructInvulnerabilityEndTime: 0,                // Session-only
+  // Progression System State - Requirements 4.1, 5.1, 6.6
+  syncRate: 1,                                       // Start at level 1
+  totalXP: 0,                                        // No XP initially
+  missions: getDefaultMissionState(),                // Default mission state
+  lastLoginDate: '',                                 // No previous login
+  soundCheckComplete: false,                         // Sound Check not completed
   tutorialCompleted: false,
   soundEnabled: true,
   musicEnabled: true,
@@ -226,6 +257,12 @@ interface PersistedState {
   customThemeColors: ThemeColors | null;
   // Echo Constructs - Only unlockedConstructs is persisted - Requirements 8.2, 8.3, 8.4
   unlockedConstructs: ConstructType[];
+  // Progression System - Requirements 4.1, 5.1, 6.6
+  syncRate: number;
+  totalXP: number;
+  lastLoginDate: string;
+  soundCheckComplete: boolean;
+  // NOTE: missions are persisted separately via missionSystem
 }
 
 // Create the store
@@ -308,6 +345,145 @@ export const useGameStore = create<GameStore>()(
         constructInvulnerabilityEndTime: 0,
       });
       // NOTE: Do NOT save to storage - these are session-only states
+    },
+
+    // ========================================================================
+    // Progression System Actions - Requirements 4.1, 5.1, 6.6
+    // ========================================================================
+
+    /**
+     * Add XP to player's total and check for level up
+     * Requirements 4.1: WHEN the player earns XP THEN the Level_System 
+     * SHALL add the XP to the player's total and check for level advancement
+     */
+    addXP: (amount: number) => {
+      if (amount <= 0) {
+        return { levelUp: false, newLevel: get().syncRate };
+      }
+      
+      const state = get();
+      const oldXP = state.totalXP;
+      const newXP = oldXP + amount;
+      const levelResult = checkLevelUp(oldXP, newXP);
+      
+      set({
+        totalXP: newXP,
+        syncRate: levelResult.newLevel,
+      });
+      
+      get().saveToStorage();
+      return levelResult;
+    },
+
+    /**
+     * Complete a mission and distribute rewards
+     * Requirements 2.5, 3.3: Award XP and Shards on mission completion
+     */
+    completeMission: (missionId: string) => {
+      const state = get();
+      const missions = state.missions;
+      
+      // Find the mission
+      let mission = missions.soundCheck.missions.find(m => m.id === missionId);
+      if (!mission) {
+        mission = missions.daily.missions.find(m => m.id === missionId);
+      }
+      if (!mission && missions.marathon.mission?.id === missionId) {
+        mission = missions.marathon.mission;
+      }
+      
+      if (!mission || !mission.completed) {
+        return { xp: 0, shards: 0 };
+      }
+      
+      const rewards = { ...mission.rewards };
+      
+      // Add XP
+      if (rewards.xp > 0) {
+        get().addXP(rewards.xp);
+      }
+      
+      // Add Shards
+      if (rewards.shards > 0) {
+        get().addEchoShards(rewards.shards);
+      }
+      
+      // Update soundCheckComplete if all Sound Check missions are done
+      const allSoundCheckComplete = missions.soundCheck.missions.every(m => m.completed);
+      if (allSoundCheckComplete && !state.soundCheckComplete) {
+        set({ soundCheckComplete: true });
+        get().saveToStorage();
+      }
+      
+      return rewards;
+    },
+
+    /**
+     * Process a mission event and update progress
+     * Requirements 7.1-7.5: Update mission progress based on game events
+     */
+    processMissionEvent: (event: MissionEvent) => {
+      const state = get();
+      const newMissions = updateMissionProgress(state.missions, event);
+      
+      // Check if soundCheck completion changed
+      const soundCheckComplete = newMissions.soundCheck.completed;
+      
+      set({ 
+        missions: newMissions,
+        soundCheckComplete: soundCheckComplete || state.soundCheckComplete,
+      });
+      
+      // Save mission state
+      saveMissionState(newMissions);
+    },
+
+    /**
+     * Claim daily login reward
+     * Requirements 5.1: WHEN the player logs in for the first time each day 
+     * THEN the Reward_System SHALL grant Shards based on current Sync Rate
+     */
+    claimDailyReward: () => {
+      const state = get();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Check if already claimed today
+      if (state.lastLoginDate === today) {
+        return { claimed: false, amount: 0 };
+      }
+      
+      // Calculate reward based on current level
+      const rewardAmount = calculateDailyReward(state.syncRate);
+      
+      // Grant reward
+      set({
+        lastLoginDate: today,
+        echoShards: state.echoShards + rewardAmount,
+      });
+      
+      get().saveToStorage();
+      return { claimed: true, amount: rewardAmount };
+    },
+
+    /**
+     * Initialize missions on game load
+     * Requirements 8.2: Load mission state from storage and check for resets
+     */
+    initializeMissions: () => {
+      // Load mission state from storage
+      let missions = loadMissionState();
+      
+      // Check for daily/weekly resets
+      missions = checkMissionReset(missions, new Date());
+      
+      // Update state
+      set({ 
+        missions,
+        soundCheckComplete: missions.soundCheck.completed,
+      });
+      
+      // Save if resets occurred
+      saveMissionState(missions);
     },
 
     // Currency Actions
@@ -577,11 +753,19 @@ export const useGameStore = create<GameStore>()(
         activeConstruct: DEFAULT_STATE.activeConstruct,
         isConstructInvulnerable: DEFAULT_STATE.isConstructInvulnerable,
         constructInvulnerabilityEndTime: DEFAULT_STATE.constructInvulnerabilityEndTime,
+        // Progression System - Requirements 4.1, 5.1, 6.6
+        syncRate: savedState.syncRate ?? DEFAULT_STATE.syncRate,
+        totalXP: savedState.totalXP ?? DEFAULT_STATE.totalXP,
+        lastLoginDate: savedState.lastLoginDate ?? DEFAULT_STATE.lastLoginDate,
+        soundCheckComplete: savedState.soundCheckComplete ?? DEFAULT_STATE.soundCheckComplete,
       });
 
       // Load ghost data separately (can be large)
       const ghostData = safeLoad<GhostFrame[]>(STORAGE_KEYS.GHOST_DATA, []);
       set({ ghostTimeline: ghostData });
+
+      // Initialize missions (loads from separate storage key)
+      get().initializeMissions();
     },
 
     saveToStorage: () => {
@@ -614,6 +798,11 @@ export const useGameStore = create<GameStore>()(
         customThemeColors: state.customThemeColors,
         // Echo Constructs - Only unlockedConstructs is persisted - Requirements 8.2, 8.3, 8.4
         unlockedConstructs: state.unlockedConstructs,
+        // Progression System - Requirements 4.1, 5.1, 6.6
+        syncRate: state.syncRate,
+        totalXP: state.totalXP,
+        lastLoginDate: state.lastLoginDate,
+        soundCheckComplete: state.soundCheckComplete,
       };
 
       safePersist(STORAGE_KEYS.GAME_STATE, stateToSave);

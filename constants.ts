@@ -136,4 +136,16 @@ export const SHIFT_CONFIG = {
 
   // Reachability - Requirements 3.1
   reachabilityMargin: 20,       // Margin from max reach (connectorLength - 20)
+
+  // Horizontal Drift Spawning (like shards - right to left)
+  horizontalDrift: {
+    spawnChance: 0.02,          // 2% chance per spawn cycle when eligible
+    minSpawnInterval: 150,      // Minimum frames between spawns (~2.5 seconds at 60fps)
+    spawnXOffset: 60,           // Spawn offset beyond right edge of screen
+    driftSpeedFactor: 1.0,      // Letter drift speed relative to gameSpeed (same as obstacles)
+    verticalMargin: 100,        // Margin from top/bottom for Y spawn position
+    despawnXMargin: 50,         // Distance past left edge to despawn
+    verticalOscillation: 20,    // Gentle up/down wobble amplitude
+    oscillationFrequency: 1.2,  // Wobble frequency
+  },
 };
