@@ -78,8 +78,8 @@ export type SpawnShardCallback = (lane: Lane, type: 'safe' | 'risky') => void;
  * Requirements: 4.2, 4.4
  */
 export const DEFAULT_SPAWN_CONFIG: SpawnConfig = {
-  baseReactionTime: 1200,
-  minInterval: 400
+  baseReactionTime: 1800, // Daha uzun reaksiyon süresi (was 1200)
+  minInterval: 600 // Daha uzun minimum aralık (was 400)
 };
 
 // ============================================================================

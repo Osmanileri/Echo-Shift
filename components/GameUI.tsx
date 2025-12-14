@@ -1,27 +1,28 @@
 import {
-  ArrowRightLeft,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Gem,
-  Home,
-  Palette,
-  Pause,
-  Play,
-  PlayCircle,
-  RotateCcw,
-  Settings,
-  ShoppingCart,
-  Trophy,
-  Volume2,
-  VolumeX,
-  X,
+    ArrowRightLeft,
+    Calendar,
+    ChevronLeft,
+    ChevronRight,
+    Clock,
+    Gem,
+    Home,
+    Palette,
+    Pause,
+    Play,
+    PlayCircle,
+    RotateCcw,
+    Settings,
+    ShoppingCart,
+    Target,
+    Trophy,
+    Volume2,
+    VolumeX,
+    X
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { ZONES, ZoneConfig, ZoneId } from "../data/zones";
-import { getHapticSystem } from "../systems/hapticSystem";
 import * as AudioSystem from "../systems/audioSystem";
+import { getHapticSystem } from "../systems/hapticSystem";
 import { GameState } from "../types";
 import { ZoneUnlockModal } from "./Zones/ZoneUnlockModal";
 
@@ -38,6 +39,7 @@ interface GameUIProps {
   onOpenShop?: () => void;
   onOpenStudio?: () => void;
   onOpenDailyChallenge?: () => void;
+  onOpenMissions?: () => void;
   rhythmMultiplier?: number;
   rhythmStreak?: number;
   nearMissStreak?: number;
@@ -50,6 +52,12 @@ interface GameUIProps {
   slowMotionUsesRemaining?: number;
   slowMotionActive?: boolean;
   onActivateSlowMotion?: () => void;
+  // Progression System props - Requirements 1.1, 2.1, 4.4, 5.1
+  syncRate?: number;
+  totalXP?: number;
+  lastLoginDate?: string;
+  onClaimDailyReward?: () => void;
+  soundCheckComplete?: boolean;
 }
 
 const GameUI: React.FC<GameUIProps> = ({
@@ -65,6 +73,7 @@ const GameUI: React.FC<GameUIProps> = ({
   onOpenShop,
   onOpenStudio,
   onOpenDailyChallenge,
+  onOpenMissions,
   rhythmMultiplier = 1,
   rhythmStreak = 0,
   nearMissStreak = 0,
@@ -77,6 +86,12 @@ const GameUI: React.FC<GameUIProps> = ({
   slowMotionUsesRemaining = 0,
   slowMotionActive = false,
   onActivateSlowMotion,
+  // Progression System props
+  syncRate = 1,
+  totalXP = 0,
+  lastLoginDate = '',
+  onClaimDailyReward,
+  soundCheckComplete = false,
 }) => {
   const [showContent, setShowContent] = useState(false);
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
@@ -534,7 +549,19 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
 
           {/* ===== STATS - Clean Display ===== */}
-          <div className="flex items-center justify-center gap-8 mb-5">
+          <div className="flex items-center justify-center gap-6 mb-5">
+            {/* Sync Rate / Level */}
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1.5 mb-0.5">
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shadow-[0_0_10px_rgba(0,240,255,0.4)]">
+                  <span className="text-[10px] font-black text-black">{syncRate}</span>
+                </div>
+              </div>
+              <span className="text-[8px] text-cyan-400/50 uppercase tracking-widest">
+                Seviye
+              </span>
+            </div>
+            <div className="h-8 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent" />
             <div className="text-center">
               <div className="flex items-center justify-center gap-1.5 mb-0.5">
                 <Trophy className="w-4 h-4 text-yellow-500" />
@@ -543,7 +570,7 @@ const GameUI: React.FC<GameUIProps> = ({
                 </span>
               </div>
               <span className="text-[8px] text-white/40 uppercase tracking-widest">
-                Best
+                En İyi
               </span>
             </div>
             <div className="h-8 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent" />
@@ -555,7 +582,7 @@ const GameUI: React.FC<GameUIProps> = ({
                 </span>
               </div>
               <span className="text-[8px] text-cyan-400/50 uppercase tracking-widest">
-                Shards
+                Parça
               </span>
             </div>
           </div>
@@ -619,6 +646,30 @@ const GameUI: React.FC<GameUIProps> = ({
                 </div>
                 <span className="text-[10px] text-amber-400/70 font-bold tracking-wider uppercase group-hover:text-amber-300 transition-colors">
                   Daily
+                </span>
+              </button>
+            )}
+            {onOpenMissions && (
+              <button
+                onClick={() => handleButtonClick(onOpenMissions)}
+                className="group flex flex-col items-center gap-2 active:scale-90 transition-all duration-200"
+              >
+                <div className="relative">
+                  {/* Glow */}
+                  <div className="absolute inset-[-8px] bg-cyan-500/40 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-all duration-500" />
+                  {/* Ring */}
+                  <div className="absolute inset-[-4px] rounded-full border border-cyan-500/0 group-hover:border-cyan-400/50 group-hover:scale-110 transition-all duration-300" />
+                  {/* Main circle */}
+                  <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-cyan-900/80 to-cyan-950/90 border border-cyan-500/40 flex items-center justify-center group-hover:border-cyan-400 group-hover:from-cyan-800/90 transition-all duration-300 shadow-[inset_0_2px_10px_rgba(0,240,255,0.2)]">
+                    <Target className="w-6 h-6 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
+                  </div>
+                  {/* Sound Check indicator */}
+                  {!soundCheckComplete && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+                  )}
+                </div>
+                <span className="text-[10px] text-cyan-400/70 font-bold tracking-wider uppercase group-hover:text-cyan-300 transition-colors">
+                  {soundCheckComplete ? 'Missions' : 'Sound Check'}
                 </span>
               </button>
             )}
@@ -836,6 +887,7 @@ const GameUI: React.FC<GameUIProps> = ({
           isOpen={unlockModalOpen}
           zone={unlockTargetZone}
           balance={echoShards}
+          playerLevel={syncRate}
           onClose={() => {
             setUnlockModalOpen(false);
             setUnlockTargetZone(null);

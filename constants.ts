@@ -13,28 +13,28 @@ export const COLORS = {
 };
 
 export const INITIAL_CONFIG = {
-  // Speed - starts at 30 km/h (3.0), VERY gradual acceleration
-  baseSpeed: 3.0,  // 30km/h starting speed
-  maxSpeed: 14,    // 140km/h max speed (düşürüldü)
-  speedIncreaseInterval: 2000, // DAHA YAVAŞ artış (was 1000)
-  speedIncreaseAmount: 0.08, // DAHA KÜÇÜK artış (was 0.15)
+  // Speed - starts at 15 km/h (1.5), VERY SLOW start
+  baseSpeed: 1.5,  // 15km/h starting speed (çok yavaş başlangıç)
+  maxSpeed: 8,     // 80km/h max speed (çok düşürüldü)
+  speedIncreaseInterval: 3500, // ÇOK YAVAŞ artış (was 2500)
+  speedIncreaseAmount: 0.03, // ÇOK KÜÇÜK artış (was 0.05)
 
-  // Spawn rate - faster obstacle spawning for more action
-  spawnRate: 80,  // Faster spawning (was 120)
-  minSpawnRate: 35, // Can get more intense (was 40)
+  // Spawn rate - MUCH slower obstacle spawning for easier start
+  spawnRate: 150,  // Çok yavaş spawn (was 100)
+  minSpawnRate: 60, // Daha az yoğun (was 40)
 
-  // MOBILE OPTIMIZED - Zoomed out view for better visibility
-  orbRadius: 7,      // Smaller orbs for zoom out effect
+  // MOBILE OPTIMIZED - Wider view for better visibility
+  orbRadius: 6,      // Smaller orbs for wider view
   connectorWidth: 2, // Thinner connector
-  obstacleWidth: 24, // Narrower obstacles
+  obstacleWidth: 20, // Narrower obstacles (daha ince bloklar)
 
-  // Gate Logic
-  gapHeight: 140, // Smaller gap for zoom out
+  // Gate Logic - WIDER GAP for easier gameplay
+  gapHeight: 180, // Larger gap for easier passage (was 140)
 
-  // Dynamic Connector Config - Smaller for zoom out
-  minConnectorLength: 45, // Shorter starting connector
-  maxConnectorLength: 120, // Shorter max connector
-  connectorGrowthRate: 0.06, // Slower growth
+  // Dynamic Connector Config - Longer for wider view
+  minConnectorLength: 55, // Longer starting connector (was 45)
+  maxConnectorLength: 140, // Longer max connector (was 120)
+  connectorGrowthRate: 0.04, // Slower growth (was 0.06)
 
   // Swap Mechanics - Snappy & Responsive
   swapCooldown: 150,
@@ -136,4 +136,16 @@ export const SHIFT_CONFIG = {
 
   // Reachability - Requirements 3.1
   reachabilityMargin: 20,       // Margin from max reach (connectorLength - 20)
+
+  // Horizontal Drift Spawning (like shards - right to left)
+  horizontalDrift: {
+    spawnChance: 0.02,          // 2% chance per spawn cycle when eligible
+    minSpawnInterval: 150,      // Minimum frames between spawns (~2.5 seconds at 60fps)
+    spawnXOffset: 60,           // Spawn offset beyond right edge of screen
+    driftSpeedFactor: 1.0,      // Letter drift speed relative to gameSpeed (same as obstacles)
+    verticalMargin: 100,        // Margin from top/bottom for Y spawn position
+    despawnXMargin: 50,         // Distance past left edge to despawn
+    verticalOscillation: 20,    // Gentle up/down wobble amplitude
+    oscillationFrequency: 1.2,  // Wobble frequency
+  },
 };

@@ -14,13 +14,14 @@ import {
   GravityState,
   MidlineConfig,
   MidlineState,
+  MissionEvent,
   NearMissState,
   Obstacle,
   Particle,
   RhythmState,
   ScorePopup,
   SnapshotBuffer,
-  VisualEffect,
+  VisualEffect
 } from "../types";
 import {
   checkCollision,
@@ -62,6 +63,9 @@ import {
   updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
+
+// 🔧 DEBUG: Geçici ölümsüzlük modu - test için true yap, bitince false yap
+const DEBUG_IMMORTAL_MODE = false;
 // Particle System Integration - Requirements 12.1, 12.2, 12.3
 import * as ParticleSystem from "../systems/particleSystem";
 // Screen Shake System Integration - Requirements 10.1, 10.2, 10.3, 10.4
@@ -187,6 +191,8 @@ interface GameEngineProps {
   ritualTracking?: RitualTrackingCallbacks;
   // Zone System (Phase 2)
   zoneConfig?: ZoneConfig;
+  // Mission System - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
+  onMissionEvent?: (event: MissionEvent) => void;
 }
 
 const GameEngine: React.FC<GameEngineProps> = ({
@@ -207,6 +213,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   onRestoreStateUpdate,
   ritualTracking,
   zoneConfig,
+  onMissionEvent,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -360,6 +367,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const speedSurvivalTime = useRef<number>(0);
   const noSwapSurvivalTime = useRef<number>(0);
   const lastRitualUpdateTime = useRef<number>(0);
+
+  // Mission System: Distance tracking - Requirements 7.2
+  const accumulatedDistance = useRef<number>(0);
+  const lastDistanceEmitTime = useRef<number>(0);
+
+  // Mission System: Lane stay tracking - Requirements 7.5
+  const laneStayStartTime = useRef<number>(0);
+  const lastLaneStayEmitTime = useRef<number>(0);
 
   // Mobile Controls State
   const [isMobile, setIsMobile] = useState(false);
@@ -600,6 +615,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
     lastRitualUpdateTime.current = 0;
     onRestoreStateUpdate?.(true, false);
 
+    // Reset Mission System Distance Tracking - Requirements 7.2
+    accumulatedDistance.current = 0;
+    lastDistanceEmitTime.current = 0;
+
+    // Reset Mission System Lane Stay Tracking - Requirements 7.5
+    laneStayStartTime.current = Date.now();
+    lastLaneStayEmitTime.current = 0;
+
     // Reset Echo Constructs System State - Requirements 7.1, 7.5
     constructSystemState.current = ConstructSystem.resetConstructSystem();
     glitchTokens.current = [];
@@ -654,8 +677,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const edgeMargin = 30; // Kenar güvenlik payı (küçültüldü)
 
       // Çubuk uzunluğuna bağlı sıfır geçiş miktarı
-      // crossFactor: 0.8 = çubuk uzunluğunun %80'i kadar midline'ı geçebilir
-      const crossFactor = 0.8;
+      // crossFactor: 0.6 = çubuk uzunluğunun %60'ı kadar midline'ı geçebilir (daha geniş alan)
+      const crossFactor = 0.6;
       const maxCrossDistance = connectorLen * crossFactor;
 
       // Gap merkezi sınırları:
@@ -691,19 +714,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // 3. Zıt renkli top, bloka değerse ölür
     // 4. Max geçiş = connector uzunluğu (oyuncunun uzanabileceği max nokta)
 
-    // Minimum boşluk = connector + 2 orb + güvenlik payı
-    const minGap = connectorLen + orbRadius * 2 + 10;
+    // Minimum boşluk = connector + 2 orb + güvenlik payı (artırıldı)
+    const minGap = connectorLen + orbRadius * 2 + 25;
 
     // Rastgele polarite - üst ve alt bloklar ZIT renklerde
     const topPolarity: "white" | "black" = Math.random() > 0.5 ? "white" : "black";
     const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
 
-    // === AGRESİF SIFIR GEÇİŞ MEKANİĞİ ===
+    // === DAHA YUMUŞAK SIFIR GEÇİŞ MEKANİĞİ ===
     // maxCrossDistance = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
     const maxCrossDistance = connectorLen - orbRadius;
 
-    // Rastgele geçiş miktarı: %30 ile %100 arası (her zaman önemli bir geçiş)
-    const crossAmount = 0.3 + Math.random() * 0.7;
+    // Rastgele geçiş miktarı: %15 ile %60 arası (daha kolay başlangıç)
+    // Skor arttıkça zorluk artacak
+    const difficultyFactor = Math.min(1, score.current / 3000); // 3000 skorda max zorluk
+    const minCross = 0.15 + difficultyFactor * 0.15; // 0.15 -> 0.30
+    const maxCross = 0.45 + difficultyFactor * 0.25; // 0.45 -> 0.70
+    const crossAmount = minCross + Math.random() * (maxCross - minCross);
     const actualCross = crossAmount * maxCrossDistance;
 
     // TAM RASTGELE YÖN: %50 üst aşağı geçer, %50 alt yukarı geçer
@@ -1174,6 +1201,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Audio: Swap sound - Phase 4
     AudioSystem.playSwap();
 
+    // Mission System: Emit SWAP_COUNT event - Requirements 7.1
+    onMissionEvent?.({ type: 'SWAP_COUNT', value: 1 });
+
+    // Mission System: Emit STAY_LANE event for time spent in previous lane - Requirements 7.5
+    const laneStayDuration = now - laneStayStartTime.current;
+    if (laneStayDuration > 0) {
+      onMissionEvent?.({ type: 'STAY_LANE', value: laneStayDuration });
+    }
+    laneStayStartTime.current = now; // Reset for new lane
+
     // Daily Rituals: Reset no-swap survival tracking
     lastSwapTimeForRitual.current = now;
     noSwapSurvivalTime.current = 0;
@@ -1187,7 +1224,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     setTimeout(() => {
       isPhasing.current = false;
     }, INITIAL_CONFIG.swapDuration);
-  }, [gameState]);
+  }, [gameState, onMissionEvent]);
 
   // Detect mobile device
   useEffect(() => {
@@ -1904,84 +1941,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      // --- S.H.I.F.T. PROTOCOL SPAWN LOGIC ---
-      // GÜNCELLEME: 1500+ skordan sonra spawn, ileri doğru hareket, kovalamaca
-      // Only spawn if Overdrive is not active and not all letters collected
-      if (!shiftState.current.overdriveActive && score.current >= 1500) {
-        framesSinceCollectibleSpawn.current++;
-
-        // Spawn check every 90 frames (~1.5 saniye at 60fps)
-        if (framesSinceCollectibleSpawn.current >= 90) {
-          framesSinceCollectibleSpawn.current = 0;
-
-          // %20 spawn şansı
-          if (Math.random() < 0.20) {
-            // Select next letter to spawn
-            const nextLetterIndex = ShiftProtocol.selectNextLetter(
-              shiftState.current.collectedMask
-            );
-
-            if (nextLetterIndex !== -1) {
-              const connectorLen = currentConnectorLength.current;
-              const orbRadius = INITIAL_CONFIG.orbRadius;
-              
-              // Ulaşılabilir alan = çubuk/2 - orb
-              const maxReach = (connectorLen / 2) - orbRadius - 5;
-              const reachableMin = currentMidlineY - maxReach;
-              const reachableMax = currentMidlineY + maxReach;
-
-              // Küçük oscillation (takip edilebilir)
-              const oscillationAmplitude = 15;
-              
-              const safeMinY = reachableMin + 20;
-              const safeMaxY = reachableMax - 20;
-
-              if (safeMaxY > safeMinY) {
-                const baseY = safeMinY + Math.random() * (safeMaxY - safeMinY);
-
-                // Create new collectible - İLERİ DOĞRU HAREKET EDECEK
-                const newCollectible: Collectible = {
-                  id: Math.random().toString(36).substring(2, 11),
-                  type: "LETTER",
-                  value: ShiftProtocol.TARGET_WORD[nextLetterIndex],
-                  x: width + 100, // Ekranın sağından spawn
-                  y: baseY,
-                  baseY: baseY,
-                  oscillationPhase: Math.random() * Math.PI * 2,
-                  oscillationAmplitude: oscillationAmplitude,
-                  oscillationFrequency: 2.5, // Yukarı-aşağı hareket
-                  isCollected: false,
-                };
-
-                collectibles.current.push(newCollectible);
-              }
-            }
-          }
-        }
-      }
-
-      // --- S.H.I.F.T. COLLECTIBLE UPDATE ---
-      // GÜNCELLEME: Oyun hızından DAHA YAVAŞ hareket (kovalamaca efekti)
+      // S.H.I.F.T. PROTOCOL - DISABLED (spawn/update removed)
+      // Collectibles array kept for compatibility but not spawning new letters
+      const playerPosX = width / 4;
       const gameTimeSeconds = Date.now() / 1000;
-      collectibles.current = collectibles.current.filter((collectible) => {
-        // Oyun hızının %60'ı kadar hareket et (oyuncu yaklaşabilsin) - Apply construct speed multiplier
-        const collectibleSpeed = speed.current * 0.6 * slowMotionMultiplier * constructSpeedMultiplier;
-        collectible.x -= collectibleSpeed;
-
-        // Yukarı-aşağı oscillation + ileri-geri hareket
-        const elapsed = gameTimeSeconds + collectible.oscillationPhase;
-        
-        // Dikey hareket (yukarı-aşağı)
-        collectible.y = collectible.baseY + 
-          Math.sin(elapsed * collectible.oscillationFrequency) * collectible.oscillationAmplitude;
-        
-        // Yatay hareket (ileri-geri salınım) - takip zorlaştırıcı
-        const horizontalOscillation = Math.sin(elapsed * 1.5) * 20;
-        collectible.x += horizontalOscillation * 0.1; // Küçük ileri-geri
-
-        // Remove if off-screen to the left
-        return collectible.x > -50;
-      });
+      const now = Date.now();
 
       // --- GRAVITY FLIP LOGIC - Requirements 2.1, 2.3, 2.6, 2.7 ---
       const currentTime = Date.now();
@@ -2079,6 +2043,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
         if (rhythmState.current.streakCount > 0) {
           ritualTracking.onStreakReached?.(rhythmState.current.streakCount);
         }
+      }
+
+      // --- MISSION SYSTEM: DISTANCE TRACKING - Requirements 7.2 ---
+      // Track distance traveled based on game speed (pixels per frame converted to meters)
+      // Emit DISTANCE events periodically (every ~100ms) to avoid excessive callbacks
+      const distanceThisFrame = speed.current * slowMotionMultiplier * constructSpeedMultiplier;
+      accumulatedDistance.current += distanceThisFrame / 10; // Convert pixels to approximate meters
+      
+      if (currentTime - lastDistanceEmitTime.current >= 100) {
+        const distanceToEmit = Math.floor(accumulatedDistance.current);
+        if (distanceToEmit > 0) {
+          onMissionEvent?.({ type: 'DISTANCE', value: distanceToEmit });
+          accumulatedDistance.current -= distanceToEmit;
+        }
+        lastDistanceEmitTime.current = currentTime;
       }
 
       // Orb Positions
@@ -2454,6 +2433,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Award Echo Shards
           useGameStore.getState().addEchoShards(finalValue);
+
+          // Mission System: Emit COLLECT event - Requirements 7.4
+          onMissionEvent?.({ type: 'COLLECT', value: 1 });
 
           // Visual feedback - BONUS için büyük patlama
           if (isBonus) {
@@ -3055,6 +3037,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               AudioSystem.playGameOver();
               // Haptic Feedback: Heavy impact for collision - Requirements 4.2
               getHapticSystem().trigger("heavy");
+              // Mission System: Emit COLLISION event for Sound Check - Requirements 1.4
+              onMissionEvent?.({ type: 'COLLISION', value: 1 });
               // Reset rhythm state on collision - Requirements 1.5
               rhythmState.current = createInitialRhythmState();
               onRhythmStateUpdate?.(1, 0);
@@ -3252,6 +3236,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               AudioSystem.playGameOver();
               // Haptic Feedback: Heavy impact for collision - Requirements 4.2
               getHapticSystem().trigger("heavy");
+              // Mission System: Emit COLLISION event for Sound Check - Requirements 1.4
+              onMissionEvent?.({ type: 'COLLISION', value: 1 });
               // Reset rhythm state on collision - Requirements 1.5
               rhythmState.current = createInitialRhythmState();
               onRhythmStateUpdate?.(1, 0);
@@ -3288,6 +3274,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Daily Rituals: Track near miss event - Requirements 3.7
               ritualTracking?.onNearMiss?.();
+
+              // Mission System: Emit NEAR_MISS event for white orb - Requirements 7.3
+              onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
 
               // Add bonus points to score
               let totalBonus = streakResult.totalBonusPoints;
@@ -3368,6 +3357,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Daily Rituals: Track near miss event - Requirements 3.7
               ritualTracking?.onNearMiss?.();
+
+              // Mission System: Emit NEAR_MISS event for black orb - Requirements 7.3
+              onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
 
               // Add bonus points to score
               let totalBonus = streakResult.totalBonusPoints;
@@ -4063,119 +4055,108 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.restore();
       });
 
-      // --- S.H.I.F.T. COLLECTIBLE RENDERING - Requirements 2.1, 2.2, 2.3, 2.4 ---
-      const collectibleTime = Date.now() * 0.001;
-      collectibles.current.forEach((collectible) => {
-        if (collectible.isCollected) return;
+      // S.H.I.F.T. COLLECTIBLE RENDERING - DISABLED
 
-        // Calculate rotation for wireframe border - Requirements 2.2
-        const rotation = collectibleTime * 2; // 2 rad/s rotation speed
 
-        // Pulsing glow effect
-        const pulseIntensity = 0.5 + 0.5 * Math.sin(collectibleTime * 4);
-        const glowSize = 15 + pulseIntensity * 10;
-
-        // Draw outer glow - Golden/Purple gradient feel
-        ctx.save();
-        ctx.shadowColor = "#FFD700";
-        ctx.shadowBlur = glowSize;
-
-        // Draw rotating wireframe border - Requirements 2.2
-        ctx.translate(collectible.x, collectible.y);
-        ctx.rotate(rotation);
-
-        // Wireframe diamond border (rotated square looks like diamond)
-        const borderSize = 28;
-        ctx.strokeStyle = "#FFD700";
-        ctx.lineWidth = 2.5;
-        ctx.strokeRect(
-          -borderSize / 2,
-          -borderSize / 2,
-          borderSize,
-          borderSize
-        );
-
-        // Inner border with different color
-        ctx.strokeStyle = `rgba(255, 0, 255, ${0.5 + pulseIntensity * 0.5})`;
-        ctx.lineWidth = 1.5;
-        const innerSize = 20;
-        ctx.strokeRect(-innerSize / 2, -innerSize / 2, innerSize, innerSize);
-
-        ctx.rotate(-rotation);
-        ctx.translate(-collectible.x, -collectible.y);
-
-        // Draw letter with Golden fill - Requirements 2.1
-        ctx.font = "bold 20px Arial";
-        ctx.fillStyle = "#FFD700";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.shadowColor = "#FF00FF";
-        ctx.shadowBlur = 8;
-        ctx.fillText(collectible.value, collectible.x, collectible.y);
-
-        ctx.restore();
-      });
-
-      // --- S.H.I.F.T. HUD RENDERING - Requirements 2.3 ---
-      // Display S-H-I-F-T letters at top of screen
+      // --- S.H.I.F.T. HUD RENDERING - Modern Neon Design ---
       const hudX = width / 2;
-      const hudY = 30;
-      const letterSpacing = 30;
+      const hudY = 28;
+      const letterSpacing = 28;
       const letters = ShiftProtocol.TARGET_WORD;
+      const hudTime = Date.now() * 0.001;
+      const hudPulse = 0.5 + 0.5 * Math.sin(hudTime * 3);
 
-      ctx.font = "bold 20px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      // HUD arka plan çerçevesi
+      const hudWidth = letterSpacing * 5 + 20;
+      const hudHeight = 36;
+      ctx.save();
+      
+      // Yarı saydam arka plan
+      ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+      ctx.beginPath();
+      ctx.roundRect(hudX - hudWidth / 2, hudY - hudHeight / 2, hudWidth, hudHeight, 8);
+      ctx.fill();
+      
+      // Çerçeve
+      ctx.strokeStyle = "rgba(0, 240, 255, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       letters.forEach((letter, index) => {
         const x = hudX + (index - 2) * letterSpacing;
         const isCollected = shiftState.current.collectedMask[index];
 
-        // Requirements 2.3: Full opacity for collected, 30% for uncollected
-        ctx.globalAlpha = isCollected ? 1.0 : 0.3;
-        ctx.fillStyle = "#FFD700"; // Golden color
-
-        // Add glow for collected letters
         if (isCollected) {
-          ctx.shadowColor = "#FFD700";
-          ctx.shadowBlur = 12;
+          // Toplanan harf - parlak neon efekti
+          // Arka plan glow
+          ctx.beginPath();
+          ctx.arc(x, hudY, 12, 0, Math.PI * 2);
+          const glowGrad = ctx.createRadialGradient(x, hudY, 0, x, hudY, 12);
+          glowGrad.addColorStop(0, "rgba(0, 240, 255, 0.4)");
+          glowGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
+          ctx.fillStyle = glowGrad;
+          ctx.fill();
+          
+          // Harf
+          ctx.font = "bold 16px 'Arial Black', sans-serif";
+          ctx.fillStyle = "#00F0FF";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.shadowColor = "#00F0FF";
+          ctx.shadowBlur = 12 + hudPulse * 5;
+          ctx.fillText(letter, x, hudY);
         } else {
+          // Toplanmamış harf - soluk
+          ctx.font = "bold 16px 'Arial Black', sans-serif";
+          ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
           ctx.shadowBlur = 0;
+          ctx.fillText(letter, x, hudY);
         }
-
-        ctx.fillText(letter, x, hudY);
       });
 
-      ctx.globalAlpha = 1.0;
-      ctx.shadowBlur = 0;
+      ctx.restore();
 
-      // Overdrive timer display
+      // Overdrive aktifse - özel efekt
       if (shiftState.current.overdriveActive) {
-        const remainingSeconds = Math.ceil(
-          shiftState.current.overdriveTimer / 1000
-        );
-        const timerProgress =
-          shiftState.current.overdriveTimer / SHIFT_CONFIG.overdriveDuration;
+        const remainingSeconds = Math.ceil(shiftState.current.overdriveTimer / 1000);
+        const timerProgress = shiftState.current.overdriveTimer / SHIFT_CONFIG.overdriveDuration;
+        const overdrivePulse = 0.5 + 0.5 * Math.sin(hudTime * 6);
 
-        // Timer bar
-        const barWidth = 150;
-        const barHeight = 6;
+        // Progress bar
+        const barWidth = 140;
+        const barHeight = 4;
         const barX = hudX - barWidth / 2;
-        const barY = hudY + 20;
+        const barY = hudY + 22;
 
-        ctx.fillStyle = "#333333";
-        ctx.fillRect(barX, barY, barWidth, barHeight);
+        // Bar arka plan
+        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+        ctx.beginPath();
+        ctx.roundRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4, 3);
+        ctx.fill();
 
-        ctx.shadowColor = "#FFD700";
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = "#FFD700";
-        ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
-        ctx.shadowBlur = 0;
+        // Progress gradient
+        const barGrad = ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
+        barGrad.addColorStop(0, "#00F0FF");
+        barGrad.addColorStop(0.5, "#8A2BE2");
+        barGrad.addColorStop(1, "#FF00FF");
+        
+        ctx.fillStyle = barGrad;
+        ctx.shadowColor = "#00F0FF";
+        ctx.shadowBlur = 10 + overdrivePulse * 5;
+        ctx.beginPath();
+        ctx.roundRect(barX, barY, barWidth * timerProgress, barHeight, 2);
+        ctx.fill();
 
         // Timer text
-        ctx.font = "bold 12px Arial";
-        ctx.fillStyle = "#FFD700";
-        ctx.fillText(`OVERDRIVE ${remainingSeconds}s`, hudX, barY + 18);
+        ctx.font = "bold 10px 'Arial', sans-serif";
+        ctx.fillStyle = "#FFFFFF";
+        ctx.textAlign = "center";
+        ctx.shadowColor = "#FF00FF";
+        ctx.shadowBlur = 8;
+        ctx.fillText(`⚡ OVERDRIVE ${remainingSeconds}s ⚡`, hudX, barY + 14);
+        ctx.shadowBlur = 0;
       }
 
       // Calculate center point
@@ -4639,7 +4620,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // This must be applied after ctx.restore() to affect the entire frame
       ChromaticAberration.applyEffect(ctx, canvas);
 
-      if (collisionDetected) {
+      if (collisionDetected && !DEBUG_IMMORTAL_MODE) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2
         if (zenMode?.enabled && zenModeState.current.isActive) {
           const collisionTime = Date.now();
@@ -4706,6 +4687,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
             snapshotBuffer.current
           );
 
+          // Mission System: Emit final STAY_LANE event on game end - Requirements 7.5
+          const finalLaneStayDuration = Date.now() - laneStayStartTime.current;
+          if (finalLaneStayDuration > 0) {
+            onMissionEvent?.({ type: 'STAY_LANE', value: finalLaneStayDuration });
+          }
+
           setTimeout(() => {
             onGameOver(score.current);
           }, 50);
@@ -4738,296 +4725,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Handle restore request - Requirements 2.5, 2.6
   // Plays back recorded snapshots in REVERSE for a true rewind effect
   useEffect(() => {
-    if (restoreRequested && pendingRestore.current && restoreMode?.enabled) {
-      // Get all snapshots for rewind animation (last 2 seconds of gameplay)
-      const allSnapshots = [...restoreState.current.snapshots];
-
-      if (allSnapshots.length === 0) {
-        pendingRestore.current = false;
-        return;
-      }
-
-      // Store snapshots for rewind playback (will play in reverse)
-      restoreSnapshotsForRewind.current = allSnapshots;
-      rewindFrameIndex.current = allSnapshots.length - 1; // Start from most recent
-      rewindStartTime.current = Date.now();
-
-      const playerX = window.innerWidth / 4;
-      const { result, newState } = RestoreSystem.executeRestore(
-        restoreState.current,
-        playerX
-      );
-
-      // Update restore state
-      restoreState.current = newState;
-      pendingRestore.current = false;
-
-      // Notify parent of restore state change - Requirements 2.8
-      onRestoreStateUpdate?.(false, true);
-
-      // Start restore animation
-      isRestoreAnimating.current = true;
-
-      // VHS-style rewind animation - plays snapshots backwards
-      const animateRewind = () => {
-        if (!isRestoreAnimating.current) return;
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        const width = canvas.width;
-        const height = canvas.height;
-        const halfHeight = height / 2;
-        const snapshots = restoreSnapshotsForRewind.current;
-
-        // 2 second rewind animation - play snapshots backwards smoothly
-        const elapsed = Date.now() - rewindStartTime.current;
-        const rewindDuration = 2000; // 2 seconds rewind animation
-        const progress = Math.min(1, elapsed / rewindDuration);
-
-        // Calculate which snapshot to show based on progress
-        const currentIndex = Math.max(
-          0,
-          Math.floor((1 - progress) * (snapshots.length - 1))
-        );
-
-        // Get current snapshot to display
-        const currentSnapshot = snapshots[currentIndex];
-        if (!currentSnapshot) {
-          isRestoreAnimating.current = false;
-          return;
-        }
-
-        // === RENDER NORMAL GAME VIEW WITH REWIND EFFECTS ===
-
-        // Normal game background - top half black, bottom half white (or theme colors)
-        ctx.fillStyle = getColor("topBg");
-        ctx.fillRect(0, 0, width, halfHeight);
-        ctx.fillStyle = getColor("bottomBg");
-        ctx.fillRect(0, halfHeight, width, halfHeight);
-
-        // Draw midline
-        ctx.strokeStyle = getColor("connector");
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, halfHeight);
-        ctx.lineTo(width, halfHeight);
-        ctx.stroke();
-
-        // Draw obstacles from snapshot (moving RIGHT = rewinding effect)
-        const obstacleShift = (1 - progress) * 150; // Obstacles shift right during rewind
-        currentSnapshot.obstacles.forEach((obs) => {
-          const obsColor =
-            obs.polarity === "white"
-              ? getColor("topOrb")
-              : getColor("bottomOrb");
-          ctx.fillStyle = obsColor;
-          ctx.fillRect(
-            obs.x + obstacleShift,
-            obs.y,
-            obs.width || INITIAL_CONFIG.obstacleWidth,
-            obs.height || 100
-          );
-        });
-
-        // Draw player orbs from snapshot
-        const snapshotPlayerY = currentSnapshot.playerY;
-        const snapshotIsSwapped = currentSnapshot.isSwapped;
-        const orbRadius = INITIAL_CONFIG.orbRadius;
-        // Use connector length from snapshot (or calculate from score as fallback)
-        const snapshotConnectorLength =
-          currentSnapshot.connectorLength ||
-          Math.min(
-            INITIAL_CONFIG.maxConnectorLength,
-            INITIAL_CONFIG.minConnectorLength +
-            currentSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
-          );
-        const halfLen = snapshotConnectorLength / 2;
-
-        const snapshotRotation = snapshotIsSwapped ? Math.PI : 0;
-        const yOffset = Math.cos(snapshotRotation) * halfLen;
-        const xRotOffset = Math.sin(snapshotRotation) * 15;
-
-        const whiteOrbY = snapshotPlayerY * height - yOffset;
-        const whiteOrbX = playerX - xRotOffset;
-        const blackOrbY = snapshotPlayerY * height + yOffset;
-        const blackOrbX = playerX + xRotOffset;
-
-        // Draw connector with cyan glow
-        ctx.strokeStyle = getColor("connector");
-        ctx.lineWidth = 3;
-        ctx.shadowColor = "#00F0FF";
-        ctx.shadowBlur = 15 * (1 - progress * 0.5);
-        ctx.beginPath();
-        ctx.moveTo(whiteOrbX, whiteOrbY);
-        ctx.lineTo(blackOrbX, blackOrbY);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Draw orbs with intense rewind glow
-        const glowIntensity = 25 * (1 - progress * 0.3);
-
-        // White orb
-        ctx.beginPath();
-        ctx.arc(whiteOrbX, whiteOrbY, orbRadius, 0, Math.PI * 2);
-        ctx.fillStyle = getColor("topOrb");
-        ctx.shadowColor = "#00F0FF";
-        ctx.shadowBlur = glowIntensity;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Black orb
-        ctx.beginPath();
-        ctx.arc(blackOrbX, blackOrbY, orbRadius, 0, Math.PI * 2);
-        ctx.fillStyle = getColor("bottomOrb");
-        ctx.shadowColor = "#00F0FF";
-        ctx.shadowBlur = glowIntensity;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // === REWIND OVERLAY EFFECTS ===
-
-        // Semi-transparent cyan overlay for rewind feel
-        ctx.fillStyle = `rgba(0, 240, 255, ${0.05 + 0.05 * Math.sin(elapsed * 0.01)
-          })`;
-        ctx.fillRect(0, 0, width, height);
-
-        // Horizontal scan lines moving RIGHT (rewind direction)
-        const scanLineCount = 5;
-        for (let i = 0; i < scanLineCount; i++) {
-          const lineY = (elapsed * 0.3 + i * (height / scanLineCount)) % height;
-          ctx.fillStyle = `rgba(0, 240, 255, 0.15)`;
-          ctx.fillRect(0, lineY, width, 2);
-        }
-
-        // Rewind icon (◀◀) with pulsing effect
-        const pulse = 0.7 + Math.sin(elapsed * 0.005) * 0.3;
-        ctx.fillStyle = `rgba(0, 240, 255, ${pulse})`;
-        ctx.font = "bold 48px monospace";
-        ctx.textAlign = "center";
-        ctx.shadowColor = "#00F0FF";
-        ctx.shadowBlur = 20;
-        ctx.fillText("◀◀", width / 2, height / 2 - 40);
-        ctx.shadowBlur = 0;
-
-        // "GERİ SARILIYOR" text - Turkish
-        ctx.fillStyle = `rgba(0, 240, 255, 0.9)`;
-        ctx.font = "bold 24px monospace";
-        ctx.fillText("GERİ SARILIYOR", width / 2, height / 2 + 10);
-
-        // Time indicator (showing how far back we're going) - Turkish
-        const secondsBack = (progress * 2).toFixed(1); // 2 second rewind
-        ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
-        ctx.font = "16px monospace";
-        ctx.fillText(`-${secondsBack} sn`, width / 2, height / 2 + 40);
-
-        // Progress bar at bottom
-        const barWidth = width * 0.5;
-        const barX = (width - barWidth) / 2;
-        const barY = height - 50;
-
-        // Bar background
-        ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-        ctx.fillRect(barX - 2, barY - 2, barWidth + 4, 12);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-        ctx.fillRect(barX, barY, barWidth, 8);
-
-        // Bar fill (cyan, filling from left to right)
-        ctx.fillStyle = "#00F0FF";
-        ctx.shadowColor = "#00F0FF";
-        ctx.shadowBlur = 10;
-        ctx.fillRect(barX, barY, barWidth * progress, 8);
-        ctx.shadowBlur = 0;
-
-        // Check if rewind is complete
-        if (currentIndex <= 0 || progress >= 1) {
-          // Rewind complete - apply final state from first snapshot
-          const finalSnapshot = snapshots[0];
-
-          score.current = finalSnapshot.score;
-          playerY.current = finalSnapshot.playerY;
-          targetPlayerY.current = finalSnapshot.playerY;
-          isSwapped.current = finalSnapshot.isSwapped;
-          speed.current = finalSnapshot.speed;
-
-          rotationAngle.current = finalSnapshot.isSwapped ? Math.PI : 0;
-          targetRotation.current = finalSnapshot.isSwapped ? Math.PI : 0;
-
-          // Reset connector length to minimum - FIX for broken connector after restore
-          // This ensures the connector starts fresh and grows naturally
-          currentConnectorLength.current = INITIAL_CONFIG.minConnectorLength;
-
-          // Reset midline state to prevent visual glitches
-          midlineState.current = createInitialMidlineState(window.innerHeight);
-
-          // Reset phasing state
-          isPhasing.current = false;
-
-          // Restore obstacles from final snapshot with correct dimensions
-          obstacles.current = finalSnapshot.obstacles.map((obs) => ({
-            id: obs.id,
-            x: obs.x,
-            y: obs.y,
-            targetY: obs.y,
-            width: obs.width || INITIAL_CONFIG.obstacleWidth,
-            height: obs.height || 100,
-            lane: obs.lane,
-            polarity: obs.polarity,
-            passed: obs.passed,
-            isLatent: obs.type === "phantom",
-          }));
-
-          // Clear animation state
-          isRestoreAnimating.current = false;
-          restoreSnapshotsForRewind.current = [];
-
-          // Restore connector length from snapshot (or calculate from score as fallback)
-          if (finalSnapshot.connectorLength) {
-            currentConnectorLength.current = finalSnapshot.connectorLength;
-          } else {
-            const restoredConnectorLength = Math.min(
-              INITIAL_CONFIG.maxConnectorLength,
-              INITIAL_CONFIG.minConnectorLength +
-              finalSnapshot.score * INITIAL_CONFIG.connectorGrowthRate
-            );
-            currentConnectorLength.current = restoredConnectorLength;
-          }
-
-          // Restore spawn rate from snapshot (or calculate from score as fallback)
-          if (finalSnapshot.spawnRate) {
-            currentSpawnRate.current = finalSnapshot.spawnRate;
-          } else {
-            const estimatedSpawns = Math.floor(finalSnapshot.score / 10);
-            currentSpawnRate.current = Math.max(
-              30,
-              INITIAL_CONFIG.spawnRate - estimatedSpawns * 0.5
-            );
-          }
-
-          // Reset frames since spawn to prevent immediate spawn
-          framesSinceSpawn.current = 0;
-
-          // Enable post-restore invincibility (1 second)
-          postRestoreInvincible.current = true;
-          postRestoreStartTime.current = Date.now();
-
-          // Update score display
-          onScoreUpdate(score.current);
-          setGameSpeedDisplay(speed.current);
-
-          // Notify restore complete
-          restoreMode?.onRestoreComplete?.();
-        } else {
-          // Continue rewind animation
-          requestAnimationFrame(animateRewind);
-        }
-      };
-
-      // Start the rewind animation
-      requestAnimationFrame(animateRewind);
-    }
   }, [
     restoreRequested,
     restoreMode,

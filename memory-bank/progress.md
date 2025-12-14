@@ -2,8 +2,8 @@
 
 ## Genel Durum
 
-- **364 test** geçiyor
-- **6 spec** tamamlandı
+- **410 test** geçiyor
+- **6 spec** tamamlandı, **1 spec** devam ediyor (progression-system - Task 14/15 tamamlandı)
 - **Dokümantasyon** güncel
 - **Storage key'ler** standardize
 

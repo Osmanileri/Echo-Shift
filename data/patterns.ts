@@ -82,12 +82,12 @@ const GATE_PATTERN: Pattern = {
   id: "gate",
   name: "The Gate",
   difficulty: "basic",
-  duration: 800, // Faster pattern (was 1500)
+  duration: 1400, // Daha yavaş pattern (was 800)
   obstacles: [
     { lane: "TOP", timeOffset: 0 },
     { lane: "BOTTOM", timeOffset: 0 },
   ],
-  shards: [{ lane: "TOP", timeOffset: 400, type: "safe" }],
+  shards: [{ lane: "TOP", timeOffset: 700, type: "safe" }],
 };
 
 /**
@@ -98,16 +98,16 @@ const DOUBLE_GATE_PATTERN: Pattern = {
   id: "double_gate",
   name: "Double Gate",
   difficulty: "basic",
-  duration: 1200,
+  duration: 2000, // Daha yavaş (was 1200)
   obstacles: [
     { lane: "TOP", timeOffset: 0 },
     { lane: "BOTTOM", timeOffset: 0 },
-    { lane: "TOP", timeOffset: 600 },
-    { lane: "BOTTOM", timeOffset: 600 },
+    { lane: "TOP", timeOffset: 1000 }, // Daha uzun aralık (was 600)
+    { lane: "BOTTOM", timeOffset: 1000 },
   ],
   shards: [
-    { lane: "TOP", timeOffset: 300, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 900, type: "safe" },
+    { lane: "TOP", timeOffset: 500, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1500, type: "safe" },
   ],
 };
 
@@ -119,14 +119,14 @@ const BREATHER_PATTERN: Pattern = {
   id: "breather",
   name: "Breather",
   difficulty: "basic",
-  duration: 1000, // Faster (was 2000)
+  duration: 1800, // Daha yavaş (was 1000)
   obstacles: [
     { lane: "TOP", timeOffset: 0 },
-    { lane: "BOTTOM", timeOffset: 0 }, // Added bottom for gate style
+    { lane: "BOTTOM", timeOffset: 0 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 300, type: "safe" },
-    { lane: "TOP", timeOffset: 600, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 600, type: "safe" },
+    { lane: "TOP", timeOffset: 1200, type: "safe" },
   ],
 };
 
@@ -138,21 +138,21 @@ const ZIGZAG_PATTERN: Pattern = {
   id: "zigzag",
   name: "Zig-Zag",
   difficulty: "intermediate",
-  duration: 1400, // Faster (was 2000)
+  duration: 2400, // Daha yavaş (was 1400)
   obstacles: [
     { lane: "TOP", timeOffset: 0 },
     { lane: "BOTTOM", timeOffset: 0 },
-    { lane: "TOP", timeOffset: 350 },
-    { lane: "BOTTOM", timeOffset: 350 },
-    { lane: "TOP", timeOffset: 700 },
-    { lane: "BOTTOM", timeOffset: 700 },
-    { lane: "TOP", timeOffset: 1050 },
-    { lane: "BOTTOM", timeOffset: 1050 },
+    { lane: "TOP", timeOffset: 600 }, // Daha uzun aralık (was 350)
+    { lane: "BOTTOM", timeOffset: 600 },
+    { lane: "TOP", timeOffset: 1200 },
+    { lane: "BOTTOM", timeOffset: 1200 },
+    { lane: "TOP", timeOffset: 1800 },
+    { lane: "BOTTOM", timeOffset: 1800 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 175, type: "safe" },
-    { lane: "TOP", timeOffset: 525, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 875, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 300, type: "safe" },
+    { lane: "TOP", timeOffset: 900, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1500, type: "safe" },
   ],
 };
 
@@ -164,21 +164,21 @@ const TUNNEL_PATTERN: Pattern = {
   id: "tunnel",
   name: "The Tunnel",
   difficulty: "advanced",
-  duration: 1600, // Faster (was 2500)
+  duration: 2800, // Daha yavaş (was 1600)
   obstacles: [
     { lane: "TOP", timeOffset: 0 },
     { lane: "BOTTOM", timeOffset: 0 },
-    { lane: "TOP", timeOffset: 400 },
-    { lane: "BOTTOM", timeOffset: 400 },
-    { lane: "TOP", timeOffset: 800 },
-    { lane: "BOTTOM", timeOffset: 800 },
-    { lane: "TOP", timeOffset: 1200 },
-    { lane: "BOTTOM", timeOffset: 1200 },
+    { lane: "TOP", timeOffset: 700 }, // Daha uzun aralık (was 400)
+    { lane: "BOTTOM", timeOffset: 700 },
+    { lane: "TOP", timeOffset: 1400 },
+    { lane: "BOTTOM", timeOffset: 1400 },
+    { lane: "TOP", timeOffset: 2100 },
+    { lane: "BOTTOM", timeOffset: 2100 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 200, type: "safe" },
-    { lane: "TOP", timeOffset: 600, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 1000, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 350, type: "safe" },
+    { lane: "TOP", timeOffset: 1050, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1750, type: "safe" },
   ],
 };
 
@@ -190,26 +190,26 @@ const GAUNTLET_PATTERN: Pattern = {
   id: "gauntlet",
   name: "The Gauntlet",
   difficulty: "expert",
-  duration: 1500, // Faster (was 2000)
+  duration: 2600, // Daha yavaş (was 1500)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.75 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.75 },
-    { lane: "TOP", timeOffset: 250, heightRatio: 0.25 },
-    { lane: "BOTTOM", timeOffset: 250, heightRatio: 0.25 },
-    { lane: "TOP", timeOffset: 500, heightRatio: 0.8 },
-    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.8 },
-    { lane: "TOP", timeOffset: 750, heightRatio: 0.2 },
-    { lane: "BOTTOM", timeOffset: 750, heightRatio: 0.2 },
-    { lane: "TOP", timeOffset: 1000, heightRatio: 0.7 },
-    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.7 },
-    { lane: "TOP", timeOffset: 1250, heightRatio: 0.3 },
-    { lane: "BOTTOM", timeOffset: 1250, heightRatio: 0.3 },
+    { lane: "TOP", timeOffset: 450, heightRatio: 0.25 }, // Daha uzun aralık (was 250)
+    { lane: "BOTTOM", timeOffset: 450, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 900, heightRatio: 0.8 },
+    { lane: "BOTTOM", timeOffset: 900, heightRatio: 0.8 },
+    { lane: "TOP", timeOffset: 1350, heightRatio: 0.2 },
+    { lane: "BOTTOM", timeOffset: 1350, heightRatio: 0.2 },
+    { lane: "TOP", timeOffset: 1800, heightRatio: 0.7 },
+    { lane: "BOTTOM", timeOffset: 1800, heightRatio: 0.7 },
+    { lane: "TOP", timeOffset: 2250, heightRatio: 0.3 },
+    { lane: "BOTTOM", timeOffset: 2250, heightRatio: 0.3 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 125, type: "risky" },
-    { lane: "TOP", timeOffset: 375, type: "risky" },
-    { lane: "BOTTOM", timeOffset: 625, type: "risky" },
-    { lane: "TOP", timeOffset: 875, type: "risky" },
+    { lane: "BOTTOM", timeOffset: 225, type: "risky" },
+    { lane: "TOP", timeOffset: 675, type: "risky" },
+    { lane: "BOTTOM", timeOffset: 1125, type: "risky" },
+    { lane: "TOP", timeOffset: 1575, type: "risky" },
   ],
 };
 
@@ -220,20 +220,20 @@ const STAIRS_PATTERN: Pattern = {
   id: "stairs",
   name: "Stairs",
   difficulty: "intermediate",
-  duration: 1600,
+  duration: 2800, // Daha yavaş (was 1600)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.25 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.25 },
-    { lane: "TOP", timeOffset: 400, heightRatio: 0.35 },
-    { lane: "BOTTOM", timeOffset: 400, heightRatio: 0.35 },
-    { lane: "TOP", timeOffset: 800, heightRatio: 0.5 },
-    { lane: "BOTTOM", timeOffset: 800, heightRatio: 0.5 },
-    { lane: "TOP", timeOffset: 1200, heightRatio: 0.65 },
-    { lane: "BOTTOM", timeOffset: 1200, heightRatio: 0.65 },
+    { lane: "TOP", timeOffset: 700, heightRatio: 0.35 }, // Daha uzun aralık (was 400)
+    { lane: "BOTTOM", timeOffset: 700, heightRatio: 0.35 },
+    { lane: "TOP", timeOffset: 1400, heightRatio: 0.5 },
+    { lane: "BOTTOM", timeOffset: 1400, heightRatio: 0.5 },
+    { lane: "TOP", timeOffset: 2100, heightRatio: 0.65 },
+    { lane: "BOTTOM", timeOffset: 2100, heightRatio: 0.65 },
   ],
   shards: [
-    { lane: "TOP", timeOffset: 200, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 1000, type: "safe" },
+    { lane: "TOP", timeOffset: 350, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1750, type: "safe" },
   ],
 };
 
@@ -244,18 +244,18 @@ const SWITCHBACK_PATTERN: Pattern = {
   id: "switchback",
   name: "Switchback",
   difficulty: "intermediate",
-  duration: 1500,
+  duration: 2600, // Daha yavaş (was 1500)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.2 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.2 },
-    { lane: "TOP", timeOffset: 500, heightRatio: 0.8 },
-    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.8 },
-    { lane: "TOP", timeOffset: 1000, heightRatio: 0.25 },
-    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 850, heightRatio: 0.8 }, // Daha uzun aralık (was 500)
+    { lane: "BOTTOM", timeOffset: 850, heightRatio: 0.8 },
+    { lane: "TOP", timeOffset: 1700, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 1700, heightRatio: 0.25 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 250, type: "risky" },
-    { lane: "TOP", timeOffset: 750, type: "risky" },
+    { lane: "BOTTOM", timeOffset: 425, type: "risky" },
+    { lane: "TOP", timeOffset: 1275, type: "risky" },
   ],
 };
 
@@ -266,18 +266,18 @@ const PULSE_PATTERN: Pattern = {
   id: "pulse",
   name: "Pulse",
   difficulty: "basic",
-  duration: 1500,
+  duration: 2600, // Daha yavaş (was 1500)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.45 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.45 },
-    { lane: "TOP", timeOffset: 500, heightRatio: 0.55 },
-    { lane: "BOTTOM", timeOffset: 500, heightRatio: 0.55 },
-    { lane: "TOP", timeOffset: 1000, heightRatio: 0.5 },
-    { lane: "BOTTOM", timeOffset: 1000, heightRatio: 0.5 },
+    { lane: "TOP", timeOffset: 850, heightRatio: 0.55 }, // Daha uzun aralık (was 500)
+    { lane: "BOTTOM", timeOffset: 850, heightRatio: 0.55 },
+    { lane: "TOP", timeOffset: 1700, heightRatio: 0.5 },
+    { lane: "BOTTOM", timeOffset: 1700, heightRatio: 0.5 },
   ],
   shards: [
-    { lane: "TOP", timeOffset: 250, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 1250, type: "safe" },
+    { lane: "TOP", timeOffset: 425, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 2125, type: "safe" },
   ],
 };
 
@@ -288,20 +288,20 @@ const CHICANE_PATTERN: Pattern = {
   id: "chicane",
   name: "Chicane",
   difficulty: "advanced",
-  duration: 1400,
+  duration: 2400, // Daha yavaş (was 1400)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.7 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.7 },
-    { lane: "TOP", timeOffset: 350, heightRatio: 0.3 },
-    { lane: "BOTTOM", timeOffset: 350, heightRatio: 0.3 },
-    { lane: "TOP", timeOffset: 700, heightRatio: 0.75 },
-    { lane: "BOTTOM", timeOffset: 700, heightRatio: 0.75 },
-    { lane: "TOP", timeOffset: 1050, heightRatio: 0.35 },
-    { lane: "BOTTOM", timeOffset: 1050, heightRatio: 0.35 },
+    { lane: "TOP", timeOffset: 600, heightRatio: 0.3 }, // Daha uzun aralık (was 350)
+    { lane: "BOTTOM", timeOffset: 600, heightRatio: 0.3 },
+    { lane: "TOP", timeOffset: 1200, heightRatio: 0.75 },
+    { lane: "BOTTOM", timeOffset: 1200, heightRatio: 0.75 },
+    { lane: "TOP", timeOffset: 1800, heightRatio: 0.35 },
+    { lane: "BOTTOM", timeOffset: 1800, heightRatio: 0.35 },
   ],
   shards: [
-    { lane: "TOP", timeOffset: 175, type: "safe" },
-    { lane: "BOTTOM", timeOffset: 875, type: "risky" },
+    { lane: "TOP", timeOffset: 300, type: "safe" },
+    { lane: "BOTTOM", timeOffset: 1500, type: "risky" },
   ],
 };
 
@@ -312,20 +312,20 @@ const SQUEEZE_PATTERN: Pattern = {
   id: "squeeze",
   name: "Squeeze",
   difficulty: "advanced",
-  duration: 1600,
+  duration: 2800, // Daha yavaş (was 1600)
   obstacles: [
     { lane: "TOP", timeOffset: 0, heightRatio: 0.2 },
     { lane: "BOTTOM", timeOffset: 0, heightRatio: 0.2 },
-    { lane: "TOP", timeOffset: 400, heightRatio: 0.25 },
-    { lane: "BOTTOM", timeOffset: 400, heightRatio: 0.25 },
-    { lane: "TOP", timeOffset: 800, heightRatio: 0.3 },
-    { lane: "BOTTOM", timeOffset: 800, heightRatio: 0.3 },
-    { lane: "TOP", timeOffset: 1200, heightRatio: 0.25 },
-    { lane: "BOTTOM", timeOffset: 1200, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 700, heightRatio: 0.25 }, // Daha uzun aralık (was 400)
+    { lane: "BOTTOM", timeOffset: 700, heightRatio: 0.25 },
+    { lane: "TOP", timeOffset: 1400, heightRatio: 0.3 },
+    { lane: "BOTTOM", timeOffset: 1400, heightRatio: 0.3 },
+    { lane: "TOP", timeOffset: 2100, heightRatio: 0.25 },
+    { lane: "BOTTOM", timeOffset: 2100, heightRatio: 0.25 },
   ],
   shards: [
-    { lane: "BOTTOM", timeOffset: 600, type: "safe" },
-    { lane: "TOP", timeOffset: 1000, type: "risky" },
+    { lane: "BOTTOM", timeOffset: 1050, type: "safe" },
+    { lane: "TOP", timeOffset: 1750, type: "risky" },
   ],
 };
 

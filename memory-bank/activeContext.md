@@ -2,11 +2,17 @@
 
 ## Mevcut Odak
 
-- **Polish & Optimization** - TAMAMLANDI
-  - README.md güncellendi (Echo Shift için doğru içerik)
-  - prd.md güncellendi (tüm özellikler dokümante edildi)
-  - Storage key standardizasyonu yapıldı (`echo-shift-` prefix)
-  - Memory-bank dosyaları güncellendi
+- **Progression System** - DEVAM EDİYOR
+  - Task 11: GameEngine Integration - TAMAMLANDI
+  - Task 12: Checkpoint - TAMAMLANDI
+  - Task 13: Create UI Components - TAMAMLANDI
+  - Task 14: Wire UI to App.tsx - TAMAMLANDI
+    - 14.1: Mission panel button in GameUI menu
+    - 14.2: Level-up notification with auto-hide
+    - 14.3: Daily reward claim modal on first login
+    - 14.4: Sound Check completion celebration
+  - 410 test geçiyor
+  - Kalan: Task 15 (Final Checkpoint)
 
 ## Son Yapılanlar
 
@@ -36,6 +42,7 @@
 | echo-shift-engagement | ✅ TAMAMLANDI | ✅ |
 | echo-shift-v2-mechanics | ✅ TAMAMLANDI | ✅ |
 | advanced-game-mechanics | ✅ TAMAMLANDI | ✅ |
+| progression-system | 🔄 DEVAM EDİYOR | Task 14 ✅ |
 
 ## Bilinen Konular / Riskler
 

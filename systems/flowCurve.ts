@@ -50,14 +50,14 @@ export type GamePhase = "warmup" | "groove" | "plateau";
  * DAHA YAVAŞ HIZ ARTIŞI - Oyuncuya alışma süresi ver
  */
 export const DEFAULT_FLOW_CURVE_CONFIG: FlowCurveConfig = {
-  // Mobile-first tuning:
-  // - slower starting speed
-  // - gentler logarithmic progression
-  // - lower cap to keep visual parsing manageable (obstacle + color + shards)
-  minSpeed: 2.4, // Start ~24km/h feel
-  maxSpeed: 10.5, // Cap ~105km/h feel
-  scaleFactor: 1.8, // Gentler progression
-  scoreBase: 1200, // Longer warmup before speed meaningfully ramps
+  // Mobile-first tuning - ÇOOK YAVAŞ BAŞLANGIÇ:
+  // - çok yavaş başlangıç hızı
+  // - çok yavaş logaritmik artış
+  // - düşük max hız
+  minSpeed: 1.5, // Start ~15km/h feel (çok yavaş başlangıç)
+  maxSpeed: 8.0, // Cap ~80km/h feel (düşürüldü)
+  scaleFactor: 1.2, // Çok yavaş artış (was 1.8)
+  scoreBase: 2000, // Çok uzun warmup (was 1200)
 };
 
 /**
@@ -65,8 +65,8 @@ export const DEFAULT_FLOW_CURVE_CONFIG: FlowCurveConfig = {
  * Requirements: 1.4, 1.5, 1.6
  */
 export const PHASE_THRESHOLDS = {
-  warmupEnd: 900, // Longer warmup on mobile
-  grooveEnd: 8000, // Longer groove before plateau
+  warmupEnd: 1500, // Çok uzun warmup (was 900)
+  grooveEnd: 12000, // Çok uzun groove (was 8000)
 };
 
 // ============================================================================

@@ -17,6 +17,16 @@ export enum GameState {
 export type CollectibleType = 'LETTER' | 'SHARD';
 
 /**
+ * Trail point for collectible motion trail effect
+ */
+export interface TrailPoint {
+  x: number;
+  y: number;
+  alpha: number;
+  size: number;
+}
+
+/**
  * Collectible interface for S.H.I.F.T. letters and shards
  * Requirements 1.1: Define Collectible interface with required properties
  */
@@ -31,6 +41,13 @@ export interface Collectible {
   oscillationAmplitude: number;
   oscillationFrequency: number;
   isCollected: boolean;
+  // Enhanced motion properties
+  velocityX: number;                // Horizontal velocity for chase effect
+  velocityY: number;                // Vertical velocity for dynamic movement
+  trail: TrailPoint[];              // Motion trail history
+  spawnTime: number;                // When collectible was spawned
+  escapeMode: boolean;              // Whether collectible is trying to escape
+  targetY: number;                  // Target Y for smooth movement
 }
 
 /**
@@ -317,4 +334,126 @@ export interface PhysicsStrategy {
    * @returns number - Gravity multiplier (e.g., 2.5 for Titan)
    */
   getGravityMultiplier(): number;
+}
+
+
+// ============================================================================
+// Progression System Types - Requirements 2.1, 4.4, 6.1
+// ============================================================================
+
+/**
+ * Type of mission objective
+ * Requirements 2.1: Define mission types for tracking
+ */
+export type MissionType =
+  | 'DISTANCE'      // Total meters traveled
+  | 'SWAP_COUNT'    // Number of lane swaps
+  | 'NEAR_MISS'     // Near miss count
+  | 'COLLECT'       // Shards collected
+  | 'STAY_LANE'     // Duration in single lane (ms)
+  | 'COLLISION';    // First collision (Sound Check)
+
+/**
+ * Mission slot for daily missions
+ * Requirements 2.1: Define slots for daily mission generation
+ */
+export type MissionSlot = 'GRIND' | 'SKILL' | 'MASTERY';
+
+/**
+ * Mission category
+ * Requirements 2.1: Define mission categories
+ */
+export type MissionCategory = 'SOUND_CHECK' | 'DAILY' | 'MARATHON';
+
+/**
+ * Mission interface
+ * Requirements 2.1: Define Mission structure
+ */
+export interface Mission {
+  id: string;
+  category: MissionCategory;
+  slot?: MissionSlot;
+  type: MissionType;
+  title: string;
+  description: string;
+  goal: number;
+  progress: number;
+  completed: boolean;
+  rewards: {
+    xp: number;
+    shards: number;
+    cosmetic?: string;
+  };
+}
+
+/**
+ * Mission state tracking
+ * Requirements 2.1: Define MissionState for persistence
+ */
+export interface MissionState {
+  soundCheck: {
+    missions: Mission[];
+    completed: boolean;
+  };
+  daily: {
+    missions: Mission[];
+    lastResetDate: string;
+  };
+  marathon: {
+    mission: Mission | null;
+    lastResetDate: string;
+  };
+}
+
+/**
+ * Level information
+ * Requirements 4.4: Define LevelInfo for display
+ */
+export interface LevelInfo {
+  level: number;
+  currentXP: number;
+  xpForCurrentLevel: number;
+  xpForNextLevel: number;
+  progress: number; // 0-1 percentage
+}
+
+/**
+ * Zone lock status
+ * Requirements 6.1: Define lock states for dual-lock system
+ */
+export type ZoneLockStatus =
+  | 'FULLY_LOCKED'      // Neither requirement met
+  | 'LEVEL_LOCKED'      // Has shards, needs level
+  | 'SHARD_LOCKED'      // Has level, needs shards
+  | 'UNLOCKABLE'        // Both requirements met
+  | 'UNLOCKED';         // Already unlocked
+
+/**
+ * Zone unlock requirements
+ * Requirements 6.1: Define requirements for zone unlocking
+ */
+export interface ZoneRequirements {
+  levelRequired: number;
+  shardCost: number;
+}
+
+/**
+ * Zone unlock state
+ * Requirements 6.1: Define state for zone unlock UI
+ */
+export interface ZoneUnlockState {
+  status: ZoneLockStatus;
+  message: string;
+  canPurchase: boolean;
+  levelMet: boolean;
+  shardsMet: boolean;
+}
+
+/**
+ * Mission event for progress tracking
+ * Requirements 7.1-7.5: Define events for mission progress
+ */
+export interface MissionEvent {
+  type: MissionType;
+  value: number;
 }
