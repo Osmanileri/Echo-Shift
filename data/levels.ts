@@ -93,8 +93,8 @@ export function calculateTargetDistance(level: number): number {
  * @returns Base speed in pixels per frame
  */
 export function calculateBaseSpeed(level: number): number {
-  if (level === 1) return 6; // Slow intro speed for first level
-  return 8 + (level * 0.35);
+  if (level === 1) return 3; // Very slow intro speed for first level
+  return 5 + (level * 0.3);
 }
 
 /**
@@ -198,8 +198,8 @@ function getModifiersForLevel(id: number): LevelModifiers {
   // Level 1: Very slow and easy
   if (id === 1) {
     return {
-      speedMultiplier: 0.5,
-      spawnRateMultiplier: 0.4,
+      speedMultiplier: 0.3,
+      spawnRateMultiplier: 0.25,
     };
   }
   

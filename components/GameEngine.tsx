@@ -65,7 +65,7 @@ import {
 import { renderOrb } from "../utils/skinRenderer";
 
 // 🔧 DEBUG: Geçici ölümsüzlük modu - test için true yap, bitince false yap
-const DEBUG_IMMORTAL_MODE = false;
+const DEBUG_IMMORTAL_MODE = true;
 // Particle System Integration - Requirements 12.1, 12.2, 12.3
 import * as ParticleSystem from "../systems/particleSystem";
 // Screen Shake System Integration - Requirements 10.1, 10.2, 10.3, 10.4
@@ -110,7 +110,6 @@ import * as DifficultyProgression from "../systems/difficultyProgression";
 // Object Pool System Integration - Requirements 6.1, 6.2, 6.3, 6.4, 6.5
 import * as ObjectPool from "../systems/objectPool";
 // Shard Placement System Integration - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
-import type { ZoneConfig } from "../data/zones";
 import * as ShardPlacement from "../systems/shardPlacement";
 import { setCustomThemeColors } from "../systems/themeSystem";
 // Audio System Integration - Phase 4 Launch Polish
@@ -210,8 +209,6 @@ interface GameEngineProps {
   onRestoreStateUpdate?: (canRestore: boolean, hasBeenUsed: boolean) => void;
   // Daily Rituals Tracking - Requirements 3.7, 3.8, 3.9, 3.10
   ritualTracking?: RitualTrackingCallbacks;
-  // Zone System (Phase 2)
-  zoneConfig?: ZoneConfig;
   // Mission System - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
   onMissionEvent?: (event: MissionEvent) => void;
 }
@@ -233,7 +230,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
   restoreRequested = false,
   onRestoreStateUpdate,
   ritualTracking,
-  zoneConfig,
   onMissionEvent,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -268,6 +264,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     INITIAL_CONFIG.minConnectorLength
   );
 
+  // Track if game was previously playing (to detect resume vs new game)
+  const wasPlayingRef = useRef<boolean>(false);
+  
   // Swap Mechanics
   const isSwapped = useRef<boolean>(false); // false = White Top, true = Black Top
   const rotationAngle = useRef<number>(0);
@@ -487,11 +486,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ? campaignMode.levelConfig.modifiers.speedMultiplier
         : 1;
 
-    // Zone modifier (endless) - Phase 2
-    if (zoneConfig) {
-      speedModifier *= zoneConfig.modifiers.speedMultiplier;
-    }
-
     // Daily Challenge Mode: Apply speed boost modifier - Requirements 8.2
     if (dailyChallengeMode?.enabled && dailyChallengeMode.config) {
       speedModifier *= dailyChallengeMode.config.modifiers.speedBoost;
@@ -525,11 +519,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ? campaignMode.levelConfig.modifiers.spawnRateMultiplier
         : 1;
 
-    // Zone modifier (endless) - Phase 2
-    if (zoneConfig) {
-      spawnRateModifier *= zoneConfig.modifiers.spawnRateMultiplier;
-    }
-
     // Daily Challenge Mode: Apply double obstacles modifier - Requirements 8.2
     if (
       dailyChallengeMode?.enabled &&
@@ -560,7 +549,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Campaign Update v2.5 - Initialize Distance Tracking
     // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
+    console.log('[RESET GAME] campaignMode:', {
+      enabled: campaignMode?.enabled,
+      useDistanceMode: campaignMode?.useDistanceMode,
+      targetDistance: campaignMode?.targetDistance,
+    });
     if (campaignMode?.enabled && campaignMode.useDistanceMode && campaignMode.targetDistance) {
+      console.log('[RESET GAME] Initializing distance tracker with target:', campaignMode.targetDistance);
       // Initialize distance tracker with target distance
       distanceTrackerRef.current = createDistanceTracker(campaignMode.targetDistance);
       
@@ -1640,6 +1635,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Main Loop
   useEffect(() => {
     if (gameState === GameState.MENU) {
+      wasPlayingRef.current = false; // Reset flag when returning to menu
       resetGame();
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
@@ -1674,19 +1670,67 @@ const GameEngine: React.FC<GameEngineProps> = ({
     }
 
     if (gameState === GameState.PAUSED) {
-      // Paused - don't reset, just stop the loop
+      // Paused - mark that we were playing, don't reset
+      wasPlayingRef.current = true;
       return;
     }
 
     if (gameState !== GameState.PLAYING) return;
-    console.log("[GAME] Starting game loop, gameState:", gameState);
-    resetGame();
+    
+    // Only reset if this is a NEW game, not resuming from pause
+    if (!wasPlayingRef.current) {
+      console.log("[GAME] Starting NEW game, resetting...");
+      resetGame();
+    } else {
+      console.log("[GAME] Resuming from pause, NOT resetting");
+    }
+    
+    // Mark that we're now playing
+    wasPlayingRef.current = true;
 
     const loop = () => {
       // Skip main loop if restore animation is playing
       if (isRestoreAnimating.current) {
         frameId.current = requestAnimationFrame(loop);
         return;
+      }
+      
+      // CRITICAL: Check level completion FIRST before any collision detection
+      // This ensures the level ends when target distance is reached
+      if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current) {
+        const isComplete = distanceTrackerRef.current.isLevelComplete();
+        const currentDist = distanceTrackerRef.current.getCurrentDistance();
+        const targetDist = distanceTrackerRef.current.getTargetDistance();
+        
+        // DEBUG: Log distance info every 60 frames (~1 second)
+        if (framesSinceSpawn.current % 60 === 0) {
+          console.log('[LEVEL COMPLETE CHECK]', {
+            currentDistance: currentDist,
+            targetDistance: targetDist,
+            isComplete,
+            levelCompleted: levelCompleted.current,
+            campaignEnabled: campaignMode?.enabled,
+            useDistanceMode: campaignMode?.useDistanceMode,
+            trackerExists: !!distanceTrackerRef.current
+          });
+        }
+        
+        if (isComplete && !levelCompleted.current) {
+          console.log('[LEVEL COMPLETE] Triggering completion callback');
+          levelCompleted.current = true;
+          
+          // Trigger distance-based level completion callback
+          campaignMode.onDistanceLevelComplete?.({
+            distanceTraveled: distanceStateRef.current.currentDistance,
+            shardsCollected: shardsCollectedRef.current,
+            totalShardsSpawned: totalShardsSpawnedRef.current,
+            damageTaken: damageTakenRef.current,
+            healthRemaining: playerHealthRef.current > 0 ? playerHealthRef.current : 1, // Ensure at least 1 health for completion
+          });
+          
+          // Stop the game loop immediately
+          return;
+        }
       }
 
       const canvas = canvasRef.current;
@@ -1915,8 +1959,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           
           // Update distance based on current speed
           // Convert speed from pixels/frame to meters/second
-          // Factor 1.0 gives ~43 seconds for Level 1 (450m at ~10.4 speed)
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 1.0;
+          // Factor 0.5 gives good pacing (~30-45 seconds for early levels)
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 0.5;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
           
           // Update distance state ref
@@ -1943,7 +1987,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
           
           // Check for level completion
-          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current) {
+          // IMPORTANT: Level is only complete if player reaches target distance AND is still alive
+          // If player dies before reaching target, they must retry the level
+          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current && playerHealthRef.current > 0) {
             levelCompleted.current = true;
             
             // Trigger distance-based level completion callback
@@ -1954,10 +2000,31 @@ const GameEngine: React.FC<GameEngineProps> = ({
               damageTaken: damageTakenRef.current,
               healthRemaining: playerHealthRef.current,
             });
+            
+            // CRITICAL: Return immediately to stop the game loop
+            return;
           }
         } else {
           // Legacy: Update speed using Flow Curve (score-based)
           speed.current = FlowCurve.calculateGameSpeed(score.current);
+        }
+        
+        // FALLBACK: Check level completion outside pattern spawning block
+        // This ensures level completion works even if pattern spawning is disabled
+        if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current) {
+          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current && playerHealthRef.current > 0) {
+            levelCompleted.current = true;
+            
+            campaignMode.onDistanceLevelComplete?.({
+              distanceTraveled: distanceStateRef.current.currentDistance,
+              shardsCollected: shardsCollectedRef.current,
+              totalShardsSpawned: totalShardsSpawnedRef.current,
+              damageTaken: damageTakenRef.current,
+              healthRemaining: playerHealthRef.current,
+            });
+            
+            return;
+          }
         }
 
         // Pattern-Based Spawning
