@@ -3,7 +3,8 @@ export enum GameState {
   PLAYING = 'PLAYING',
   PAUSED = 'PAUSED',
   GAME_OVER = 'GAME_OVER',
-  RESTORING = 'RESTORING'  // NEW: VHS rewind state - Requirements 7.2
+  RESTORING = 'RESTORING',
+  VICTORY = 'VICTORY'
 }
 
 // ============================================================================
@@ -102,6 +103,7 @@ export interface GameSnapshot {
   resonanceState: EnhancedResonanceState;
   connectorLength: number;
   midlineY: number;
+  currentDistance?: number; // Distance traveled at snapshot time (for restore)
 }
 
 /**
@@ -132,7 +134,7 @@ export interface Obstacle {
   targetY: number; // The final vertical position for the animation
   width: number;
   height: number;
-  lane: 'top' | 'bottom'; 
+  lane: 'top' | 'bottom';
   polarity: 'white' | 'black'; // 'white' obstacle is safe for White Orb, deadly for Black Orb. And vice versa.
   passed: boolean;
   hasPhased?: boolean;
@@ -300,7 +302,7 @@ export interface Rect {
  */
 export interface PhysicsStrategy {
   type: ConstructType;
-  
+
   /**
    * Update player physics based on construct-specific rules
    * @param player - The player entity to update
@@ -308,27 +310,27 @@ export interface PhysicsStrategy {
    * @param input - Current input state
    */
   update(player: PlayerEntity, deltaTime: number, input: InputState): void;
-  
+
   /**
    * Determine collision result based on construct-specific rules
    * @param isFromAbove - Whether collision is from above (for Titan stomp)
    * @returns CollisionResult - DAMAGE, DESTROY, or IGNORE
    */
   resolveCollision(isFromAbove: boolean): CollisionResult;
-  
+
   /**
    * Get the hitbox for the current construct
    * @param player - The player entity
    * @returns Rect - The hitbox rectangle
    */
   getHitbox(player: PlayerEntity): Rect;
-  
+
   /**
    * Get speed multiplier for this construct
    * @returns number - Speed multiplier (e.g., 1.2 for Phase)
    */
   getSpeedMultiplier(): number;
-  
+
   /**
    * Get gravity multiplier for this construct
    * @returns number - Gravity multiplier (e.g., 2.5 for Titan)

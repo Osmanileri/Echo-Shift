@@ -12,16 +12,16 @@ import { AudioSystem } from './audioSystem';
 export interface HolographicGateConfig {
   // Distance threshold for gate visibility (meters)
   visibilityThreshold: number;
-  
+
   // BPM for pulse animation sync
   bpm: number;
-  
+
   // Shatter animation duration (ms)
   shatterDuration: number;
-  
+
   // Warp jump acceleration multiplier
   warpJumpMultiplier: number;
-  
+
   // Gate visual properties
   gateWidth: number;
   gateHeight: number;
@@ -50,33 +50,33 @@ export interface ShatterParticle {
 export interface HolographicGateState {
   // Visibility state
   visible: boolean;
-  
+
   // Position (distance from player)
   distanceFromPlayer: number;
-  
+
   // Pulse animation state (0-1 for BPM sync)
   pulsePhase: number;
-  
+
   // Shatter animation state
   isShattered: boolean;
   shatterProgress: number;
   shatterStartTime: number;
   shatterParticles: ShatterParticle[];
-  
+
   // Warp jump state
   warpJumpActive: boolean;
   warpJumpProgress: number;
-  
+
   // Timestamps
   lastUpdateTime: number;
 }
 
 /**
  * Default configuration values
- * Requirements: 12.1, 12.2, 12.3, 12.4
+ * Requirements: 3.1, 3.2 (campaign-chapter-system), 12.1, 12.2, 12.3, 12.4
  */
 export const DEFAULT_HOLOGRAPHIC_GATE_CONFIG: HolographicGateConfig = {
-  visibilityThreshold: 100, // 100 meters from target
+  visibilityThreshold: 50, // 50 meters from target (Requirements 3.1)
   bpm: 120, // Default BPM for pulse sync
   shatterDuration: 500, // 500ms shatter animation
   warpJumpMultiplier: 3.0, // 3x acceleration on warp jump
@@ -106,7 +106,7 @@ export function createHolographicGateState(): HolographicGateState {
 
 /**
  * Check if gate should be visible based on distance
- * Requirements: 12.1 - WHEN the player is within 100 meters of the Target_Distance
+ * Requirements: 3.1 - WHEN the player is within 50 meters of Target_Distance
  * 
  * @param remainingDistance - Distance remaining to target
  * @param config - Gate configuration
@@ -116,7 +116,9 @@ export function shouldGateBeVisible(
   remainingDistance: number,
   config: HolographicGateConfig = DEFAULT_HOLOGRAPHIC_GATE_CONFIG
 ): boolean {
-  return remainingDistance <= config.visibilityThreshold && remainingDistance > 0;
+  // Gate should be visible when player is near target (within threshold)
+  // AND stays visible even when remaining is 0 or slightly negative (passed target)
+  return remainingDistance <= config.visibilityThreshold;
 }
 
 /**
@@ -130,7 +132,7 @@ export function shouldGateBeVisible(
 export function calculatePulsePhase(currentTime: number, bpm: number): number {
   // Convert BPM to milliseconds per beat
   const msPerBeat = 60000 / bpm;
-  
+
   // Calculate phase within current beat (0-1)
   return (currentTime % msPerBeat) / msPerBeat;
 }
@@ -176,16 +178,16 @@ export function createShatterParticles(
 ): ShatterParticle[] {
   const particles: ShatterParticle[] = [];
   const particleCount = 20;
-  
+
   for (let i = 0; i < particleCount; i++) {
     // Distribute particles across gate area
     const offsetX = (Math.random() - 0.5) * config.gateWidth;
     const offsetY = (Math.random() - 0.5) * config.gateHeight;
-    
+
     // Random velocity outward from center
     const angle = Math.atan2(offsetY, offsetX) + (Math.random() - 0.5) * 0.5;
     const speed = 100 + Math.random() * 200;
-    
+
     particles.push({
       x: gateX + offsetX,
       y: gateY + offsetY,
@@ -198,7 +200,7 @@ export function createShatterParticles(
       color: config.gateColor,
     });
   }
-  
+
   return particles;
 }
 
@@ -238,7 +240,7 @@ export function calculateWarpJumpSpeed(
   config: HolographicGateConfig = DEFAULT_HOLOGRAPHIC_GATE_CONFIG
 ): number {
   if (warpJumpProgress <= 0) return 1;
-  
+
   // Exponential acceleration for dramatic effect
   const easedProgress = Math.pow(warpJumpProgress, 2);
   return 1 + (config.warpJumpMultiplier - 1) * easedProgress;
@@ -263,10 +265,10 @@ export function triggerGateShatter(
   config: HolographicGateConfig = DEFAULT_HOLOGRAPHIC_GATE_CONFIG
 ): HolographicGateState {
   if (state.isShattered) return state;
-  
+
   // Play shatter sound effect
   playGateShatterSFX();
-  
+
   return {
     ...state,
     isShattered: true,
@@ -303,40 +305,40 @@ export function updateHolographicGate(
   remainingDistance: number,
   config: HolographicGateConfig = DEFAULT_HOLOGRAPHIC_GATE_CONFIG
 ): HolographicGateState {
-  const deltaTime = state.lastUpdateTime > 0 
-    ? (currentTime - state.lastUpdateTime) / 1000 
+  const deltaTime = state.lastUpdateTime > 0
+    ? (currentTime - state.lastUpdateTime) / 1000
     : 0;
-  
+
   let newState = { ...state, lastUpdateTime: currentTime };
-  
+
   // Update visibility
-  // Requirements: 12.1 - Spawn gate when within 100m of target
+  // Requirements: 3.1 - Spawn gate when within 50m of target
   newState.visible = shouldGateBeVisible(remainingDistance, config);
   newState.distanceFromPlayer = remainingDistance;
-  
+
   // Update pulse phase
   // Requirements: 12.2 - Pulse with beat of music
   newState.pulsePhase = calculatePulsePhase(currentTime, config.bpm);
-  
+
   // Update shatter animation
   if (newState.isShattered) {
     const shatterElapsed = currentTime - newState.shatterStartTime;
     newState.shatterProgress = Math.min(1, shatterElapsed / config.shatterDuration);
-    
+
     // Update particles
     newState.shatterParticles = updateShatterParticles(
       newState.shatterParticles,
       deltaTime,
       newState.shatterProgress
     );
-    
+
     // Update warp jump progress
     // Requirements: 12.4 - Warp jump acceleration
     if (newState.warpJumpActive) {
       newState.warpJumpProgress = Math.min(1, newState.shatterProgress * 1.5);
     }
   }
-  
+
   return newState;
 }
 
@@ -364,17 +366,17 @@ export function renderHolographicGate(
     }
     return;
   }
-  
+
   const pulseScale = getPulseScale(state.pulsePhase);
   const glowIntensity = getPulseGlowIntensity(state.pulsePhase);
-  
+
   ctx.save();
-  
+
   // Apply pulse scale
   ctx.translate(screenX, screenY);
   ctx.scale(pulseScale, pulseScale);
   ctx.translate(-screenX, -screenY);
-  
+
   // Draw outer glow
   const glowGradient = ctx.createRadialGradient(
     screenX, screenY, 0,
@@ -383,29 +385,29 @@ export function renderHolographicGate(
   glowGradient.addColorStop(0, `rgba(0, 255, 255, ${glowIntensity * 0.3})`);
   glowGradient.addColorStop(0.5, `rgba(0, 255, 255, ${glowIntensity * 0.1})`);
   glowGradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
-  
+
   ctx.fillStyle = glowGradient;
   ctx.beginPath();
   ctx.ellipse(screenX, screenY, config.gateWidth * 0.8, config.gateHeight * 0.6, 0, 0, Math.PI * 2);
   ctx.fill();
-  
+
   // Draw gate frame (holographic arch)
   ctx.strokeStyle = config.gateColor;
   ctx.lineWidth = 4;
   ctx.shadowColor = config.glowColor;
   ctx.shadowBlur = 20 * glowIntensity;
-  
+
   // Main arch
   ctx.beginPath();
   ctx.ellipse(screenX, screenY, config.gateWidth / 2, config.gateHeight / 2, 0, 0, Math.PI * 2);
   ctx.stroke();
-  
+
   // Inner arch
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.ellipse(screenX, screenY, config.gateWidth / 2 - 10, config.gateHeight / 2 - 10, 0, 0, Math.PI * 2);
   ctx.stroke();
-  
+
   // Horizontal scan lines (holographic effect)
   ctx.globalAlpha = 0.3 * glowIntensity;
   ctx.lineWidth = 1;
@@ -419,7 +421,7 @@ export function renderHolographicGate(
     ctx.lineTo(screenX + config.gateWidth / 2, y);
     ctx.stroke();
   }
-  
+
   ctx.restore();
 }
 
@@ -435,10 +437,10 @@ export function renderShatterParticles(
   particles: ShatterParticle[]
 ): void {
   ctx.save();
-  
+
   particles.forEach(p => {
     if (p.alpha <= 0) return;
-    
+
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.rotation);
@@ -446,7 +448,7 @@ export function renderShatterParticles(
     ctx.fillStyle = p.color;
     ctx.shadowColor = p.color;
     ctx.shadowBlur = 10;
-    
+
     // Draw triangular shard
     ctx.beginPath();
     ctx.moveTo(0, -p.size / 2);
@@ -454,10 +456,10 @@ export function renderShatterParticles(
     ctx.lineTo(-p.size / 2, p.size / 2);
     ctx.closePath();
     ctx.fill();
-    
+
     ctx.restore();
   });
-  
+
   ctx.restore();
 }
 
@@ -498,13 +500,21 @@ export function getGateScreenPosition(
   canvasHeight: number,
   config: HolographicGateConfig = DEFAULT_HOLOGRAPHIC_GATE_CONFIG
 ): { x: number; y: number } {
-  // Gate appears at the right side of screen and moves left as player approaches
-  // Map remaining distance (0-100m) to screen position
-  const normalizedDistance = Math.min(1, remainingDistance / config.visibilityThreshold);
-  
-  // Gate starts at right edge and moves to center as player approaches
-  const x = canvasWidth * (0.5 + normalizedDistance * 0.4);
+  // Gate appears at the right side of screen and moves left towards player
+  // Player is at roughly 20% of screen width
+  // Map remaining distance (0 to threshold) to screen position (player to right edge)
+
+  const playerX = 0.2; // Player at 20% of screen
+  const startX = 0.95; // Gate starts at 95% (right edge)
+
+  // Normalize: 1 = far away (at threshold), 0 = at target (should be at player)
+  const normalizedDistance = Math.max(0, Math.min(1, remainingDistance / config.visibilityThreshold));
+
+  // Interpolate from player position to start position based on distance
+  // When remaining = 0, gate is at playerX
+  // When remaining = threshold, gate is at startX
+  const x = canvasWidth * (playerX + normalizedDistance * (startX - playerX));
   const y = canvasHeight / 2;
-  
+
   return { x, y };
 }

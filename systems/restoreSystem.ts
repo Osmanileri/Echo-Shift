@@ -10,12 +10,12 @@
  * - Use restore only once per run
  */
 
-import { 
-  Obstacle, 
-  SnapshotBuffer, 
-  GameSnapshot as TypesGameSnapshot,
-  ShiftProtocolState,
-  EnhancedResonanceState
+import {
+    EnhancedResonanceState,
+    Obstacle,
+    ShiftProtocolState,
+    SnapshotBuffer,
+    GameSnapshot as TypesGameSnapshot
 } from '../types';
 
 // ============================================================================
@@ -50,6 +50,7 @@ export interface GameSnapshot {
   speed: number;
   spawnRate: number;
   connectorLength: number;
+  currentDistance?: number; // Distance traveled at snapshot time (for restore)
 }
 
 /**
@@ -291,7 +292,8 @@ export function createSnapshot(
   obstacles: Obstacle[],
   speed: number,
   spawnRate: number,
-  connectorLength: number
+  connectorLength: number,
+  currentDistance?: number
 ): GameSnapshot {
   return {
     timestamp,
@@ -312,6 +314,7 @@ export function createSnapshot(
     speed,
     spawnRate,
     connectorLength,
+    currentDistance,
   };
 }
 
@@ -482,6 +485,7 @@ export function captureSnapshot(gameState: {
   resonanceState: EnhancedResonanceState;
   connectorLength: number;
   midlineY: number;
+  currentDistance?: number;
 }): TypesGameSnapshot {
   return {
     timestamp: gameState.timestamp,
@@ -494,6 +498,7 @@ export function captureSnapshot(gameState: {
     resonanceState: { ...gameState.resonanceState },
     connectorLength: gameState.connectorLength,
     midlineY: gameState.midlineY,
+    currentDistance: gameState.currentDistance,
   };
 }
 

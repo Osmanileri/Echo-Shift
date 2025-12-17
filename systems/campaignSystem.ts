@@ -168,28 +168,37 @@ export function calculateReward(levelConfig: LevelConfig, stars: number): number
  * @returns StarRating with stars count and individual criteria flags
  */
 export function calculateStarRating(result: LevelResult): StarRating {
-  // Check each criterion independently
-  // Requirements 4.1: 1 star for completing with health > 0
-  const survivor = result.completed && result.healthRemaining > 0;
+  // If level is not completed, return 0 stars
+  if (!result.completed) {
+    return {
+      stars: 0,
+      survivor: false,
+      collector: false,
+      perfectionist: false,
+    };
+  }
+  
+  // Level completed = minimum 1 star (survivor)
+  // Even if health is 0 (used restore), completing the level earns 1 star
+  const survivor = true; // Completed = survivor
   
   // Requirements 4.2: 2 stars for collecting >= 80% shards
   const collectorThreshold = 0.8;
   const shardPercentage = result.totalShardsAvailable > 0 
     ? result.shardsCollected / result.totalShardsAvailable 
     : 0;
-  const collector = survivor && shardPercentage >= collectorThreshold;
+  const collector = shardPercentage >= collectorThreshold;
   
   // Requirements 4.3: 3 stars for no damage taken
-  const perfectionist = survivor && result.damageTaken === 0;
+  const perfectionist = result.damageTaken === 0;
   
   // Requirements 4.4: Award highest applicable rating
-  let stars = 0;
+  // Minimum 1 star for completing the level
+  let stars = 1; // Base: completed = 1 star
   if (perfectionist) {
     stars = 3;
   } else if (collector) {
     stars = 2;
-  } else if (survivor) {
-    stars = 1;
   }
   
   return {

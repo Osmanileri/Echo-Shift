@@ -72,29 +72,26 @@ export interface LevelConfig {
 
 /**
  * Calculate target distance for a level
- * Level 1: 100m (tutorial/intro level)
- * Level 2+: Progressive increase
- * Requirements: 2.1
+ * Simple formula: level × 100 meters
+ * Requirements: 1.1 (Campaign Chapter System)
  * @param level - Level number (1-100)
  * @returns Target distance in meters
  */
 export function calculateTargetDistance(level: number): number {
-  if (level === 1) return 100; // First level is short intro
-  // Level 2+: starts at 200m and increases progressively
-  return 150 + (level * 75) * Math.pow(level, 0.08);
+  return level * 100;
 }
 
 /**
  * Calculate base speed for a level
- * Level 1: Slower intro speed (6)
- * Level 2+: Progressive increase
+ * Early levels are slower for mobile-friendly gameplay
  * Requirements: 3.4
  * @param level - Level number (1-100)
  * @returns Base speed in pixels per frame
  */
 export function calculateBaseSpeed(level: number): number {
-  if (level === 1) return 3; // Very slow intro speed for first level
-  return 5 + (level * 0.3);
+  if (level <= 10) return 1; // Super slow intro speed for first 10 levels (mobil için)
+  if (level <= 30) return 1.2 + ((level - 10) * 0.08); // Gradual increase: 1.28 to 2.8
+  return 2.8 + ((level - 30) * 0.05); // Very slow progression from level 31+
 }
 
 /**
@@ -193,18 +190,28 @@ function getMechanicsForLevel(id: number): LevelMechanics {
 
 /**
  * Calculate difficulty modifiers based on level
+ * Early levels (1-5) are much easier for mobile players
  */
 function getModifiersForLevel(id: number): LevelModifiers {
-  // Level 1: Very slow and easy
-  if (id === 1) {
+  // Level 1-3: Very slow and easy (tutorial-like)
+  if (id <= 3) {
     return {
-      speedMultiplier: 0.3,
-      spawnRateMultiplier: 0.25,
+      speedMultiplier: 0.2 + (id * 0.05),  // 0.25, 0.30, 0.35
+      spawnRateMultiplier: 0.15 + (id * 0.05),  // 0.20, 0.25, 0.30
     };
   }
   
-  const speedMultiplier = Math.min(1.4, 0.65 + (id * 0.008));
-  const spawnRateMultiplier = Math.min(1.3, 0.55 + (id * 0.008));
+  // Level 4-10: Gradual increase
+  if (id <= 10) {
+    return {
+      speedMultiplier: 0.35 + ((id - 3) * 0.05),  // 0.40 to 0.70
+      spawnRateMultiplier: 0.30 + ((id - 3) * 0.04),  // 0.34 to 0.58
+    };
+  }
+  
+  // Level 11+: Normal progression
+  const speedMultiplier = Math.min(1.4, 0.70 + ((id - 10) * 0.008));
+  const spawnRateMultiplier = Math.min(1.3, 0.58 + ((id - 10) * 0.008));
   
   return {
     speedMultiplier: Math.round(speedMultiplier * 100) / 100,
