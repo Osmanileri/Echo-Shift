@@ -11,7 +11,6 @@ import RestorePrompt from "./components/Restore/RestorePrompt";
 import Shop from "./components/Shop/Shop";
 import TutorialOverlay from "./components/Tutorial/TutorialOverlay";
 import { STORAGE_KEYS } from "./constants";
-import { getZoneById } from "./data/zones";
 import { useGameStore } from "./store/gameStore";
 import { getActiveUpgradeEffects } from "./systems/upgradeSystem";
 import { GameState, Mission, MissionEvent } from "./types";
@@ -42,6 +41,7 @@ import RitualsPanel from "./components/Rituals/RitualsPanel";
 import { DailyRitualsState, getDailyRitualsSystem, setupRitualAnalytics } from "./systems/dailyRituals";
 // Campaign Mode - Requirements 7.1
 import LevelMap from "./components/Campaign/LevelMap";
+import VictoryScreen from "./components/VictoryScreen/VictoryScreen";
 import { LevelConfig } from "./data/levels";
 // Rate Us System - Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8
 import RatePrompt from "./components/RateUs/RatePrompt";
@@ -154,6 +154,18 @@ const App: React.FC = () => {
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [isNearFinish, setIsNearFinish] = useState<boolean>(false);
   
+  // Victory Screen state - for level completion
+  const [showVictoryScreen, setShowVictoryScreen] = useState<boolean>(false);
+  const [victoryData, setVictoryData] = useState<{
+    levelId: number;
+    stars: number;
+    distanceTraveled: number;
+    targetDistance: number;
+    shardsEarned: number;
+    firstClearBonus: number;
+    isFirstClear: boolean;
+  } | null>(null);
+  
   // Game start notification state
   const [gameStartNotification, setGameStartNotification] = useState<string | null>(null);
 
@@ -161,12 +173,6 @@ const App: React.FC = () => {
   const echoShards = useGameStore((state) => state.echoShards);
   const addEchoShards = useGameStore((state) => state.addEchoShards);
   const spendEchoShards = useGameStore((state) => state.spendEchoShards);
-
-  // Zone System (Phase 2)
-  const selectedZoneId = useGameStore((state) => state.selectedZoneId);
-  const unlockedZones = useGameStore((state) => state.unlockedZones);
-  const selectZone = useGameStore((state) => state.selectZone);
-  const unlockZone = useGameStore((state) => state.unlockZone);
 
   // Haptic Settings - Requirements 4.6
   const hapticEnabled = useGameStore((state) => state.hapticEnabled);
@@ -653,40 +659,54 @@ const App: React.FC = () => {
     const starRating = calculateStarRating(levelResult);
     const stars = starRating.stars;
     
-    if (stars > 0) {
-      // Check if next level will be newly unlocked - Requirements 13.1
-      const currentLevelId = campaignLevelConfig.id;
-      const nextLevelId = currentLevelId + 1;
-      const state = useGameStore.getState();
-      const wasNextLevelUnlocked = state.completedLevels.includes(currentLevelId);
-      const previousStars = state.levelStars[currentLevelId] || 0;
-      const isFirstClear = !state.completedLevels.includes(currentLevelId);
-      
-      // Update store with level completion
-      state.completeLevel(campaignLevelConfig.id, stars);
-      
-      // Track newly unlocked level for animation - Requirements 13.1
-      if (!wasNextLevelUnlocked && nextLevelId <= 100) {
-        setJustCompletedLevel(currentLevelId);
-        setNewlyUnlockedLevel(nextLevelId);
-      }
-      
-      // Calculate reward using new formula - Requirements 9.1, 9.2, 9.3
-      const rewardResult = calculateLevelReward(
-        currentLevelId,
-        stars,
-        isFirstClear,
-        previousStars
-      );
-      
-      if (rewardResult.totalReward > 0) {
-        addEchoShards(rewardResult.totalReward);
-        setEarnedShards(rewardResult.totalReward);
-      }
-      
-      // Play celebration sound
-      AudioSystem.playNewHighScore();
+    // Check if next level will be newly unlocked - Requirements 13.1
+    const currentLevelId = campaignLevelConfig.id;
+    const nextLevelId = currentLevelId + 1;
+    const state = useGameStore.getState();
+    const wasNextLevelUnlocked = state.completedLevels.includes(currentLevelId);
+    const previousStars = state.levelStars[currentLevelId] || 0;
+    const isFirstClear = !state.completedLevels.includes(currentLevelId);
+    
+    // Update store with level completion
+    state.completeLevel(campaignLevelConfig.id, stars);
+    
+    // Track newly unlocked level for animation - Requirements 13.1
+    if (!wasNextLevelUnlocked && nextLevelId <= 100) {
+      setJustCompletedLevel(currentLevelId);
+      setNewlyUnlockedLevel(nextLevelId);
     }
+    
+    // Calculate reward using new formula - Requirements 9.1, 9.2, 9.3
+    const rewardResult = calculateLevelReward(
+      currentLevelId,
+      stars,
+      isFirstClear,
+      previousStars
+    );
+    
+    const totalReward = rewardResult.totalReward || 0;
+    const firstClearBonus = rewardResult.firstClearBonus || 0;
+    
+    if (totalReward > 0) {
+      addEchoShards(totalReward);
+      setEarnedShards(totalReward);
+    }
+    
+    // Play celebration sound
+    AudioSystem.playNewHighScore();
+    
+    // Set victory data and show victory screen
+    setVictoryData({
+      levelId: currentLevelId,
+      stars: stars,
+      distanceTraveled: result.distanceTraveled,
+      targetDistance: campaignLevelConfig.targetDistance,
+      shardsEarned: totalReward,
+      firstClearBonus: firstClearBonus,
+      isFirstClear: isFirstClear,
+    });
+    setShowVictoryScreen(true);
+    setGameState(GameState.GAME_OVER);
   }, [campaignLevelConfig, addEchoShards]);
 
   const handleClaimMission = useCallback((missionId: string) => {
@@ -807,7 +827,6 @@ const App: React.FC = () => {
           },
         } : undefined}
         dailyChallengeMode={dailyChallengeMode}
-        zoneConfig={getZoneById(selectedZoneId)}
         restoreMode={restoreMode}
         restoreRequested={restoreRequested}
         onRestoreStateUpdate={handleRestoreStateUpdate}
@@ -819,7 +838,16 @@ const App: React.FC = () => {
         highScore={highScore}
         speed={gameSpeed}
         onStart={handleStart}
-        onRestart={handleStartEndlessMode}
+        onRestart={() => {
+          // If in campaign mode, restart the same level
+          if (campaignLevelConfig) {
+            handleSelectCampaignLevel(campaignLevelConfig);
+          } else {
+            // Fallback to campaign map if no level selected
+            setGameState(GameState.MENU);
+            setShowCampaignMap(true);
+          }
+        }}
         onPause={handlePause}
         onResume={handleResume}
         onMainMenu={handleMainMenu}
@@ -833,10 +861,6 @@ const App: React.FC = () => {
         nearMissStreak={nearMissStreak}
         echoShards={echoShards}
         earnedShards={earnedShards}
-        selectedZoneId={selectedZoneId}
-        unlockedZones={unlockedZones}
-        onSelectZone={selectZone}
-        onUnlockZone={(zoneId, cost) => unlockZone(zoneId, cost)}
         slowMotionUsesRemaining={slowMotionUsesRemaining}
         slowMotionActive={slowMotionActive}
         onActivateSlowMotion={handleActivateSlowMotion}
@@ -854,6 +878,49 @@ const App: React.FC = () => {
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />
+      {/* Victory Screen - Level Complete */}
+      {showVictoryScreen && victoryData && (
+        <VictoryScreen
+          levelId={victoryData.levelId}
+          stars={victoryData.stars}
+          distanceTraveled={victoryData.distanceTraveled}
+          targetDistance={victoryData.targetDistance}
+          shardsEarned={victoryData.shardsEarned}
+          firstClearBonus={victoryData.firstClearBonus}
+          isFirstClear={victoryData.isFirstClear}
+          onRestart={() => {
+            setShowVictoryScreen(false);
+            setVictoryData(null);
+            if (campaignLevelConfig) {
+              handleSelectCampaignLevel(campaignLevelConfig);
+            }
+          }}
+          onNextLevel={() => {
+            setShowVictoryScreen(false);
+            setVictoryData(null);
+            // Go to next level
+            const nextLevelId = victoryData.levelId + 1;
+            if (nextLevelId <= 100) {
+              const { getLevelById } = require('./data/levels');
+              const nextLevel = getLevelById(nextLevelId);
+              if (nextLevel) {
+                handleSelectCampaignLevel(nextLevel);
+              }
+            } else {
+              // All levels complete, go to menu
+              setGameState(GameState.MENU);
+              setShowCampaignMap(true);
+            }
+          }}
+          onMainMenu={() => {
+            setShowVictoryScreen(false);
+            setVictoryData(null);
+            setCampaignLevelConfig(null);
+            setGameState(GameState.MENU);
+            setShowCampaignMap(true);
+          }}
+        />
+      )}
       <DailyChallenge
         isOpen={isDailyChallengeOpen}
         onClose={handleCloseDailyChallenge}

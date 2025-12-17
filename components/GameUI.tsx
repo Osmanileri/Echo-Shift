@@ -20,12 +20,10 @@ import {
     VolumeX,
     X
 } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
-import { ZONES, ZoneConfig, ZoneId } from "../data/zones";
+import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
 import { getHapticSystem } from "../systems/hapticSystem";
 import { GameState } from "../types";
-import { ZoneUnlockModal } from "./Zones/ZoneUnlockModal";
 
 interface GameUIProps {
   gameState: GameState;
@@ -49,10 +47,6 @@ interface GameUIProps {
   nearMissStreak?: number;
   echoShards?: number;
   earnedShards?: number;
-  selectedZoneId?: ZoneId;
-  unlockedZones?: ZoneId[];
-  onSelectZone?: (zoneId: ZoneId) => void;
-  onUnlockZone?: (zoneId: ZoneId, cost: number) => boolean;
   slowMotionUsesRemaining?: number;
   slowMotionActive?: boolean;
   onActivateSlowMotion?: () => void;
@@ -92,10 +86,6 @@ const GameUI: React.FC<GameUIProps> = ({
   nearMissStreak = 0,
   echoShards = 0,
   earnedShards = 0,
-  selectedZoneId = "sub-bass",
-  unlockedZones = ["sub-bass"],
-  onSelectZone,
-  onUnlockZone,
   slowMotionUsesRemaining = 0,
   slowMotionActive = false,
   onActivateSlowMotion,
@@ -114,11 +104,6 @@ const GameUI: React.FC<GameUIProps> = ({
   shardsCollectedInRun = 0,
 }) => {
   const [showContent, setShowContent] = useState(false);
-  const [unlockModalOpen, setUnlockModalOpen] = useState(false);
-  const [unlockTargetZone, setUnlockTargetZone] = useState<ZoneConfig | null>(
-    null
-  );
-  const zoneScrollRef = useRef<HTMLDivElement>(null);
   
   // Audio volume state
   const [sfxVolume, setSfxVolume] = useState(() => AudioSystem.getVolume());
@@ -157,29 +142,6 @@ const GameUI: React.FC<GameUIProps> = ({
   }, [gameState]);
 
   // Center selected zone card
-  useEffect(() => {
-    if (
-      gameState === GameState.MENU &&
-      zoneScrollRef.current &&
-      selectedZoneId
-    ) {
-      const container = zoneScrollRef.current;
-      const selectedIndex = ZONES.findIndex((z) => z.id === selectedZoneId);
-      if (selectedIndex >= 0) {
-        const cardWidth = 140 + 12; // card width + gap
-        const containerWidth = container.offsetWidth;
-        const scrollPosition =
-          selectedIndex * cardWidth - containerWidth / 2 + 140 / 2;
-        setTimeout(() => {
-          container.scrollTo({
-            left: Math.max(0, scrollPosition),
-            behavior: "smooth",
-          });
-        }, 400);
-      }
-    }
-  }, [gameState, selectedZoneId]);
-
   // Tutorial cards data
   const tutorialCards = [
     {
@@ -486,8 +448,6 @@ const GameUI: React.FC<GameUIProps> = ({
 
   // ============ MENU STATE ============
   if (gameState === GameState.MENU) {
-    const unlockedSet = new Set(unlockedZones);
-
     return (
       <div className="absolute inset-0 z-20 text-white overflow-hidden select-none">
         {/* Background */}
@@ -784,149 +744,6 @@ const GameUI: React.FC<GameUIProps> = ({
             </div>
           </div>
 
-          {/* ===== ZONE SELECTOR ===== */}
-          <div className="w-full mb-4">
-            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-bold mb-2 px-1">
-              FREKANS SEÇ
-            </p>
-            <div
-              ref={zoneScrollRef}
-              className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] no-scrollbar"
-            >
-              {ZONES.map((zone) => {
-                const isUnlocked = unlockedSet.has(zone.id);
-                const isSelected = selectedZoneId === zone.id;
-                const canAfford = echoShards >= zone.unlockCost;
-
-                // Zone color mapping
-                const zoneColors: Record<
-                  ZoneId,
-                  { bg: string; border: string; text: string }
-                > = {
-                  "sub-bass": {
-                    bg: "from-blue-600/30 to-blue-900/20",
-                    border: "border-blue-500/40",
-                    text: "text-blue-300",
-                  },
-                  bass: {
-                    bg: "from-purple-600/30 to-purple-900/20",
-                    border: "border-purple-500/40",
-                    text: "text-purple-300",
-                  },
-                  mid: {
-                    bg: "from-green-600/30 to-green-900/20",
-                    border: "border-green-500/40",
-                    text: "text-green-300",
-                  },
-                  high: {
-                    bg: "from-orange-600/30 to-orange-900/20",
-                    border: "border-orange-500/40",
-                    text: "text-orange-300",
-                  },
-                  ultra: {
-                    bg: "from-red-600/30 to-red-900/20",
-                    border: "border-red-500/40",
-                    text: "text-red-300",
-                  },
-                };
-                const colors = zoneColors[zone.id];
-
-                return (
-                  <button
-                    key={zone.id}
-                    onClick={() => {
-                      if (isUnlocked) {
-                        AudioSystem.playZoneSelect();
-                        onSelectZone?.(zone.id);
-                      } else {
-                        AudioSystem.playButtonClick();
-                        setUnlockTargetZone(zone);
-                        setUnlockModalOpen(true);
-                      }
-                    }}
-                    className={`relative snap-center flex-shrink-0 w-[140px] rounded-2xl overflow-hidden transition-all duration-300 ${
-                      isSelected
-                        ? `${colors.border} border-2 shadow-[0_0_25px_rgba(0,240,255,0.2)] scale-105`
-                        : "border border-white/10"
-                    } ${!isUnlocked ? "opacity-60 grayscale" : ""}`}
-                  >
-                    {/* Top gradient section */}
-                    <div
-                      className={`h-20 bg-gradient-to-b ${colors.bg} flex flex-col items-center justify-center relative`}
-                    >
-                      <p className="text-[8px] text-white/60 uppercase tracking-wider">
-                        {zone.subtitle.split("/")[0]}
-                      </p>
-                      <h4
-                        className={`text-lg font-black ${colors.text} tracking-widest uppercase`}
-                      >
-                        {zone.name}
-                      </h4>
-
-                      {isSelected && (
-                        <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30">
-                          <span className="text-[7px] font-bold text-cyan-400">
-                            SEÇİLİ
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Bottom info section */}
-                    <div className="bg-black/60 backdrop-blur-md p-3">
-                      <p className="text-[8px] text-white/50 leading-relaxed line-clamp-2 mb-2">
-                        {zone.description}
-                      </p>
-                      <div className="text-[8px] text-white/40 uppercase font-bold mb-1">
-                        MODİFİLER:
-                      </div>
-                      <div className="flex flex-col gap-0.5 text-[9px] font-mono">
-                        <span
-                          className={
-                            zone.modifiers.speedMultiplier > 1
-                              ? "text-orange-300"
-                              : "text-green-300"
-                          }
-                        >
-                          - Hız x{zone.modifiers.speedMultiplier}
-                        </span>
-                        <span
-                          className={
-                            zone.modifiers.spawnRateMultiplier > 1
-                              ? "text-orange-300"
-                              : "text-green-300"
-                          }
-                        >
-                          - Spawn x{zone.modifiers.spawnRateMultiplier}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Lock overlay */}
-                    {!isUnlocked && (
-                      <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] flex flex-col items-center justify-center">
-                        <div className="flex items-center gap-1.5 bg-black/60 px-3 py-1.5 rounded-lg border border-white/10">
-                          <Gem
-                            className={`w-3.5 h-3.5 ${
-                              canAfford ? "text-cyan-400" : "text-red-400"
-                            }`}
-                          />
-                          <span
-                            className={`text-sm font-bold ${
-                              canAfford ? "text-cyan-400" : "text-red-400"
-                            }`}
-                          >
-                            {zone.unlockCost}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* ===== START BUTTON - Campaign First Flow ===== */}
           {/* Campaign Update v2.5 - Requirements 1.1, 1.2: "Start Game" opens level selection directly */}
           <div className="w-full max-w-xs mx-auto">
@@ -970,25 +787,6 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
         </div>
 
-        {/* Zone Unlock Modal */}
-        <ZoneUnlockModal
-          isOpen={unlockModalOpen}
-          zone={unlockTargetZone}
-          balance={echoShards}
-          playerLevel={syncRate}
-          onClose={() => {
-            setUnlockModalOpen(false);
-            setUnlockTargetZone(null);
-          }}
-          onConfirmUnlock={(zone) => {
-            if (!onUnlockZone) return;
-            const ok = onUnlockZone(zone.id, zone.unlockCost);
-            if (ok) {
-              setUnlockModalOpen(false);
-              setUnlockTargetZone(null);
-            }
-          }}
-        />
       </div>
     );
   }
