@@ -5,26 +5,25 @@
  * Requirements: 7.1, 7.2, 7.3, 7.4, 8.3, 8.4, 8.8
  */
 
-import { describe, test, expect } from 'vitest';
 import * as fc from 'fast-check';
+import { describe, expect, test } from 'vitest';
 import {
+  EnhancedResonanceState,
+  GameSnapshot,
+  Obstacle,
+  ShiftProtocolState
+} from '../types';
+import {
+  calculateRestoreCost,
+  canRestoreV2,
+  captureSnapshot,
+  clearSnapshotBuffer,
+  DEFAULT_SNAPSHOT_BUFFER_CAPACITY,
+  getRestoreSnapshot,
   initializeSnapshotBuffer,
   pushSnapshot,
-  getRestoreSnapshot,
-  clearSnapshotBuffer,
-  captureSnapshot,
-  canRestoreV2,
-  calculateRestoreCost,
-  DEFAULT_SNAPSHOT_BUFFER_CAPACITY,
   RESTORE_CONFIG,
 } from './restoreSystem';
-import { 
-  GameSnapshot, 
-  SnapshotBuffer, 
-  ShiftProtocolState, 
-  EnhancedResonanceState,
-  Obstacle 
-} from '../types';
 
 // ============================================================================
 // Test Data Generators
@@ -115,18 +114,18 @@ describe('Snapshot Buffer Capacity Properties', () => {
         fc.array(gameSnapshotArb, { minLength: 1, maxLength: 500 }),
         (capacity, numPushes, snapshots) => {
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Push snapshots up to numPushes (cycling through available snapshots)
           for (let i = 0; i < numPushes; i++) {
             const snapshot = snapshots[i % snapshots.length];
             buffer = pushSnapshot(buffer, snapshot);
-            
+
             // After each push, size must not exceed capacity
             if (buffer.size > capacity) {
               return false;
             }
           }
-          
+
           return true;
         }
       ),
@@ -147,12 +146,12 @@ describe('Snapshot Buffer Capacity Properties', () => {
         fc.array(gameSnapshotArb, { minLength: 200, maxLength: 300 }), // more snapshots than capacity
         (capacity, snapshots) => {
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Push more snapshots than capacity
           for (let i = 0; i < capacity + 50; i++) {
             buffer = pushSnapshot(buffer, snapshots[i % snapshots.length]);
           }
-          
+
           // Size should equal capacity (not exceed it)
           return buffer.size === capacity;
         }
@@ -174,22 +173,22 @@ describe('Snapshot Buffer Capacity Properties', () => {
         (snapshots) => {
           const capacity = 5;
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Push all snapshots (more than capacity)
           for (const snapshot of snapshots) {
             buffer = pushSnapshot(buffer, snapshot);
           }
-          
+
           // Get the restore snapshot (oldest in buffer)
           const oldestSnapshot = getRestoreSnapshot(buffer);
-          
+
           if (!oldestSnapshot) return false;
-          
+
           // The oldest snapshot should be from the last `capacity` snapshots pushed
           // It should be the (snapshots.length - capacity)th snapshot
           const expectedOldestIndex = snapshots.length - capacity;
           const expectedOldest = snapshots[expectedOldestIndex];
-          
+
           // Compare timestamps to verify correct oldest snapshot
           return oldestSnapshot.timestamp === expectedOldest.timestamp;
         }
@@ -210,10 +209,10 @@ describe('Snapshot Buffer Capacity Properties', () => {
         fc.integer({ min: 1, max: 500 }),
         (capacity) => {
           const buffer = initializeSnapshotBuffer(capacity);
-          
-          return buffer.size === 0 && 
-                 buffer.capacity === capacity && 
-                 buffer.head === 0;
+
+          return buffer.size === 0 &&
+            buffer.capacity === capacity &&
+            buffer.head === 0;
         }
       ),
       { numRuns: 100 }
@@ -239,23 +238,23 @@ describe('Buffer Cleanup Properties', () => {
         fc.array(gameSnapshotArb, { minLength: 1, maxLength: 100 }), // snapshots to add
         (capacity, snapshots) => {
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Fill buffer with snapshots
           for (const snapshot of snapshots) {
             buffer = pushSnapshot(buffer, snapshot);
           }
-          
+
           // Verify buffer has content
           const hadContent = buffer.size > 0;
-          
+
           // Clear the buffer
           const clearedBuffer = clearSnapshotBuffer(buffer);
-          
+
           // Verify buffer is cleared
-          const isCleared = clearedBuffer.size === 0 && 
-                           clearedBuffer.head === 0 &&
-                           clearedBuffer.capacity === capacity;
-          
+          const isCleared = clearedBuffer.size === 0 &&
+            clearedBuffer.head === 0 &&
+            clearedBuffer.capacity === capacity;
+
           return hadContent && isCleared;
         }
       ),
@@ -276,15 +275,15 @@ describe('Buffer Cleanup Properties', () => {
         fc.array(gameSnapshotArb, { minLength: 0, maxLength: 50 }),
         (capacity, snapshots) => {
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Add some snapshots
           for (const snapshot of snapshots) {
             buffer = pushSnapshot(buffer, snapshot);
           }
-          
+
           // Clear and verify capacity is preserved
           const clearedBuffer = clearSnapshotBuffer(buffer);
-          
+
           return clearedBuffer.capacity === capacity;
         }
       ),
@@ -305,15 +304,15 @@ describe('Buffer Cleanup Properties', () => {
         fc.array(gameSnapshotArb, { minLength: 1, maxLength: 50 }),
         (capacity, snapshots) => {
           let buffer = initializeSnapshotBuffer(capacity);
-          
+
           // Fill buffer
           for (const snapshot of snapshots) {
             buffer = pushSnapshot(buffer, snapshot);
           }
-          
+
           // Clear buffer
           const clearedBuffer = clearSnapshotBuffer(buffer);
-          
+
           // getRestoreSnapshot should return null
           return getRestoreSnapshot(clearedBuffer) === null;
         }
@@ -350,9 +349,9 @@ describe('Snapshot Completeness Properties', () => {
         resonanceStateArb,                        // resonanceState
         fc.integer({ min: 45, max: 200 }),       // connectorLength
         fc.integer({ min: 100, max: 700 }),      // midlineY
-        (timestamp, score, gameSpeed, playerPosition, orbSwapState, 
-         obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
-          
+        (timestamp, score, gameSpeed, playerPosition, orbSwapState,
+          obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
+
           const gameState = {
             timestamp,
             score,
@@ -365,9 +364,9 @@ describe('Snapshot Completeness Properties', () => {
             connectorLength,
             midlineY,
           };
-          
+
           const snapshot = captureSnapshot(gameState);
-          
+
           // Verify all required fields are present
           const hasTimestamp = typeof snapshot.timestamp === 'number';
           const hasScore = typeof snapshot.score === 'number';
@@ -379,10 +378,10 @@ describe('Snapshot Completeness Properties', () => {
           const hasResonanceState = snapshot.resonanceState !== undefined;
           const hasConnectorLength = typeof snapshot.connectorLength === 'number';
           const hasMidlineY = typeof snapshot.midlineY === 'number';
-          
+
           return hasTimestamp && hasScore && hasGameSpeed && hasPlayerPosition &&
-                 hasOrbSwapState && hasObstacles && hasShiftState && 
-                 hasResonanceState && hasConnectorLength && hasMidlineY;
+            hasOrbSwapState && hasObstacles && hasShiftState &&
+            hasResonanceState && hasConnectorLength && hasMidlineY;
         }
       ),
       { numRuns: 100 }
@@ -409,8 +408,8 @@ describe('Snapshot Completeness Properties', () => {
         fc.integer({ min: 45, max: 200 }),
         fc.integer({ min: 100, max: 700 }),
         (timestamp, score, gameSpeed, playerPosition, orbSwapState,
-         obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
-          
+          obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
+
           const gameState = {
             timestamp,
             score,
@@ -423,9 +422,9 @@ describe('Snapshot Completeness Properties', () => {
             connectorLength,
             midlineY,
           };
-          
+
           const snapshot = captureSnapshot(gameState);
-          
+
           // Verify values are preserved
           const timestampMatch = snapshot.timestamp === timestamp;
           const scoreMatch = snapshot.score === score;
@@ -435,9 +434,9 @@ describe('Snapshot Completeness Properties', () => {
           const obstaclesMatch = snapshot.obstacles.length === obstacles.length;
           const connectorMatch = snapshot.connectorLength === connectorLength;
           const midlineMatch = snapshot.midlineY === midlineY;
-          
+
           return timestampMatch && scoreMatch && speedMatch && positionMatch &&
-                 swapMatch && obstaclesMatch && connectorMatch && midlineMatch;
+            swapMatch && obstaclesMatch && connectorMatch && midlineMatch;
         }
       ),
       { numRuns: 100 }
@@ -464,8 +463,8 @@ describe('Snapshot Completeness Properties', () => {
         fc.integer({ min: 45, max: 200 }),
         fc.integer({ min: 100, max: 700 }),
         (timestamp, score, gameSpeed, playerPosition, orbSwapState,
-         obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
-          
+          obstacles, shiftState, resonanceState, connectorLength, midlineY) => {
+
           const gameState = {
             timestamp,
             score,
@@ -478,28 +477,28 @@ describe('Snapshot Completeness Properties', () => {
             connectorLength,
             midlineY,
           };
-          
+
           const snapshot = captureSnapshot(gameState);
-          
+
           // Verify each obstacle is captured with required properties
           for (let i = 0; i < obstacles.length; i++) {
             const original = obstacles[i];
             const captured = snapshot.obstacles[i];
-            
+
             if (!captured) return false;
-            
+
             // Check essential obstacle properties are preserved
             const idMatch = captured.id === original.id;
             const xMatch = captured.x === original.x;
             const yMatch = captured.y === original.y;
             const laneMatch = captured.lane === original.lane;
             const polarityMatch = captured.polarity === original.polarity;
-            
+
             if (!idMatch || !xMatch || !yMatch || !laneMatch || !polarityMatch) {
               return false;
             }
           }
-          
+
           return true;
         }
       ),
@@ -529,7 +528,7 @@ describe('Restore Button State Properties', () => {
         fc.boolean(),
         (shards, hasUsedRestore) => {
           const canUseRestore = canRestoreV2(shards, hasUsedRestore);
-          
+
           // When shards < 100, restore should always be disabled
           return canUseRestore === false;
         }
@@ -552,7 +551,7 @@ describe('Restore Button State Properties', () => {
         (shards) => {
           // hasUsedRestore is false (not used yet)
           const canUseRestore = canRestoreV2(shards, false);
-          
+
           // When shards >= 100 and not used, restore should be enabled
           return canUseRestore === true;
         }
@@ -571,7 +570,7 @@ describe('Restore Button State Properties', () => {
     // Boundary test: exactly at the cost threshold
     const canUseRestore = canRestoreV2(100, false);
     expect(canUseRestore).toBe(true);
-    
+
     // Just below threshold
     const cannotUseRestore = canRestoreV2(99, false);
     expect(cannotUseRestore).toBe(false);
@@ -611,7 +610,7 @@ describe('Single Restore Per Run Properties', () => {
         (shards) => {
           // hasUsedRestore is true (already used)
           const canUseRestore = canRestoreV2(shards, true);
-          
+
           // When restore has been used, it should always be disabled
           return canUseRestore === false;
         }
@@ -634,10 +633,10 @@ describe('Single Restore Per Run Properties', () => {
         (shards) => {
           // First restore should be available
           const firstRestore = canRestoreV2(shards, false);
-          
+
           // After use, restore should be disabled
           const secondRestore = canRestoreV2(shards, true);
-          
+
           return firstRestore === true && secondRestore === false;
         }
       ),
@@ -654,13 +653,13 @@ describe('Single Restore Per Run Properties', () => {
   test('Restore state transition is permanent within a run', () => {
     // Simulate a run where restore is used
     const initialShards = 500;
-    
+
     // Before use
     expect(canRestoreV2(initialShards, false)).toBe(true);
-    
+
     // After use (hasUsedRestore becomes true)
     expect(canRestoreV2(initialShards, true)).toBe(false);
-    
+
     // Even with more shards, still disabled
     expect(canRestoreV2(initialShards + 1000, true)).toBe(false);
   });
@@ -672,10 +671,10 @@ describe('Single Restore Per Run Properties', () => {
 // ============================================================================
 
 import {
+  applyInvulnerability,
+  clearSafeZone,
   deductRestoreCost,
   executeRestoreV2,
-  clearSafeZone,
-  applyInvulnerability,
 } from './restoreSystem';
 
 describe('Restore Currency Deduction Properties', () => {
@@ -693,7 +692,7 @@ describe('Restore Currency Deduction Properties', () => {
         (shards) => {
           const newBalance = deductRestoreCost(shards);
           const expectedBalance = shards - 100;
-          
+
           return newBalance === expectedBalance;
         }
       ),
@@ -714,7 +713,7 @@ describe('Restore Currency Deduction Properties', () => {
         (shards) => {
           const newBalance = deductRestoreCost(shards);
           const deductedAmount = shards - newBalance;
-          
+
           return deductedAmount === 100;
         }
       ),
@@ -735,7 +734,7 @@ describe('Restore Currency Deduction Properties', () => {
         fc.integer({ min: 0, max: 100000 }),
         (shards) => {
           const newBalance = deductRestoreCost(shards);
-          
+
           // Balance should never be negative
           return newBalance >= 0;
         }
@@ -777,7 +776,7 @@ describe('Restore State Rewind Properties', () => {
         (currentSnapshot, targetSnapshot) => {
           // Execute restore from current to target
           const restoredState = executeRestoreV2(currentSnapshot, targetSnapshot);
-          
+
           // Verify core state values match the target snapshot
           const timestampMatch = restoredState.timestamp === targetSnapshot.timestamp;
           const scoreMatch = restoredState.score === targetSnapshot.score;
@@ -786,9 +785,9 @@ describe('Restore State Rewind Properties', () => {
           const swapMatch = restoredState.orbSwapState === targetSnapshot.orbSwapState;
           const connectorMatch = restoredState.connectorLength === targetSnapshot.connectorLength;
           const midlineMatch = restoredState.midlineY === targetSnapshot.midlineY;
-          
+
           return timestampMatch && scoreMatch && speedMatch && positionMatch &&
-                 swapMatch && connectorMatch && midlineMatch;
+            swapMatch && connectorMatch && midlineMatch;
         }
       ),
       { numRuns: 100 }
@@ -808,7 +807,7 @@ describe('Restore State Rewind Properties', () => {
         gameSnapshotArb,
         (currentSnapshot, targetSnapshot) => {
           const restoredState = executeRestoreV2(currentSnapshot, targetSnapshot);
-          
+
           // Obstacle count should match target snapshot
           return restoredState.obstacles.length === targetSnapshot.obstacles.length;
         }
@@ -830,11 +829,11 @@ describe('Restore State Rewind Properties', () => {
         gameSnapshotArb,
         (currentSnapshot, targetSnapshot) => {
           const restoredState = executeRestoreV2(currentSnapshot, targetSnapshot);
-          
+
           // Shift state should match target
           const overdriveMatch = restoredState.shiftState.overdriveActive === targetSnapshot.shiftState.overdriveActive;
           const timerMatch = restoredState.shiftState.overdriveTimer === targetSnapshot.shiftState.overdriveTimer;
-          
+
           return overdriveMatch && timerMatch;
         }
       ),
@@ -855,11 +854,11 @@ describe('Restore State Rewind Properties', () => {
         gameSnapshotArb,
         (currentSnapshot, targetSnapshot) => {
           const restoredState = executeRestoreV2(currentSnapshot, targetSnapshot);
-          
+
           // Resonance state should match target
           const activeMatch = restoredState.resonanceState.isActive === targetSnapshot.resonanceState.isActive;
           const multiplierMatch = restoredState.resonanceState.multiplier === targetSnapshot.resonanceState.multiplier;
-          
+
           return activeMatch && multiplierMatch;
         }
       ),
@@ -880,14 +879,14 @@ describe('Restore State Rewind Properties', () => {
         gameSnapshotArb,
         (currentSnapshot, targetSnapshot) => {
           // Ensure snapshots are different
-          fc.pre(currentSnapshot.timestamp !== targetSnapshot.timestamp || 
-                 currentSnapshot.score !== targetSnapshot.score);
-          
+          fc.pre(currentSnapshot.timestamp !== targetSnapshot.timestamp ||
+            currentSnapshot.score !== targetSnapshot.score);
+
           const restoredState = executeRestoreV2(currentSnapshot, targetSnapshot);
-          
+
           // Restored state should match target, not current
           return restoredState.timestamp === targetSnapshot.timestamp &&
-                 restoredState.score === targetSnapshot.score;
+            restoredState.score === targetSnapshot.score;
         }
       ),
       { numRuns: 100 }
@@ -918,7 +917,7 @@ describe('Safe Zone Clearance Properties', () => {
         fc.constantFrom(100, RESTORE_CONFIG.safeZoneRadius),
         (playerX, obstacles, radius) => {
           const clearedObstacles = clearSafeZone(obstacles, playerX, radius);
-          
+
           // Verify no remaining obstacle is within the safe zone
           for (const obstacle of clearedObstacles) {
             const distance = Math.abs(obstacle.x - playerX);
@@ -926,7 +925,7 @@ describe('Safe Zone Clearance Properties', () => {
               return false;
             }
           }
-          
+
           return true;
         }
       ),
@@ -948,12 +947,12 @@ describe('Safe Zone Clearance Properties', () => {
         (playerX, obstacles) => {
           const radius = 100;
           const clearedObstacles = clearSafeZone(obstacles, playerX, radius);
-          
+
           // Count obstacles that should be preserved (outside safe zone)
-          const expectedPreserved = obstacles.filter(obs => 
+          const expectedPreserved = obstacles.filter(obs =>
             Math.abs(obs.x - playerX) >= radius
           );
-          
+
           // All preserved obstacles should be in the result
           return clearedObstacles.length === expectedPreserved.length;
         }
@@ -971,7 +970,7 @@ describe('Safe Zone Clearance Properties', () => {
   test('Obstacles at exactly boundary distance are preserved', () => {
     const playerX = 500;
     const radius = 100;
-    
+
     // Create obstacle at exactly the boundary
     const boundaryObstacle: Obstacle = {
       id: 'boundary-test',
@@ -984,7 +983,7 @@ describe('Safe Zone Clearance Properties', () => {
       polarity: 'white',
       passed: false,
     };
-    
+
     // Create obstacle inside safe zone
     const insideObstacle: Obstacle = {
       id: 'inside-test',
@@ -997,10 +996,10 @@ describe('Safe Zone Clearance Properties', () => {
       polarity: 'black',
       passed: false,
     };
-    
+
     const obstacles = [boundaryObstacle, insideObstacle];
     const clearedObstacles = clearSafeZone(obstacles, playerX, radius);
-    
+
     // Boundary obstacle should be preserved, inside obstacle should be removed
     expect(clearedObstacles.length).toBe(1);
     expect(clearedObstacles[0].id).toBe('boundary-test');
@@ -1018,7 +1017,7 @@ describe('Safe Zone Clearance Properties', () => {
         fc.integer({ min: 200, max: 800 }),
         (playerX) => {
           const radius = 100;
-          
+
           // Create obstacles on both sides within safe zone
           const leftObstacle: Obstacle = {
             id: 'left',
@@ -1031,7 +1030,7 @@ describe('Safe Zone Clearance Properties', () => {
             polarity: 'white',
             passed: false,
           };
-          
+
           const rightObstacle: Obstacle = {
             id: 'right',
             x: playerX + 50,
@@ -1043,10 +1042,10 @@ describe('Safe Zone Clearance Properties', () => {
             polarity: 'black',
             passed: false,
           };
-          
+
           const obstacles = [leftObstacle, rightObstacle];
           const clearedObstacles = clearSafeZone(obstacles, playerX, radius);
-          
+
           // Both should be cleared
           return clearedObstacles.length === 0;
         }
@@ -1090,13 +1089,13 @@ describe('Post-Restore Invulnerability Properties', () => {
             isInvulnerable: initialInvulnerable,
             invulnerabilityTimer: initialTimer,
           };
-          
+
           // Apply invulnerability (default 2000ms)
           const newState = applyInvulnerability(state);
-          
+
           // Should be invulnerable with 2000ms timer
-          return newState.isInvulnerable === true && 
-                 newState.invulnerabilityTimer === 2000;
+          return newState.isInvulnerable === true &&
+            newState.invulnerabilityTimer === 2000;
         }
       ),
       { numRuns: 100 }
@@ -1119,9 +1118,9 @@ describe('Post-Restore Invulnerability Properties', () => {
             isInvulnerable: initialInvulnerable,
             invulnerabilityTimer: initialTimer,
           };
-          
+
           const newState = applyInvulnerability(state);
-          
+
           return newState.isInvulnerable === true;
         }
       ),
@@ -1140,9 +1139,9 @@ describe('Post-Restore Invulnerability Properties', () => {
       isInvulnerable: false,
       invulnerabilityTimer: 0,
     };
-    
+
     const newState = applyInvulnerability(state);
-    
+
     expect(newState.invulnerabilityTimer).toBe(2000);
   });
 
@@ -1161,11 +1160,11 @@ describe('Post-Restore Invulnerability Properties', () => {
             isInvulnerable: false,
             invulnerabilityTimer: 0,
           };
-          
+
           const newState = applyInvulnerability(state, customDuration);
-          
+
           return newState.invulnerabilityTimer === customDuration &&
-                 newState.isInvulnerable === true;
+            newState.isInvulnerable === true;
         }
       ),
       { numRuns: 100 }
@@ -1192,12 +1191,12 @@ describe('Post-Restore Invulnerability Properties', () => {
             someOtherProp: extraProp,
             anotherProp: extraNum,
           };
-          
+
           const newState = applyInvulnerability(state);
-          
+
           // Other properties should be preserved
           return newState.someOtherProp === extraProp &&
-                 newState.anotherProp === extraNum;
+            newState.anotherProp === extraNum;
         }
       ),
       { numRuns: 100 }
@@ -1216,10 +1215,10 @@ describe('Post-Restore Invulnerability Properties', () => {
       isInvulnerable: true,
       invulnerabilityTimer: 500, // Only 500ms remaining
     };
-    
+
     // Apply fresh invulnerability
     const newState = applyInvulnerability(state);
-    
+
     // Should reset to full 2000ms
     expect(newState.isInvulnerable).toBe(true);
     expect(newState.invulnerabilityTimer).toBe(2000);

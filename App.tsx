@@ -118,6 +118,10 @@ const App: React.FC = () => {
     useState<number>(0);
   const [slowMotionActive, setSlowMotionActive] = useState<boolean>(false);
 
+  // Phase Dash state - Energy bar UI
+  const [dashEnergy, setDashEnergy] = useState<number>(0);
+  const [dashActive, setDashActive] = useState<boolean>(false);
+
   // Tutorial state - Requirements 17.1, 17.3, 17.4, 17.5
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
@@ -157,6 +161,10 @@ const App: React.FC = () => {
   const [isNearFinish, setIsNearFinish] = useState<boolean>(false);
   const [isLevelCompleting, setIsLevelCompleting] = useState<boolean>(false); // Prevent multiple triggers
 
+  // Ghost Pace Indicator state - Requirements 15.1, 15.3
+  const [previousBestDistance, setPreviousBestDistance] = useState<number>(0);
+  const [hasPassedGhost, setHasPassedGhost] = useState<boolean>(false);
+
   // Victory Screen state - for level completion
   const [showVictoryScreen, setShowVictoryScreen] = useState<boolean>(false);
   const [victoryData, setVictoryData] = useState<{
@@ -180,7 +188,7 @@ const App: React.FC = () => {
 
   // Game start notification state
   const [gameStartNotification, setGameStartNotification] = useState<string | null>(null);
-  
+
   // Chapter notification state - shows current level at game start
   const [showChapterNotification, setShowChapterNotification] = useState<boolean>(false);
   const [chapterNotificationLevel, setChapterNotificationLevel] = useState<number>(1);
@@ -203,6 +211,8 @@ const App: React.FC = () => {
   const completeMission = useGameStore((state) => state.completeMission);
   const claimDailyReward = useGameStore((state) => state.claimDailyReward);
   const addXP = useGameStore((state) => state.addXP);
+  // Ghost Pace Indicator - get level stats for previous best distance
+  const levelStats = useGameStore((state) => state.levelStats);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.HIGH_SCORE);
@@ -261,6 +271,20 @@ const App: React.FC = () => {
     prevSyncRate.current = syncRate;
   }, [syncRate]);
 
+  // Ghost Pace Indicator - Detect when player passes their previous best - Requirements 15.3
+  useEffect(() => {
+    if (
+      previousBestDistance > 0 &&
+      currentDistance > previousBestDistance &&
+      !hasPassedGhost &&
+      gameState === GameState.PLAYING
+    ) {
+      setHasPassedGhost(true);
+      // Play celebration sound when passing ghost
+      AudioSystem.playStreakBonus();
+    }
+  }, [currentDistance, previousBestDistance, hasPassedGhost, gameState]);
+
   // Campaign Update v2.5 - Requirements 1.1, 1.2, 1.3, 1.4
   // "Start Game" now opens level selection directly (campaign-first flow)
   const handleStart = () => {
@@ -299,7 +323,7 @@ const App: React.FC = () => {
 
     // Reset campaign mode
     setCampaignLevelConfig(null);
-    
+
     // Campaign Chapter System - Reset game over distance info
     setGameOverDistanceInfo(null);
 
@@ -441,6 +465,34 @@ const App: React.FC = () => {
         getRateUsSystem().save();
       }
 
+      // Ghost Pace Indicator - Save best distance on normal game over
+      // This ensures ghost marker shows on next attempt even without using recovery
+      if (campaignLevelConfig && currentDistance > 0) {
+        const levelId = campaignLevelConfig.id;
+        const currentStats = useGameStore.getState().levelStats[levelId];
+        const currentBest = currentStats?.bestDistance || 0;
+
+        console.log('[Ghost] Normal game over - Level:', levelId, 'Distance:', currentDistance, 'Current best:', currentBest);
+
+        if (currentDistance > currentBest) {
+          useGameStore.setState((state) => ({
+            levelStats: {
+              ...state.levelStats,
+              [levelId]: {
+                ...state.levelStats[levelId],
+                bestDistance: currentDistance,
+                bestShardsCollected: state.levelStats[levelId]?.bestShardsCollected || 0,
+                bestStars: state.levelStats[levelId]?.bestStars || 0,
+                timesPlayed: (state.levelStats[levelId]?.timesPlayed || 0) + 1,
+                firstClearBonus: state.levelStats[levelId]?.firstClearBonus || false,
+              },
+            },
+          }));
+          useGameStore.getState().saveToStorage();
+          console.log('[Ghost] ✅ Saved best distance on game over:', currentDistance);
+        }
+      }
+
       // Daily Challenge Mode: Submit score and calculate rewards - Requirements 8.3, 8.4
       if (dailyChallengeMode.enabled) {
         const result = submitDailyChallengeScore(finalScore);
@@ -463,7 +515,7 @@ const App: React.FC = () => {
         }
       }
     },
-    [highScore, addEchoShards, dailyChallengeMode]
+    [highScore, addEchoShards, dailyChallengeMode, campaignLevelConfig, currentDistance]
   );
 
   // Rhythm state update handler - Requirements 1.3, 1.4
@@ -491,6 +543,12 @@ const App: React.FC = () => {
   // Slow motion state update handler - Requirements 6.4
   const handleSlowMotionStateUpdate = useCallback((active: boolean) => {
     setSlowMotionActive(active);
+  }, []);
+
+  // Phase Dash state update handler
+  const handleDashStateUpdate = useCallback((energy: number, active: boolean) => {
+    setDashEnergy(energy);
+    setDashActive(active);
   }, []);
 
   // Restore System handlers - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
@@ -593,18 +651,18 @@ const App: React.FC = () => {
     // Start the game with campaign config
     AudioSystem.initialize();
     AudioSystem.playGameStart();
-    
+
     // Force game state to MENU first to ensure GameEngine resets
     // This triggers wasPlayingRef to become false
     setGameState(GameState.MENU);
-    
+
     setScore(0);
     setEarnedShards(0);
-    
+
     // Show chapter notification at game start
     setChapterNotificationLevel(levelConfig.id);
     setShowChapterNotification(true);
-    
+
     // Use requestAnimationFrame to ensure state change propagates before switching to PLAYING
     requestAnimationFrame(() => {
       setGameState(GameState.PLAYING);
@@ -624,9 +682,29 @@ const App: React.FC = () => {
     // Campaign Chapter System - Reset game over distance info
     setGameOverDistanceInfo(null);
 
+    // Ghost Pace Indicator - Load previous best distance for this level
+    // Only show ghost for UNCOMPLETED levels (0 stars)
+    // Once a level is completed (1+ stars), ghost is no longer needed
+    const freshLevelStats = useGameStore.getState().levelStats;
+    const freshLevelStars = useGameStore.getState().levelStars;
+    const stats = freshLevelStats[levelConfig.id];
+    const levelStarsCount = freshLevelStars[levelConfig.id] || 0;
+
+    // Only set ghost distance if level is NOT completed
+    if (levelStarsCount === 0) {
+      const bestDist = stats?.bestDistance || 0;
+      console.log('[Ghost] Loading best distance for UNCOMPLETED level', levelConfig.id, ':', bestDist);
+      setPreviousBestDistance(bestDist);
+    } else {
+      // Level already completed - no ghost needed
+      console.log('[Ghost] Level', levelConfig.id, 'already completed with', levelStarsCount, 'stars - no ghost');
+      setPreviousBestDistance(0);
+    }
+    setHasPassedGhost(false);
+
     sessionStartTime.current = Date.now();
     currentLevelId.current = levelConfig.id;
-  }, []);
+  }, [levelStats]);
 
   // Campaign level completion handler (legacy score-based)
   const handleCampaignLevelComplete = useCallback((finalScore: number) => {
@@ -770,7 +848,50 @@ const App: React.FC = () => {
     console.log('[App] handleChapterGameOver called', result);
     // Store distance info for game over screen display
     setGameOverDistanceInfo(result);
-  }, []);
+
+    console.log('[Ghost] handleChapterGameOver called, distance:', result.distanceTraveled, 'campaignConfig:', campaignLevelConfig?.id);
+
+    // Ghost Pace Indicator - Save best distance even on death
+    // This allows the ghost marker to show on the next attempt
+    if (campaignLevelConfig && result.distanceTraveled > 0) {
+      const levelId = campaignLevelConfig.id;
+      const currentStats = useGameStore.getState().levelStats[levelId];
+      const currentBest = currentStats?.bestDistance || 0;
+
+      console.log('[Ghost] Level:', levelId, 'Current best:', currentBest, 'This run:', result.distanceTraveled);
+
+      // Only update if this attempt was better than previous best
+      if (result.distanceTraveled > currentBest) {
+        useGameStore.setState((state) => ({
+          levelStats: {
+            ...state.levelStats,
+            [levelId]: {
+              ...state.levelStats[levelId],
+              bestDistance: result.distanceTraveled,
+              bestShardsCollected: Math.max(
+                state.levelStats[levelId]?.bestShardsCollected || 0,
+                result.shardsCollected
+              ),
+              bestStars: state.levelStats[levelId]?.bestStars || 0,
+              timesPlayed: (state.levelStats[levelId]?.timesPlayed || 0) + 1,
+              firstClearBonus: state.levelStats[levelId]?.firstClearBonus || false,
+            },
+          },
+        }));
+        // Save to storage
+        useGameStore.getState().saveToStorage();
+        console.log('[Ghost] ✅ Saved new best distance:', result.distanceTraveled, 'for level', levelId);
+
+        // Verify save
+        const verifyStats = useGameStore.getState().levelStats[levelId];
+        console.log('[Ghost] Verified stats after save:', verifyStats);
+      } else {
+        console.log('[Ghost] Not saving - current run not better than best');
+      }
+    } else {
+      console.log('[Ghost] Not saving - no campaignConfig or distance is 0');
+    }
+  }, [campaignLevelConfig]);
 
   const handleClaimMission = useCallback((missionId: string) => {
     // Find the mission to show completion modal
@@ -873,6 +994,7 @@ const App: React.FC = () => {
         onNearMissStateUpdate={handleNearMissStateUpdate}
         slowMotionActive={slowMotionActive}
         onSlowMotionStateUpdate={handleSlowMotionStateUpdate}
+        onDashStateUpdate={handleDashStateUpdate}
         campaignMode={React.useMemo(() => campaignLevelConfig ? {
           enabled: true,
           levelConfig: campaignLevelConfig,
@@ -912,7 +1034,7 @@ const App: React.FC = () => {
           setProgressPercent(0);
           setIsNearFinish(false);
           setGameOverDistanceInfo(null);
-          
+
           // If in campaign mode, restart the same level
           if (campaignLevelConfig) {
             // Reset to MENU briefly to trigger full game reset, then start level
@@ -954,6 +1076,12 @@ const App: React.FC = () => {
         targetDistance={targetDistance}
         progressPercent={progressPercent}
         isNearFinish={isNearFinish}
+        // Ghost Pace Indicator - Requirements 15.1, 15.3
+        previousBestDistance={previousBestDistance}
+        hasPassedGhost={hasPassedGhost}
+        // Phase Dash
+        dashEnergy={dashEnergy}
+        dashActive={dashActive}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />

@@ -128,6 +128,10 @@ import * as TransformationVFX from "../systems/constructs/TransformationVFX";
 // Environmental Effects System Integration - Campaign Update v2.5
 // Requirements: 14.1, 14.2, 14.3, 14.4
 import * as EnvironmentalEffects from "../systems/environmentalEffects";
+// Phase Dash System Integration - Warp mechanics with energy bar
+import * as PhaseDash from "../systems/phaseDash";
+import * as PhaseDashVFX from "../systems/phaseDashVFX";
+
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -203,6 +207,8 @@ interface GameEngineProps {
   // Slow Motion System - Requirements 6.4
   slowMotionActive?: boolean;
   onSlowMotionStateUpdate?: (active: boolean) => void;
+  // Phase Dash System - Energy bar updates
+  onDashStateUpdate?: (energy: number, active: boolean) => void;
   // Campaign Mode - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
   campaignMode?: CampaignModeConfig;
   // Daily Challenge Mode - Requirements 8.1, 8.2, 8.3
@@ -230,6 +236,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   onNearMissStateUpdate,
   slowMotionActive = false,
   onSlowMotionStateUpdate,
+  onDashStateUpdate,
   campaignMode,
   dailyChallengeMode,
   zenMode,
@@ -341,7 +348,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const finishLineX = useRef<number>(0); // Finish line X position
   const hasReachedFinishLine = useRef<boolean>(false); // Player touched finish line
   const finishExplosionTriggered = useRef<boolean>(false); // Explosion effect triggered
-  
+
   // Holographic Gate State for finish line visualization
   const holographicGateState = useRef<HolographicGate.HolographicGateState>(
     HolographicGate.createHolographicGateState()
@@ -504,6 +511,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
     SecondChanceVFX.createSecondChanceVFXState()
   );
 
+  // Phase Dash State - Energy bar and warp mechanics
+  const phaseDashState = useRef<PhaseDash.PhaseDashState>(
+    PhaseDash.createInitialPhaseDashState()
+  );
+  const phaseDashVFXState = useRef<PhaseDashVFX.PhaseDashVFXState>(
+    PhaseDashVFX.createInitialVFXState()
+  );
+  // Double-tap detection for dash activation
+  const lastTapTime = useRef<number>(0);
+  const DOUBLE_TAP_THRESHOLD = 300; // ms
+
+
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
     const upgradeEffects = getActiveUpgradeEffects();
@@ -575,7 +594,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Reset Campaign Mode State - Requirements 7.3
     levelCompleted.current = false;
-    
+
     // Reset Finish Mode State
     isInFinishMode.current = false;
     finishModePlayerX.current = 0;
@@ -745,6 +764,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Reset Environmental Effects State - Requirements 14.1, 14.2, 14.3, 14.4
     EnvironmentalEffects.resetGlobalEnvironmentalEffects();
+
+    // Reset Phase Dash State
+    phaseDashState.current = PhaseDash.createInitialPhaseDashState();
+    phaseDashVFXState.current = PhaseDashVFX.createInitialVFXState();
+    lastTapTime.current = 0;
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -1092,16 +1116,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
     canvasWidth: number
   ) => {
     shardSpawnSequence.current += 1;
-    // Mobile clarity: cap shards on screen (deterministic budget)
+    // Mobile clarity: cap shards on screen (deterministic budget) - Increased for more rewards
     const maxActiveShards =
-      score.current < 800 ? 1 : score.current < 2500 ? 2 : 4; // Artırıldı
+      score.current < 800 ? 3 : score.current < 2500 ? 5 : 8; // Significantly increased limits
     if (activeShards.current.length >= maxActiveShards) return;
 
     // Delay risky shards until player is warmed up
-    if (type === "risky" && score.current < 1200) return;
+    if (type === "risky" && score.current < 500) return; // Reduced warm-up score
 
-    // Early game: reduce shard frequency (still deterministic)
-    if (score.current < 800 && shardSpawnSequence.current % 2 === 1) return;
+    // REMOVED: Early game skipping logic to increase density
+    // if (score.current < 800 && shardSpawnSequence.current % 2 === 1) return;
 
     const spawnX = canvasWidth + 50;
     const midY = canvasHeight / 2; // Merkez çizgi (midlineY)
@@ -1111,9 +1135,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     const halfGap = lastHalfGap.current || INITIAL_CONFIG.orbRadius + 10;
     const riskyEdge = 12;
 
-    // BONUS SHARD: %15 şansla bonus shard spawn et (1500+ skor sonrası)
+    // BONUS SHARD: Artırılmış şans (%25) (1000+ skor sonrası)
     let actualType: "safe" | "risky" | "bonus" = type;
-    if (score.current >= 1500 && nextRunRand() < 0.15) {
+    if (score.current >= 1000 && nextRunRand() < 0.25) {
       actualType = "bonus";
     }
 
@@ -1473,6 +1497,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
         y: touch.clientY,
         isTapFrame: true, // Will be cleared next frame
       };
+
+      // --- PHASE DASH: Double-tap detection for activation ---
+      const now = Date.now();
+      if (now - lastTapTime.current < DOUBLE_TAP_THRESHOLD) {
+        // Double-tap detected - check if dash can activate
+        if (PhaseDash.canActivate(phaseDashState.current)) {
+          const dashDuration = getActiveUpgradeEffects().dashDuration;
+          phaseDashState.current = PhaseDash.activateDash(phaseDashState.current, dashDuration);
+
+          // Trigger VFX transition in (with particle burst at player position)
+          const playerX = window.innerWidth / 8;
+          const playerYPos = playerY.current * window.innerHeight;
+          phaseDashVFXState.current = PhaseDashVFX.triggerTransitionIn(
+            phaseDashVFXState.current,
+            playerX,
+            playerYPos
+          );
+
+          // Heavy screen shake on activation
+          ScreenShake.trigger({ intensity: 20, duration: 400, frequency: 25, decay: true });
+
+          // Haptic feedback
+          getHapticSystem().trigger("heavy");
+        }
+      }
+      lastTapTime.current = now;
     },
     [gameState, isMobile]
   );
@@ -1752,30 +1802,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Distance-based level completion logic with finish mode
       const currentCampaignMode = campaignModeRef.current;
-      
+
       // DEBUG: Log every 60 frames (~1 second)
       if (framesSinceSpawn.current % 60 === 0) {
-        console.log('[DEBUG] Campaign:', currentCampaignMode?.enabled, 
+        console.log('[DEBUG] Campaign:', currentCampaignMode?.enabled,
           'DistanceMode:', currentCampaignMode?.useDistanceMode,
           'Tracker:', !!distanceTrackerRef.current,
           'FinishMode:', isInFinishMode.current,
           'Completed:', levelCompleted.current);
         if (distanceTrackerRef.current) {
-          console.log('[DEBUG] Distance:', distanceTrackerRef.current.getCurrentDistance().toFixed(1), 
+          console.log('[DEBUG] Distance:', distanceTrackerRef.current.getCurrentDistance().toFixed(1),
             '/', distanceTrackerRef.current.getTargetDistance(),
             'Complete:', distanceTrackerRef.current.isLevelComplete());
         }
       }
-      
+
       if (currentCampaignMode?.enabled && currentCampaignMode.useDistanceMode && distanceTrackerRef.current) {
         const currentDist = distanceTrackerRef.current.getCurrentDistance();
         const targetDist = distanceTrackerRef.current.getTargetDistance();
         const isComplete = distanceTrackerRef.current.isLevelComplete();
-        
+
         const canvas = canvasRef.current;
         const screenWidth = canvas?.width || window.innerWidth;
         const screenHeight = canvas?.height || window.innerHeight;
-        
+
         // When target distance is reached, enter finish mode
         if (isComplete && !isInFinishMode.current && !levelCompleted.current) {
           console.log('[FINISH MODE] Starting - Distance:', currentDist, '/', targetDist);
@@ -1786,30 +1836,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
           finishLineX.current = screenWidth * 0.85;
           hasReachedFinishLine.current = false;
           finishExplosionTriggered.current = false;
-          
+
           // Initialize holographic gate at finish line position
           holographicGateState.current = {
             ...HolographicGate.createHolographicGateState(),
             visible: true,
             distanceFromPlayer: finishLineX.current - (screenWidth / 8),
           };
-          
+
           // Trigger haptic feedback
           getHapticSystem().trigger('success');
         }
-        
+
         // In finish mode, animate player moving to finish line
         if (isInFinishMode.current && !levelCompleted.current) {
           const basePlayerX = screenWidth / 8;
           const currentPlayerX = basePlayerX + finishModePlayerX.current;
-          
+
           // Phase 1: Player moves towards finish line
           if (!hasReachedFinishLine.current) {
             // Accelerating movement towards finish line
             const progress = finishModePlayerX.current / (finishLineX.current - basePlayerX);
             const acceleration = 1 + progress * 2; // Speed up as we approach
             finishModePlayerX.current += 6 * acceleration;
-            
+
             // Update holographic gate pulse
             holographicGateState.current = HolographicGate.updateHolographicGate(
               holographicGateState.current,
@@ -1817,12 +1867,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
               finishLineX.current - currentPlayerX,
               HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
             );
-            
+
             // Check if player reached finish line
             if (currentPlayerX >= finishLineX.current - 20) {
               console.log('[FINISH MODE] Player reached finish line!');
               hasReachedFinishLine.current = true;
-              
+
               // Trigger gate shatter animation
               holographicGateState.current = HolographicGate.triggerGateShatter(
                 holographicGateState.current,
@@ -1831,22 +1881,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 screenHeight / 2,
                 HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
               );
-              
+
               // Play victory sound
               AudioSystem.playNewHighScore();
-              
+
               // Strong haptic feedback for explosion
               getHapticSystem().trigger('heavy');
-              
+
               // Trigger screen shake for explosion effect
               ScreenShake.triggerCollision();
             }
           }
-          
+
           // Phase 2: Explosion animation after reaching finish line
           if (hasReachedFinishLine.current && !finishExplosionTriggered.current) {
             finishExplosionTriggered.current = true;
-            
+
             // Create explosion particles at finish line using ParticleSystem
             ParticleSystem.emitBurst(
               finishLineX.current,
@@ -1854,7 +1904,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               ['#00ffff', '#ffffff', '#00ff88']
             );
           }
-          
+
           // Phase 3: Wait for explosion animation then trigger victory
           if (hasReachedFinishLine.current) {
             // Update shatter particles
@@ -1864,15 +1914,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
               0,
               HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
             );
-            
+
             // Continue moving player off screen after explosion
             finishModePlayerX.current += 12;
-            
+
             // Check if animation is complete (player off screen or enough time passed)
             // Extended animation time for better visual experience
             const timeSinceFinishLine = Date.now() - (finishModeStartTime.current + 500);
             const playerOffScreen = currentPlayerX > screenWidth + 50;
-            
+
             // Wait at least 1.5 seconds after reaching finish line for full animation
             if (playerOffScreen || timeSinceFinishLine > 1500) {
               console.log('[LEVEL COMPLETE] Animation finished - triggering victory');
@@ -1973,6 +2023,38 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Get construct gravity multiplier (1.0 for Standard, 2.5 for Titan, 0 for Phase/Blink)
       const constructGravityMultiplier = constructSystemState.current.currentStrategy.getGravityMultiplier();
+
+      // --- PHASE DASH UPDATE - Speed multiplier and state management ---
+      // Update Phase Dash state (check duration, update ghost trail)
+      const dashUpdate = PhaseDash.updateDashState(
+        phaseDashState.current,
+        width / 8,  // playerX position
+        playerY.current * height,
+        Math.floor(gameTime / 16)  // approximate frame number
+      );
+      phaseDashState.current = dashUpdate.state;
+
+      // Trigger end VFX and screen shake when dash ends
+      if (dashUpdate.dashEnded) {
+        phaseDashVFXState.current = PhaseDashVFX.triggerTransitionOut(phaseDashVFXState.current);
+        ScreenShake.trigger({ intensity: 12, duration: 300, frequency: 25, decay: true });
+      }
+
+      // Update Phase Dash VFX state (using ~16ms assumed delta for 60fps)
+      // Visual Y offset is calculated later for rendering, here we pass physics Y
+      phaseDashVFXState.current = PhaseDashVFX.updateVFXState(
+        phaseDashVFXState.current,
+        phaseDashState.current.isActive,
+        width / 8, // playerX (approx)
+        playerY.current * height, // playerY
+        16  // Approximate delta time in ms
+      );
+
+      // Get Phase Dash speed multiplier (1.0 normally, 4.0 during dash)
+      const phaseDashSpeedMultiplier = PhaseDash.getSpeedMultiplier(phaseDashState.current);
+
+      // Report Phase Dash state to parent for UI
+      onDashStateUpdate?.(phaseDashState.current.energy, phaseDashState.current.isActive);
 
       // --- CONSTRUCT VFX UPDATE - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.8 ---
       // Update transformation VFX
@@ -2161,20 +2243,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
 
         // Pattern-Based Spawning
-        // Stop spawning new obstacles when at 95% of target distance or in finish mode
+        // Stop spawning new obstacles when at 98% of target distance or in finish mode
         // This gives player a clear path to the finish line
-        const shouldStopSpawning = isInFinishMode.current || 
-          (distanceStateRef.current.targetDistance > 0 && 
-           distanceStateRef.current.progressPercent >= 95);
-        
+        const shouldStopSpawning = isInFinishMode.current ||
+          (distanceStateRef.current.targetDistance > 0 &&
+            distanceStateRef.current.progressPercent >= 98);
+
         // Check if we need to select a new pattern
         if (
           !shouldStopSpawning &&
           (!patternManagerState.current.currentPattern ||
-          PatternManager.isPatternComplete(
-            patternManagerState.current,
-            spawnTime
-          ))
+            PatternManager.isPatternComplete(
+              patternManagerState.current,
+              spawnTime
+            ))
         ) {
           // Stabilize polarity: flip only every few patterns (readability)
           patternPolarity.current =
@@ -2794,6 +2876,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Award Echo Shards
           useGameStore.getState().addEchoShards(finalValue);
 
+          // Phase Dash: Energy gain from shard collection
+          const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
+          phaseDashState.current = PhaseDash.updateEnergy(
+            phaseDashState.current,
+            PhaseDash.PHASE_DASH_CONFIG.energyPerShard * dashRechargeMultiplier
+          );
+
           // Mission System: Emit COLLECT event - Requirements 7.4
           onMissionEvent?.({ type: 'COLLECT', value: 1 });
 
@@ -3198,7 +3287,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           constructInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current ||
-          isInFinishMode.current
+          isInFinishMode.current ||
+          // Phase Dash invincibility - pass through obstacles
+          PhaseDash.isInvincible(phaseDashState.current)
         )
           return;
 
@@ -3674,6 +3765,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Mission System: Emit NEAR_MISS event for white orb - Requirements 7.3
               onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
+
+              // Phase Dash: Energy gain from near-miss (+10%)
+              const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
+              phaseDashState.current = PhaseDash.updateEnergy(
+                phaseDashState.current,
+                PhaseDash.PHASE_DASH_CONFIG.energyPerNearMiss * dashRechargeMultiplier
+              );
 
               // Add bonus points to score
               let totalBonus = streakResult.totalBonusPoints;
@@ -4583,25 +4681,39 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.shadowBlur = 0;
       }
 
-      // Calculate center point
-      const centerX = (whiteOrb.x + blackOrb.x) / 2;
-      const centerY = (whiteOrb.y + blackOrb.y) / 2;
+
+      // --- PHASE DASH VISUAL OFFSET ---
+      // Move player visually UP (forward) during dash animation
+      let dashVisualYOffset = 0;
+      if (PhaseDashVFX.isVFXActive(phaseDashVFXState.current)) {
+        const t = phaseDashVFXState.current.transitionProgress;
+        // Move up by 25% of screen height at max intensity
+        dashVisualYOffset = -t * (height * 0.25);
+      }
+
+      // Create visual orb positions including the offset for RENDERING
+      const visualWhiteOrb = { ...whiteOrb, y: whiteOrb.y + dashVisualYOffset };
+      const visualBlackOrb = { ...blackOrb, y: blackOrb.y + dashVisualYOffset };
+
+      // Calculate center point (using visual position)
+      const centerX = (visualWhiteOrb.x + visualBlackOrb.x) / 2;
+      const centerY = (visualWhiteOrb.y + visualBlackOrb.y) / 2;
       const time = Date.now() * 0.003;
 
       // 1. Draw Connector - Theme System Integration - Requirements 5.1, 5.2, 5.3
       const gradient = ctx.createLinearGradient(
-        whiteOrb.x,
-        whiteOrb.y,
-        blackOrb.x,
-        blackOrb.y
+        visualWhiteOrb.x,
+        visualWhiteOrb.y,
+        visualBlackOrb.x,
+        visualBlackOrb.y
       );
       gradient.addColorStop(0, getColor("topOrb"));
       gradient.addColorStop(0.5, getColor("connector"));
       gradient.addColorStop(1, getColor("bottomOrb"));
 
       ctx.beginPath();
-      ctx.moveTo(whiteOrb.x, whiteOrb.y);
-      ctx.lineTo(blackOrb.x, blackOrb.y);
+      ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
+      ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
       ctx.lineWidth = INITIAL_CONFIG.connectorWidth;
       ctx.strokeStyle = gradient;
       ctx.stroke();
@@ -4763,13 +4875,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // 2. Draw Orbs with Trail Effects
+
       // Get trail config for equipped skin
       const trailConfig = OrbTrailSystem.getTrailConfig(equippedSkin);
 
-      // Emit trail particles from current orb positions
+      // Emit trail particles from current orb positions (using visual position)
       if (trailConfig.enabled) {
-        OrbTrailSystem.emitTrail(whiteOrb.x, whiteOrb.y, true, trailConfig);
-        OrbTrailSystem.emitTrail(blackOrb.x, blackOrb.y, false, trailConfig);
+        OrbTrailSystem.emitTrail(visualWhiteOrb.x, visualWhiteOrb.y, true, trailConfig);
+        OrbTrailSystem.emitTrail(visualBlackOrb.x, visualBlackOrb.y, false, trailConfig);
         OrbTrailSystem.updateTrails(1 / 60, trailConfig); // Assume 60fps
       }
 
@@ -4780,7 +4893,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Requirements: 12.1, 12.2 - Render finish line when in finish mode
       if (isInFinishMode.current && !levelCompleted.current) {
         const gateState = holographicGateState.current;
-        
+
         // Render holographic gate (finish line)
         if (gateState.visible && !gateState.isShattered) {
           HolographicGate.renderHolographicGate(
@@ -4791,12 +4904,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
             HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
           );
         }
-        
+
         // Render shatter particles after gate is broken
         if (gateState.isShattered && gateState.shatterParticles.length > 0) {
           HolographicGate.renderShatterParticles(ctx, gateState.shatterParticles);
         }
-        
+
         // Draw "FINISH" text above gate
         if (gateState.visible && !hasReachedFinishLine.current) {
           ctx.save();
@@ -4812,8 +4925,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- CONSTRUCT RENDERING - Requirements 3.5, 4.5, 5.6 ---
       // Update construct render state for animations
+      // Update construct render state for animations
       const playerCenterX = playerX;
-      const playerCenterY = playerY.current * height;
+      // Use visual Y center for construct as well
+      const playerCenterY = (playerY.current * height) + dashVisualYOffset;
       constructRenderState.current = ConstructRenderer.updateConstructRenderState(
         constructRenderState.current,
         16.67, // Assume ~60fps
@@ -4848,8 +4963,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         );
       } else {
         // Draw the normal orbs when no construct is active
-        drawOrb(blackOrb, false);
-        drawOrb(whiteOrb, true);
+        // Use visual orbs with offset
+        drawOrb(visualBlackOrb, false);
+        drawOrb(visualWhiteOrb, true);
       }
 
       // Post-restore invincibility visual effect - cyan glow and countdown
@@ -4868,14 +4984,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Glow around white orb
           ctx.beginPath();
-          ctx.arc(whiteOrb.x, whiteOrb.y, whiteOrb.radius + 5, 0, Math.PI * 2);
+          ctx.arc(visualWhiteOrb.x, visualWhiteOrb.y, visualWhiteOrb.radius + 5, 0, Math.PI * 2);
           ctx.strokeStyle = "#00F0FF";
           ctx.lineWidth = 3;
           ctx.stroke();
 
           // Glow around black orb
           ctx.beginPath();
-          ctx.arc(blackOrb.x, blackOrb.y, blackOrb.radius + 5, 0, Math.PI * 2);
+          ctx.arc(visualBlackOrb.x, visualBlackOrb.y, visualBlackOrb.radius + 5, 0, Math.PI * 2);
           ctx.stroke();
 
           ctx.restore();
@@ -5084,6 +5200,31 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (EnvironmentalEffects.isGlitchActive(envEffectsState)) {
         EnvironmentalEffects.applyGlitchArtifact(ctx, canvas, envEffectsState);
       }
+
+      // --- PHASE DASH VFX RENDERING ---
+      // Render all Phase Dash visual effects (darken overlay, color grading, speed lines, vignette, particles)
+      if (PhaseDashVFX.isVFXActive(phaseDashVFXState.current)) {
+        PhaseDashVFX.renderAllVFX(ctx, width, height, phaseDashVFXState.current);
+      }
+
+      // Render Phase Dash ghost trail (fading player copies)
+      if (phaseDashState.current.isActive && phaseDashState.current.ghostTrail.length > 0) {
+        const orbRadius = Math.min(width, height) * 0.03;
+        phaseDashState.current.ghostTrail.forEach(ghost => {
+          if (ghost.alpha > 0) {
+            ctx.save();
+            ctx.globalAlpha = ghost.alpha * 0.6;
+            ctx.fillStyle = "#00FFFF";
+            ctx.shadowColor = "#00FFFF";
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(ghost.x, ghost.y, orbRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        });
+      }
+
 
       if (collisionDetected) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2
@@ -5421,7 +5562,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const canvas = canvasRef.current;
           const playerX = canvas ? canvas.width / 8 : 100;
           const safeZoneRadius = 150; // Clear obstacles within 150px of player
-          
+
           obstacles.current = finalSnapshot.obstacles
             .filter(obs => {
               // Remove obstacles that are too close to player (safe zone)

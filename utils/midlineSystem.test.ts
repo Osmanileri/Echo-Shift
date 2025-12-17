@@ -3,26 +3,23 @@
  * Uses fast-check for property-based testing
  */
 
-import { describe, test, expect } from 'vitest';
 import * as fc from 'fast-check';
+import { describe, expect, test } from 'vitest';
+import { MIDLINE_CONFIG } from '../constants';
+import { MidlineConfig, MidlineState } from '../types';
 import {
-  calculateMidlineY,
   calculateDynamicAmplitude,
   calculateDynamicFrequency,
-  getOrbZone,
+  calculateMidlineY,
   calculateMovementBounds,
-  calculateNormalBounds,
-  isCriticalSpace,
-  serializeMidlineState,
-  deserializeMidlineState,
-  shouldApplyMicroPhasing,
-  predictPeakTime,
   calculateTensionIntensity,
-  createInitialMidlineState,
+  deserializeMidlineState,
+  getOrbZone,
+  isCriticalSpace,
+  predictPeakTime,
+  serializeMidlineState,
+  shouldApplyMicroPhasing
 } from './midlineSystem';
-import { MidlineState } from '../types';
-import { MidlineConfig } from '../types';
-import { MIDLINE_CONFIG } from '../constants';
 
 describe('Midline System Properties', () => {
   /**
@@ -59,7 +56,7 @@ describe('Midline System Properties', () => {
           };
 
           const midlineY = calculateMidlineY(canvasHeight, elapsedTime, config, score, offset);
-          
+
           const centerY = canvasHeight / 2;
           const maxDeviation = canvasHeight * config.maxAmplitude;
           const minBound = centerY - maxDeviation;
@@ -176,15 +173,15 @@ describe('Midline System Properties', () => {
         (canvasHeight, midlineY, connectorLength, orbRadius) => {
           // Ensure midline is within canvas
           const clampedMidlineY = Math.min(Math.max(midlineY, orbRadius), canvasHeight - orbRadius);
-          
+
           const bounds = calculateMovementBounds(clampedMidlineY, connectorLength, orbRadius, canvasHeight);
-          
+
           // minY should be at least orbRadius + half connector (top orb needs space)
           expect(bounds.minY).toBeGreaterThanOrEqual(orbRadius + connectorLength / 2);
-          
+
           // maxY should be at most canvasHeight - orbRadius - half connector (bottom orb needs space)
           expect(bounds.maxY).toBeLessThanOrEqual(canvasHeight - orbRadius - connectorLength / 2);
-          
+
           // minY should be less than or equal to maxY (valid range)
           expect(bounds.minY).toBeLessThanOrEqual(bounds.maxY + connectorLength);
         }
@@ -211,9 +208,9 @@ describe('Midline System Properties', () => {
           const normalBounds = { minY: 100, maxY: 100 + normalSpace };
           const currentSpace = normalSpace * ratio;
           const currentBounds = { minY: 100, maxY: 100 + currentSpace };
-          
+
           const isCritical = isCriticalSpace(currentBounds, normalBounds);
-          
+
           // Property: space < 30% of normal => critical
           if (ratio < 0.30) {
             expect(isCritical).toBe(true);
@@ -255,10 +252,10 @@ describe('Midline System Properties', () => {
             isMicroPhasing,
             tensionIntensity,
           };
-          
+
           const serialized = serializeMidlineState(originalState);
           const deserialized = deserializeMidlineState(serialized);
-          
+
           // Round-trip should preserve all values
           expect(deserialized.startTime).toBe(originalState.startTime);
           expect(deserialized.currentMidlineY).toBeCloseTo(originalState.currentMidlineY, 10);
@@ -288,11 +285,11 @@ describe('Midline System Properties', () => {
         fc.integer({ min: 0, max: 10000 }), // score
         (baseFrequency, score) => {
           const actualFrequency = calculateDynamicFrequency(baseFrequency, score);
-          
+
           // Expected formula uses config values
           const scaleFactor = Math.min(score / MIDLINE_CONFIG.frequencyMaxScore, 1);
           const expectedFrequency = baseFrequency * (1 + MIDLINE_CONFIG.frequencyScaleFactor * scaleFactor);
-          
+
           expect(actualFrequency).toBeCloseTo(expectedFrequency, 10);
         }
       ),
@@ -324,9 +321,9 @@ describe('Midline System Properties', () => {
             forecastTime: 500,
             criticalSpaceRatio: 0.30,
           };
-          
+
           const amplitude = calculateDynamicAmplitude(config.baseAmplitude, score, config);
-          
+
           // Property: score thresholds determine amplitude
           if (score < 2000) {
             expect(amplitude).toBeCloseTo(0.05, 10);
@@ -356,9 +353,9 @@ describe('Midline System Properties', () => {
         (midlineY, offset) => {
           const orbY = midlineY + offset;
           const microPhasingDistance = 10;
-          
+
           const shouldPhase = shouldApplyMicroPhasing(orbY, midlineY, microPhasingDistance);
-          
+
           // Property: |orbY - midlineY| <= 10 => micro-phasing
           if (Math.abs(offset) <= microPhasingDistance) {
             expect(shouldPhase).toBe(true);
@@ -386,13 +383,13 @@ describe('Midline System Properties', () => {
         fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }), // offset
         (elapsedTime, frequency, offset) => {
           const prediction = predictPeakTime(elapsedTime, frequency, offset);
-          
+
           // timeToNextPeak should be positive
           expect(prediction.timeToNextPeak).toBeGreaterThanOrEqual(0);
-          
+
           // direction should be 'up' or 'down'
           expect(['up', 'down']).toContain(prediction.direction);
-          
+
           // timeToNextPeak should be less than one full period
           const period = (2 * Math.PI) / frequency;
           expect(prediction.timeToNextPeak).toBeLessThanOrEqual(period);
@@ -416,10 +413,10 @@ describe('Midline System Properties', () => {
         fc.double({ min: -1, max: 1, noNaN: true }), // normalizedOffset
         (normalizedOffset) => {
           const intensity = calculateTensionIntensity(normalizedOffset);
-          
+
           // Property: intensity = |normalizedOffset|
           expect(intensity).toBeCloseTo(Math.abs(normalizedOffset), 10);
-          
+
           // intensity should be between 0 and 1
           expect(intensity).toBeGreaterThanOrEqual(0);
           expect(intensity).toBeLessThanOrEqual(1);
