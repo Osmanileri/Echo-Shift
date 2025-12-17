@@ -28,12 +28,16 @@ export interface DistanceTrackerConfig {
 /**
  * Distance Tracker class for tracking player progress through a level
  * Requirements: 2.2, 2.3, 2.4, 3.2
+ * 
+ * Distance increments in whole numbers (1 or 2 units at a time)
+ * and never exceeds the target distance.
  */
 export class DistanceTracker {
   private currentDistance: number = 0;
   private targetDistance: number;
   private climaxZoneThreshold: number;
   private nearFinishDistance: number;
+  private accumulatedFraction: number = 0; // Accumulate fractional distance
 
   /**
    * Create a new distance tracker
@@ -48,6 +52,7 @@ export class DistanceTracker {
   /**
    * Update distance based on time and speed
    * Requirements: 2.3 - Track Current_Distance traveled in meters
+   * Distance increments in whole numbers and never exceeds target
    * @param deltaTime - Time since last frame in seconds
    * @param speed - Current speed in meters per second
    */
@@ -60,8 +65,26 @@ export class DistanceTracker {
       return;
     }
 
-    // Accumulate distance: distance = speed * time
-    this.currentDistance += speed * deltaTime;
+    // If already at target, don't update
+    if (this.currentDistance >= this.targetDistance) {
+      return;
+    }
+
+    // Accumulate fractional distance
+    this.accumulatedFraction += speed * deltaTime;
+
+    // When accumulated >= 1, add whole units to currentDistance
+    if (this.accumulatedFraction >= 1) {
+      const wholeUnits = Math.floor(this.accumulatedFraction);
+      this.accumulatedFraction -= wholeUnits;
+      this.currentDistance += wholeUnits;
+
+      // Never exceed target distance
+      if (this.currentDistance >= this.targetDistance) {
+        this.currentDistance = this.targetDistance;
+        this.accumulatedFraction = 0;
+      }
+    }
   }
 
   /**
@@ -99,6 +122,7 @@ export class DistanceTracker {
   reset(targetDistance: number): void {
     this.currentDistance = 0;
     this.targetDistance = targetDistance;
+    this.accumulatedFraction = 0;
   }
 
   /**
@@ -132,6 +156,25 @@ export class DistanceTracker {
    */
   getRemainingDistance(): number {
     return Math.max(0, this.targetDistance - this.currentDistance);
+  }
+
+  /**
+   * Check if player is near the finish line (within 50 meters)
+   * Requirements: 3.1 - WHEN the player is within 50 meters of Target_Distance
+   * @returns true if within nearFinishDistance of target and not yet complete
+   */
+  isNearFinish(): boolean {
+    const remainingDistance = this.targetDistance - this.currentDistance;
+    return remainingDistance <= this.nearFinishDistance && remainingDistance > 0;
+  }
+
+  /**
+   * Set the current distance directly (used for restore/rewind)
+   * @param distance - Distance to set in meters
+   */
+  setDistance(distance: number): void {
+    this.currentDistance = Math.max(0, Math.min(distance, this.targetDistance));
+    this.accumulatedFraction = 0;
   }
 }
 

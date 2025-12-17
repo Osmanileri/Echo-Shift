@@ -366,6 +366,7 @@ describe('Star Rating System Properties', () => {
    *
    * For any combination of completion criteria, the star rating SHALL be 
    * the highest applicable value (1, 2, or 3).
+   * Note: completed=true always means survivor=true (even with health=0)
    */
   test('Property 12: Star rating is the highest applicable value', () => {
     fc.assert(
@@ -375,7 +376,8 @@ describe('Star Rating System Properties', () => {
           const rating = calculateStarRating(result);
           
           // Calculate expected criteria
-          const isSurvivor = result.completed && result.healthRemaining > 0;
+          // Survivor = completed (even with health=0, e.g. used restore)
+          const isSurvivor = result.completed;
           const shardPercentage = result.totalShardsAvailable > 0 
             ? result.shardsCollected / result.totalShardsAvailable 
             : 0;
@@ -383,13 +385,16 @@ describe('Star Rating System Properties', () => {
           const isPerfectionist = isSurvivor && result.damageTaken === 0;
           
           // Determine expected stars (highest applicable)
+          // Minimum 1 star if completed
           let expectedStars = 0;
-          if (isPerfectionist) {
+          if (!result.completed) {
+            expectedStars = 0;
+          } else if (isPerfectionist) {
             expectedStars = 3;
           } else if (isCollector) {
             expectedStars = 2;
-          } else if (isSurvivor) {
-            expectedStars = 1;
+          } else {
+            expectedStars = 1; // Completed = at least 1 star
           }
           
           // Verify rating matches expected
@@ -404,30 +409,19 @@ describe('Star Rating System Properties', () => {
   });
 
   /**
-   * Additional edge case: Failed level (not completed or health = 0) gets 0 stars
+   * Additional edge case: Failed level (not completed) gets 0 stars
+   * Note: completed=true always gets at least 1 star (even with health=0, e.g. used restore)
    */
-  test('Failed level gets 0 stars', () => {
-    // Generator for failed levels
-    const failedResultArb = fc.oneof(
-      // Not completed
-      fc.record({
-        completed: fc.constant(false),
-        distanceTraveled: fc.integer({ min: 0, max: 10000 }),
-        shardsCollected: fc.integer({ min: 0, max: 100 }),
-        totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
-        damageTaken: fc.integer({ min: 0, max: 10 }),
-        healthRemaining: fc.integer({ min: 0, max: 3 }),
-      }),
-      // Health = 0
-      fc.record({
-        completed: fc.constant(true),
-        distanceTraveled: fc.integer({ min: 0, max: 10000 }),
-        shardsCollected: fc.integer({ min: 0, max: 100 }),
-        totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
-        damageTaken: fc.integer({ min: 1, max: 10 }),
-        healthRemaining: fc.constant(0),
-      })
-    ).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+  test('Failed level (not completed) gets 0 stars', () => {
+    // Generator for failed levels - only completed=false counts as failed
+    const failedResultArb = fc.record({
+      completed: fc.constant(false),
+      distanceTraveled: fc.integer({ min: 0, max: 10000 }),
+      shardsCollected: fc.integer({ min: 0, max: 100 }),
+      totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+      damageTaken: fc.integer({ min: 0, max: 10 }),
+      healthRemaining: fc.integer({ min: 0, max: 3 }),
+    }).filter(result => result.shardsCollected <= result.totalShardsAvailable);
 
     fc.assert(
       fc.property(
@@ -437,6 +431,33 @@ describe('Star Rating System Properties', () => {
           
           // Must have 0 stars and survivor flag false
           return rating.stars === 0 && rating.survivor === false;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Edge case: Completed level with health=0 (used restore) still gets 1 star
+   */
+  test('Completed level with health=0 (used restore) gets at least 1 star', () => {
+    const restoredResultArb = fc.record({
+      completed: fc.constant(true),
+      distanceTraveled: fc.integer({ min: 0, max: 10000 }),
+      shardsCollected: fc.integer({ min: 0, max: 100 }),
+      totalShardsAvailable: fc.integer({ min: 0, max: 100 }),
+      damageTaken: fc.integer({ min: 1, max: 10 }),
+      healthRemaining: fc.constant(0),
+    }).filter(result => result.shardsCollected <= result.totalShardsAvailable);
+
+    fc.assert(
+      fc.property(
+        restoredResultArb,
+        (result: LevelResult) => {
+          const rating = calculateStarRating(result);
+          
+          // Completed = at least 1 star, survivor = true
+          return rating.stars >= 1 && rating.survivor === true;
         }
       ),
       { numRuns: 100 }

@@ -3,13 +3,15 @@
  * Requirements: 7.1 - Display a level selection map with 100 levels
  * Requirements: 17.5 - Contextual tutorials for new mechanics
  * Requirements: 13.1, 13.2, 13.3, 13.4 - Level unlock animations
+ * Requirements: 2.2, 2.3, 10.1, 10.3 - Chapter lock system
  */
 
-import { ChevronLeft, ChevronRight, Ghost, Lock, Play, Star, Trophy, Waves, X, Zap } from 'lucide-react';
+import { CheckCircle, ChevronLeft, ChevronRight, Ghost, Lock, Play, Star, Trophy, Waves, X, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChapterType, LEVELS, LevelConfig, getChapterForLevel } from '../../data/levels';
 import { useGameStore } from '../../store/gameStore';
 import { getLevelStars, getProgress, isLevelCompleted, isLevelUnlocked } from '../../systems/campaignSystem';
+import { isChapterUnlocked } from '../../systems/chapterSystem';
 import { getContextualTutorialForLevel } from '../../systems/tutorialSystem';
 
 interface LevelMapProps {
@@ -20,6 +22,17 @@ interface LevelMapProps {
   newlyUnlockedLevel?: number;
   /** Previously completed level ID for path animation - Requirements 13.2 */
   justCompletedLevel?: number;
+}
+
+/**
+ * Locked chapter message state
+ * Requirements: 2.3 - Show "Complete previous chapter" message on locked chapter tap
+ */
+interface LockedChapterMessage {
+  visible: boolean;
+  chapterId: number;
+  x: number;
+  y: number;
 }
 
 const LEVELS_PER_PAGE = 20;
@@ -80,6 +93,8 @@ const LevelMap: React.FC<LevelMapProps> = ({
   const levelStars = useGameStore((state) => state.levelStars);
   const currentLevel = useGameStore((state) => state.currentLevel);
   const lastPlayedLevel = useGameStore((state) => state.lastPlayedLevel);
+  // Chapter progress state - Requirements: 2.2, 2.3, 10.1, 10.3
+  const chapterProgress = useGameStore((state) => state.chapterProgress);
   
   // Animation states - Requirements 13.1, 13.2, 13.3, 13.4
   const [pathUnlock, setPathUnlock] = useState<PathUnlockState>({
@@ -100,6 +115,14 @@ const LevelMap: React.FC<LevelMapProps> = ({
     fromChapter: 'SUB_BASS',
     toChapter: 'SUB_BASS',
     fadeProgress: 0,
+  });
+  
+  // Locked chapter message state - Requirements: 2.3
+  const [lockedMessage, setLockedMessage] = useState<LockedChapterMessage>({
+    visible: false,
+    chapterId: 0,
+    x: 0,
+    y: 0,
   });
   
   // Animation frame ref for cleanup
@@ -278,12 +301,49 @@ const LevelMap: React.FC<LevelMapProps> = ({
     setCurrentPage((prev) => Math.min(TOTAL_PAGES - 1, prev + 1));
   };
 
-  const handleLevelSelect = (level: LevelConfig) => {
+  /**
+   * Handle level selection with chapter lock check
+   * Requirements: 2.2, 2.3 - Prevent selection of locked chapters and show message
+   */
+  const handleLevelSelect = (level: LevelConfig, event?: React.MouseEvent) => {
+    // Check if chapter is unlocked using chapter system
+    const chapterUnlocked = isChapterUnlocked(level.id, chapterProgress.completedChapters);
+    
+    if (!chapterUnlocked) {
+      // Show "Complete previous chapter" message - Requirements: 2.3
+      if (event) {
+        const rect = (event.target as HTMLElement).getBoundingClientRect();
+        setLockedMessage({
+          visible: true,
+          chapterId: level.id,
+          x: rect.left + rect.width / 2,
+          y: rect.top,
+        });
+        
+        // Auto-hide message after 2 seconds
+        setTimeout(() => {
+          setLockedMessage(prev => 
+            prev.chapterId === level.id ? { ...prev, visible: false } : prev
+          );
+        }, 2000);
+      }
+      return;
+    }
+    
     if (isLevelUnlocked(level.id)) {
       const tutorialType = getContextualTutorialForLevel(level.id);
       // Filter out 'main' tutorial type as it's not a contextual tutorial
       const contextualTutorial = tutorialType && tutorialType !== 'main' ? tutorialType : undefined;
       onSelectLevel(level, contextualTutorial);
+    }
+  };
+  
+  /**
+   * Hide locked message when clicking elsewhere
+   */
+  const handleBackdropClick = () => {
+    if (lockedMessage.visible) {
+      setLockedMessage(prev => ({ ...prev, visible: false }));
     }
   };
 
@@ -297,7 +357,7 @@ const LevelMap: React.FC<LevelMapProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={handleBackdropClick}>
       {/* Chapter Background with Cross-fade - Requirements 13.4 */}
       <div 
         className={`absolute inset-0 bg-gradient-to-b ${getBackgroundGradient()} transition-all duration-1000`}
@@ -314,35 +374,61 @@ const LevelMap: React.FC<LevelMapProps> = ({
         />
       )}
       
+      {/* Locked Chapter Message Tooltip - Requirements: 2.3 */}
+      {lockedMessage.visible && (
+        <div 
+          className="fixed z-[60] px-4 py-2 bg-red-500/90 text-white text-sm font-medium rounded-lg shadow-lg animate-bounce pointer-events-none"
+          style={{
+            left: lockedMessage.x,
+            top: lockedMessage.y - 50,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            <span>Önceki bölümü tamamla</span>
+          </div>
+          {/* Arrow pointing down */}
+          <div 
+            className="absolute left-1/2 -bottom-2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-red-500/90"
+            style={{ transform: 'translateX(-50%)' }}
+          />
+        </div>
+      )}
+      
       <div className="relative w-full max-w-2xl mx-4 max-h-[90vh] bg-gradient-to-b from-gray-900/90 to-black/90 rounded-2xl border border-white/10 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-xl font-bold text-white tracking-wider">KAMPANYA</h2>
             <p className="text-sm text-white/50">{getPageTitle(currentPage)}</p>
           </div>
-          <div className="flex items-center gap-4">
-            {/* Progress Display */}
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/10 rounded-full border border-yellow-500/30">
-                <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                <span className="text-sm font-bold text-yellow-400">
+          <div className="flex items-center gap-2 sm:gap-4">
+            {/* Progress Display - Hidden on very small screens */}
+            <div className="hidden xs:flex items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-yellow-500/10 rounded-full border border-yellow-500/30">
+                <Star className="w-3 h-3 sm:w-4 sm:h-4 text-yellow-400 fill-yellow-400" />
+                <span className="text-xs sm:text-sm font-bold text-yellow-400">
                   {progress.totalStars}/{progress.maxStars}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 rounded-full border border-green-500/30">
-                <Trophy className="w-4 h-4 text-green-400" />
-                <span className="text-sm font-bold text-green-400">
+              <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-green-500/10 rounded-full border border-green-500/30">
+                <Trophy className="w-3 h-3 sm:w-4 sm:h-4 text-green-400" />
+                <span className="text-xs sm:text-sm font-bold text-green-400">
                   {progress.completed}/{progress.total}
                 </span>
               </div>
             </div>
-            {/* Close Button */}
+            {/* Close Button - Always visible, larger touch target on mobile */}
             <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="p-3 sm:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation"
+              aria-label="Kapat"
             >
-              <X className="w-5 h-5 text-white/70" />
+              <X className="w-6 h-6 sm:w-5 sm:h-5 text-white" />
             </button>
           </div>
         </div>
@@ -361,19 +447,27 @@ const LevelMap: React.FC<LevelMapProps> = ({
           )}
           
           <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
-            {currentPageLevels.map((level) => (
-              <LevelCard
-                key={level.id}
-                level={level}
-                unlocked={isLevelUnlocked(level.id)}
-                completed={isLevelCompleted(level.id)}
-                stars={getLevelStars(level.id)}
-                isCurrent={level.id === currentLevel}
-                isLastPlayed={level.id === lastPlayedLevel}
-                unlockPopState={unlockPop.active && unlockPop.levelId === level.id ? unlockPop : null}
-                onClick={() => handleLevelSelect(level)}
-              />
-            ))}
+            {currentPageLevels.map((level) => {
+              // Check chapter unlock status - Requirements: 2.2, 2.3
+              const chapterUnlocked = isChapterUnlocked(level.id, chapterProgress.completedChapters);
+              const chapterCompleted = chapterProgress.completedChapters.includes(level.id);
+              
+              return (
+                <LevelCard
+                  key={level.id}
+                  level={level}
+                  unlocked={isLevelUnlocked(level.id)}
+                  completed={isLevelCompleted(level.id)}
+                  stars={getLevelStars(level.id)}
+                  isCurrent={level.id === currentLevel}
+                  isLastPlayed={level.id === lastPlayedLevel}
+                  unlockPopState={unlockPop.active && unlockPop.levelId === level.id ? unlockPop : null}
+                  chapterUnlocked={chapterUnlocked}
+                  chapterCompleted={chapterCompleted}
+                  onClick={(e) => handleLevelSelect(level, e)}
+                />
+              );
+            })}
           </div>
         </div>
 
@@ -543,7 +637,11 @@ interface LevelCardProps {
   isCurrent: boolean;
   isLastPlayed: boolean;
   unlockPopState: UnlockPopState | null;
-  onClick: () => void;
+  /** Whether the chapter is unlocked based on chapter system - Requirements: 2.2 */
+  chapterUnlocked: boolean;
+  /** Whether the chapter has been completed - Requirements: 10.3 */
+  chapterCompleted: boolean;
+  onClick: (e: React.MouseEvent) => void;
 }
 
 const LevelCard: React.FC<LevelCardProps> = ({
@@ -554,6 +652,8 @@ const LevelCard: React.FC<LevelCardProps> = ({
   isCurrent,
   isLastPlayed,
   unlockPopState,
+  chapterUnlocked,
+  chapterCompleted,
   onClick,
 }) => {
   // Get mechanic icons for the level
@@ -571,7 +671,14 @@ const LevelCard: React.FC<LevelCardProps> = ({
     return icons;
   };
 
+  // Only pulse the NEXT level to play (current level that hasn't been completed yet)
+  // Don't pulse completed levels or last played levels
+  const isNextToPlay = isCurrent && !completed && unlocked && chapterUnlocked;
   const isHighlighted = isLastPlayed || isCurrent;
+  
+  // Use chapter unlock status for determining if level is accessible - Requirements: 2.2, 2.3
+  const isAccessible = chapterUnlocked && unlocked;
+  const isLocked = !chapterUnlocked;
   
   /**
    * Get animation styles for Unlock Pop
@@ -608,39 +715,98 @@ const LevelCard: React.FC<LevelCardProps> = ({
   // Determine if this card should show the lock being removed
   const showLockRemoval = unlockPopState && unlockPopState.phase !== 'waiting';
   
+  /**
+   * Get card styling based on chapter lock status
+   * Requirements: 2.2 - Show lock icon on locked chapters
+   * Requirements: 10.3 - Display completion status for each chapter
+   */
+  const getCardClassName = () => {
+    const baseClasses = 'relative flex flex-col items-center justify-center p-3 rounded-xl border transition-all';
+    
+    // Locked chapter - Requirements: 2.2
+    if (isLocked && !showLockRemoval) {
+      return `${baseClasses} bg-gray-800/50 border-gray-600/30 cursor-not-allowed opacity-60`;
+    }
+    
+    // Unlocking animation
+    if (showLockRemoval) {
+      return `${baseClasses} bg-cyan-500/30 border-cyan-500/50`;
+    }
+    
+    // Chapter completed - Requirements: 10.3
+    if (chapterCompleted && !isHighlighted) {
+      return `${baseClasses} bg-green-500/10 border-green-500/30 hover:bg-green-500/20`;
+    }
+    
+    // Next level to play (glow animation only for this one)
+    if (isNextToPlay) {
+      return `${baseClasses} bg-cyan-500/20 border-cyan-500 hover:bg-cyan-500/30 ring-2 ring-cyan-400 next-level-glow`;
+    }
+    
+    // Last played or current level (highlighted but no pulse)
+    if (isHighlighted && !isNextToPlay) {
+      return `${baseClasses} bg-cyan-500/20 border-cyan-500/50 hover:bg-cyan-500/30 ring-2 ring-cyan-400/50`;
+    }
+    
+    // Unlocked but not completed
+    if (isAccessible) {
+      return `${baseClasses} bg-white/5 border-white/20 hover:bg-white/10 hover:border-white/30`;
+    }
+    
+    // Default locked state
+    return `${baseClasses} bg-white/5 border-white/10 cursor-not-allowed opacity-50`;
+  };
+  
+  // Glow animation style for next level to play
+  const getGlowStyle = (): React.CSSProperties => {
+    if (!isNextToPlay) return {};
+    return {
+      animation: 'nextLevelGlow 2s ease-in-out infinite',
+      boxShadow: '0 0 15px rgba(0, 240, 255, 0.6), inset 0 0 10px rgba(0, 240, 255, 0.1)',
+    };
+  };
+  
   return (
-    <button
-      onClick={onClick}
-      disabled={!unlocked && !showLockRemoval}
-      className={`relative flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${
-        !unlocked && !showLockRemoval
-          ? 'bg-white/5 border-white/10 cursor-not-allowed opacity-50'
-          : completed && !isHighlighted
-          ? 'bg-green-500/10 border-green-500/30 hover:bg-green-500/20'
-          : isHighlighted
-          ? 'bg-cyan-500/20 border-cyan-500/50 hover:bg-cyan-500/30 ring-2 ring-cyan-400/50 animate-pulse'
-          : showLockRemoval
-          ? 'bg-cyan-500/30 border-cyan-500/50'
-          : 'bg-white/5 border-white/20 hover:bg-white/10 hover:border-white/30'
-      }`}
-      style={getUnlockPopStyles()}
-    >
-      {/* Level Number */}
+    <>
+      {/* CSS Animation for next level glow */}
+      {isNextToPlay && (
+        <style>{`
+          @keyframes nextLevelGlow {
+            0%, 100% {
+              box-shadow: 0 0 10px rgba(0, 240, 255, 0.4), inset 0 0 5px rgba(0, 240, 255, 0.1);
+              transform: scale(1);
+            }
+            50% {
+              box-shadow: 0 0 25px rgba(0, 240, 255, 0.8), inset 0 0 15px rgba(0, 240, 255, 0.2);
+              transform: scale(1.02);
+            }
+          }
+        `}</style>
+      )}
+      <button
+        onClick={onClick}
+        disabled={false} // Allow click to show locked message - Requirements: 2.3
+        className={getCardClassName()}
+        style={{ ...getUnlockPopStyles(), ...getGlowStyle() }}
+      >
+      {/* Level Number - Requirements: 2.2 */}
       <div className={`text-lg font-bold ${
-        !unlocked && !showLockRemoval
-          ? 'text-white/30'
+        isLocked && !showLockRemoval
+          ? 'text-gray-500'
+          : isNextToPlay
+          ? 'text-cyan-400'
           : isHighlighted
           ? 'text-cyan-400'
-          : completed
+          : chapterCompleted
           ? 'text-green-400'
           : showLockRemoval
           ? 'text-cyan-400'
           : 'text-white'
       }`}>
-        {unlocked || showLockRemoval ? (
-          level.id
+        {isLocked && !showLockRemoval ? (
+          <Lock className="w-5 h-5 text-gray-500" />
         ) : (
-          <Lock className="w-5 h-5" />
+          level.id
         )}
       </div>
       
@@ -651,8 +817,15 @@ const LevelCard: React.FC<LevelCardProps> = ({
         </div>
       )}
       
-      {/* Stars */}
-      {(unlocked || showLockRemoval) && (
+      {/* Chapter Completion Indicator - Requirements: 10.3 */}
+      {chapterCompleted && !isLocked && (
+        <div className="absolute -top-1 -left-1">
+          <CheckCircle className="w-4 h-4 text-green-400 fill-green-400/20" />
+        </div>
+      )}
+      
+      {/* Stars - only show for unlocked chapters */}
+      {(chapterUnlocked || showLockRemoval) && (
         <div className="flex items-center gap-0.5 mt-1">
           {[1, 2, 3].map((starNum) => (
             <Star
@@ -667,20 +840,28 @@ const LevelCard: React.FC<LevelCardProps> = ({
         </div>
       )}
       
-      {/* Mechanic Icons */}
-      {(unlocked || showLockRemoval) && getMechanicIcons().length > 0 && (
+      {/* Target Distance for locked chapters - Requirements: 2.2 */}
+      {isLocked && !showLockRemoval && (
+        <div className="text-xs text-gray-500 mt-1">
+          {level.id * 100}m
+        </div>
+      )}
+      
+      {/* Mechanic Icons - only show for unlocked chapters */}
+      {(chapterUnlocked || showLockRemoval) && getMechanicIcons().length > 0 && (
         <div className="flex items-center gap-1 mt-1">
           {getMechanicIcons()}
         </div>
       )}
       
-      {/* Current/Last Played Level Indicator - Requirements 1.4 */}
-      {isHighlighted && unlocked && (
+      {/* Next Level to Play Indicator - Requirements 1.4 */}
+      {isNextToPlay && (
         <div className="absolute -top-1 -right-1">
           <Play className="w-4 h-4 text-cyan-400 fill-cyan-400" />
         </div>
       )}
-    </button>
+      </button>
+    </>
   );
 };
 

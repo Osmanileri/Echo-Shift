@@ -8,22 +8,29 @@ import { subscribeWithSelector } from "zustand/middleware";
 import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
 import { calculateLevelReward, calculateStarRating, type LevelResult } from "../systems/campaignSystem";
+import {
+  type ChapterProgressState,
+  createDefaultChapterProgress,
+  loadChapterProgress,
+  saveChapterProgress,
+  unlockNextChapter
+} from "../systems/chapterSystem";
 import { calculateDailyReward, checkLevelUp } from "../systems/levelSystem";
 import {
-    checkMissionReset,
-    getDefaultMissionState,
-    loadMissionState,
-    saveMissionState,
-    updateMissionProgress
+  checkMissionReset,
+  getDefaultMissionState,
+  loadMissionState,
+  saveMissionState,
+  updateMissionProgress
 } from "../systems/missionSystem";
 import { initializeShiftState } from "../systems/shiftProtocol";
 import type {
-    ConstructType,
-    EnhancedResonanceState,
-    MissionEvent,
-    MissionState,
-    ShiftProtocolState,
-    SnapshotBuffer
+  ConstructType,
+  EnhancedResonanceState,
+  MissionEvent,
+  MissionState,
+  ShiftProtocolState,
+  SnapshotBuffer
 } from "../types";
 import { safeLoad, safePersist, STORAGE_KEYS } from "../utils/persistence";
 
@@ -139,6 +146,9 @@ export interface GameStore {
   // Distance-based session state (session-only, not persisted)
   levelSession: LevelSession | null;
 
+  // Chapter Progress State - Requirements 2.4, 8.1, 8.4
+  chapterProgress: ChapterProgressState;
+
   // Daily Challenge
   lastDailyChallengeDate: string;
   dailyChallengeCompleted: boolean;
@@ -196,6 +206,10 @@ export interface GameStore {
   updateLevelSession: (updates: Partial<LevelSession>) => void;
   endLevelSession: () => void;
   getLevelStats: (levelId: number) => LevelStats | undefined;
+
+  // Chapter System Actions - Requirements 2.4, 8.1, 8.4
+  completeChapter: (chapterId: number) => void;
+  resetChapterProgress: () => void;
 
   // Upgrade Actions
   purchaseUpgrade: (upgradeId: string, cost: number) => boolean;
@@ -258,6 +272,8 @@ const DEFAULT_STATE = {
   lastPlayedLevel: 1,                                    // Requirements 1.4
   levelStats: {} as Record<number, LevelStats>,          // Requirements 10.2, 10.4
   levelSession: null as LevelSession | null,             // Session-only
+  // Chapter Progress State - Requirements 2.4, 8.1, 8.4
+  chapterProgress: createDefaultChapterProgress(),
   lastDailyChallengeDate: "",
   dailyChallengeCompleted: false,
   dailyChallengeBestScore: 0,
@@ -305,6 +321,8 @@ interface PersistedState {
   // Campaign Update v2.5 - Requirements 1.4, 10.2, 10.4
   lastPlayedLevel: number;
   levelStats: Record<number, LevelStats>;
+  // Chapter Progress - Requirements 2.4, 8.1, 8.4
+  chapterProgress: ChapterProgressState;
   lastDailyChallengeDate: string;
   dailyChallengeCompleted: boolean;
   dailyChallengeBestScore: number;
@@ -637,12 +655,19 @@ export const useGameStore = create<GameStore>()(
         // Unlock next level
         const newCurrentLevel = Math.max(state.currentLevel, levelId + 1);
 
+        // Also update chapter progress to unlock next chapter
+        const newChapterProgress = unlockNextChapter(levelId, state.chapterProgress);
+
         return {
           completedLevels: newCompletedLevels,
           levelStars: newLevelStars,
           currentLevel: Math.min(newCurrentLevel, 100), // Cap at 100 levels
+          chapterProgress: newChapterProgress,
         };
       });
+      
+      // Persist chapter progress separately
+      saveChapterProgress(get().chapterProgress);
       get().saveToStorage();
     },
 
@@ -800,6 +825,52 @@ export const useGameStore = create<GameStore>()(
       return get().levelStats[levelId];
     },
 
+    // ========================================================================
+    // Chapter System Actions - Requirements 2.4, 8.1, 8.4
+    // ========================================================================
+
+    /**
+     * Complete a chapter and unlock the next one
+     * Requirements: 2.4 - WHEN a player completes a chapter THEN the Campaign_System 
+     * SHALL unlock the next sequential chapter
+     * Requirements: 8.1 - WHEN a chapter is completed THEN the Campaign_System 
+     * SHALL persist the completion to localStorage
+     * @param chapterId - Chapter number (1-100)
+     */
+    completeChapter: (chapterId: number) => {
+      const state = get();
+      
+      // Use unlockNextChapter to update chapter progress state
+      const newChapterProgress = unlockNextChapter(chapterId, state.chapterProgress);
+      
+      // Update state
+      set({ chapterProgress: newChapterProgress });
+      
+      // Persist chapter progress to localStorage
+      saveChapterProgress(newChapterProgress);
+      
+      // Also save main game state
+      get().saveToStorage();
+    },
+
+    /**
+     * Reset chapter progress for a fresh start
+     * Requirements: 8.4 - WHEN a chapter is completed THEN the Campaign_System 
+     * SHALL reset all chapter progress data for a fresh start on next play
+     */
+    resetChapterProgress: () => {
+      const defaultProgress = createDefaultChapterProgress();
+      
+      // Update state
+      set({ chapterProgress: defaultProgress });
+      
+      // Persist reset state
+      saveChapterProgress(defaultProgress);
+      
+      // Also save main game state
+      get().saveToStorage();
+    },
+
     // Ghost Actions
     recordGhostFrame: (frame: GhostFrame) => {
       set((state) => ({
@@ -945,6 +1016,9 @@ export const useGameStore = create<GameStore>()(
         lastPlayedLevel: savedState.lastPlayedLevel ?? DEFAULT_STATE.lastPlayedLevel,
         levelStats: savedState.levelStats ?? DEFAULT_STATE.levelStats,
         levelSession: DEFAULT_STATE.levelSession, // Session-only, always reset
+        // Chapter Progress - Requirements 2.4, 8.1, 8.4
+        // Load from dedicated chapter progress storage, fallback to saved state or default
+        chapterProgress: loadChapterProgress(),
         lastDailyChallengeDate:
           savedState.lastDailyChallengeDate ??
           DEFAULT_STATE.lastDailyChallengeDate,
@@ -1008,6 +1082,8 @@ export const useGameStore = create<GameStore>()(
         lastPlayedLevel: state.lastPlayedLevel,
         levelStats: state.levelStats,
         // NOTE: levelSession is NOT saved (session-only)
+        // Chapter Progress - Requirements 2.4, 8.1, 8.4
+        chapterProgress: state.chapterProgress,
         lastDailyChallengeDate: state.lastDailyChallengeDate,
         dailyChallengeCompleted: state.dailyChallengeCompleted,
         dailyChallengeBestScore: state.dailyChallengeBestScore,

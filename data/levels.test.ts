@@ -19,11 +19,10 @@ import {
 
 describe('Level Configuration Properties - Campaign Update v2.5', () => {
   /**
-   * **Feature: campaign-update-v25, Property 1: Target distance formula correctness**
-   * **Validates: Requirements 2.1**
+   * **Feature: campaign-chapter-system, Property 1: Target Distance Formula**
+   * **Validates: Requirements 1.1**
    * 
-   * Level 1: 100m (intro level)
-   * Level 2+: 150 + (level * 75) * (level ^ 0.08) meters
+   * For any chapter number N (where N >= 1), the target distance SHALL equal N × 100 meters.
    */
   test('Property 1: Target distance formula correctness', () => {
     fc.assert(
@@ -31,14 +30,10 @@ describe('Level Configuration Properties - Campaign Update v2.5', () => {
         fc.integer({ min: 1, max: 100 }),
         (level) => {
           const calculated = calculateTargetDistance(level);
+          const expected = level * 100;
           
-          // Level 1 is special case: 100m intro
-          if (level === 1) {
-            expect(calculated).toBe(100);
-          } else {
-            const expected = 150 + (level * 75) * Math.pow(level, 0.08);
-            expect(calculated).toBeCloseTo(expected, 10);
-          }
+          // Verify formula: level × 100
+          expect(calculated).toBe(expected);
           
           // Verify distance is always positive
           expect(calculated).toBeGreaterThan(0);
@@ -60,8 +55,10 @@ describe('Level Configuration Properties - Campaign Update v2.5', () => {
    * **Feature: campaign-update-v25, Property 8: Base speed formula**
    * **Validates: Requirements 3.4**
    * 
-   * Level 1: 6 (slow intro)
-   * Level 2+: 8 + (level * 0.35)
+   * Super mobile-friendly speed progression:
+   * Level 1-10: 1 (super slow intro for mobile)
+   * Level 11-30: 1.2 + ((level - 10) * 0.08) = 1.28 to 2.8
+   * Level 31+: 2.8 + ((level - 30) * 0.05)
    */
   test('Property 8: Base speed formula', () => {
     fc.assert(
@@ -70,19 +67,24 @@ describe('Level Configuration Properties - Campaign Update v2.5', () => {
         (level) => {
           const calculated = calculateBaseSpeed(level);
           
-          // Level 1 is special case: slow intro speed
-          if (level === 1) {
-            expect(calculated).toBe(6);
+          // Level 1-10: Super slow intro speed for mobile
+          if (level <= 10) {
+            expect(calculated).toBe(1);
+          } else if (level <= 30) {
+            // Level 11-30: Gradual increase
+            const expected = 1.2 + ((level - 10) * 0.08);
+            expect(calculated).toBeCloseTo(expected, 10);
           } else {
-            const expected = 8 + (level * 0.35);
+            // Level 31+: Very slow progression
+            const expected = 2.8 + ((level - 30) * 0.05);
             expect(calculated).toBeCloseTo(expected, 10);
           }
           
           // Verify speed is always positive
           expect(calculated).toBeGreaterThan(0);
           
-          // Verify speed increases with level (level 2+)
-          if (level > 2) {
+          // Verify speed increases with level (level 11+)
+          if (level > 11) {
             const previousSpeed = calculateBaseSpeed(level - 1);
             expect(calculated).toBeGreaterThan(previousSpeed);
           }

@@ -2,13 +2,13 @@
 
 ## Mevcut Odak
 
-- **Campaign Update v2.5** - TAMAMLANDI ✅
-  - Distance-based gameplay (skor yerine mesafe)
-  - Progressive speed system (hız artışı + climax boost)
-  - Star rating system (Survivor/Collector/Perfectionist)
-  - Holographic gate ve climax VFX
-  - Victory screen animasyonları
-  - 526 test geçiyor
+- **Mobile-Friendly Gameplay Tuning** - TAMAMLANDI ✅
+  - Oyun hızı azaltıldı (mobil için daha kolay)
+  - İlk 3 seviye çok yavaş (tutorial-like)
+  - Spawn rate azaltıldı
+  - Debug özellikleri kaldırıldı (immortality, teleport, debug overlay)
+  - Holographic gate kaldırıldı (distance-based completion)
+  - 565 test geçiyor
 
 ## Son Yapılanlar
 

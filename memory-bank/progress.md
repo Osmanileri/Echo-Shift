@@ -2,11 +2,12 @@
 
 ## Genel Durum
 
-- **526 test** geçiyor
+- **565 test** geçiyor
 - **8 spec** tamamlandı
 - **Dokümantasyon** güncel
 - **Storage key'ler** standardize
 - **Campaign Update v2.5** tamamlandı
+- **Mobile-Friendly Tuning** tamamlandı
 
 ## Tamamlanan Spec'ler
 

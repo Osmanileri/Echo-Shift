@@ -1,7 +1,11 @@
 /**
  * Victory Screen Component
- * Campaign Update v2.5 - Victory animations and rewards display
- * Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
+ * Campaign Chapter System - Victory animations and rewards display
+ * Requirements: 5.2, 5.3, 5.5, 8.1, 8.2, 8.3, 8.4, 8.5
+ * 
+ * 5.2 - Display completed chapter number
+ * 5.3 - Display distance traveled / target distance
+ * 5.5 - Provide "Next Chapter", "Replay", and "Main Menu" buttons
  */
 
 import { Gem, Home, Play, RotateCcw, Star } from 'lucide-react';
@@ -351,7 +355,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
 
       {/* Main content */}
       <div className="relative z-10 flex flex-col items-center w-full max-w-xs">
-        {/* Victory title */}
+        {/* Victory title - Requirements 5.2 */}
         <h2 
           className="text-3xl sm:text-4xl md:text-5xl font-black mb-1 tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-cyan-500"
           style={{
@@ -359,7 +363,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
             transform: `scale(${phase === 'slowmo' ? 0.8 + slowmoProgress * 0.2 : 1})`,
           }}
         >
-          SEVİYE
+          BÖLÜM
         </h2>
         <h2 
           className="text-3xl sm:text-4xl md:text-5xl font-black mb-4 tracking-[0.15em] text-cyan-400"
@@ -371,9 +375,9 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
           TAMAMLANDI!
         </h2>
 
-        {/* Level info */}
+        {/* Chapter info - Requirements 5.2 */}
         <div className="text-sm text-white/60 mb-4">
-          Seviye {levelId}
+          Bölüm {levelId}
         </div>
 
         {/* Stars display (Requirements 8.2) */}
@@ -381,7 +385,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
           {[0, 1, 2].map(renderStar)}
         </div>
 
-        {/* Distance info */}
+        {/* Distance info - Requirements 5.3 */}
         <div 
           ref={centerRef}
           className="flex flex-col items-center gap-2 mb-4 p-4 bg-white/5 rounded-xl border border-cyan-500/20 backdrop-blur-sm w-full"
@@ -425,7 +429,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
           )}
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons - Requirements 5.5 */}
         {phase === 'complete' && (
           <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
             <button
@@ -433,7 +437,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
               className="group flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-lg shadow-[0_0_20px_rgba(0,240,255,0.3)]"
             >
               <Play size={18} className="fill-black" />
-              SONRAKİ SEVİYE
+              SONRAKİ BÖLÜM
             </button>
             <button
               onClick={() => handleButtonClick(onRestart)}

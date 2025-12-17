@@ -13,15 +13,15 @@ export const COLORS = {
 };
 
 export const INITIAL_CONFIG = {
-  // Speed - starts at 15 km/h (1.5), VERY SLOW start
-  baseSpeed: 1.5,  // 15km/h starting speed (çok yavaş başlangıç)
-  maxSpeed: 8,     // 80km/h max speed (çok düşürüldü)
-  speedIncreaseInterval: 3500, // ÇOK YAVAŞ artış (was 2500)
-  speedIncreaseAmount: 0.03, // ÇOK KÜÇÜK artış (was 0.05)
+  // Speed - starts at 5 km/h (0.5), SUPER SLOW start for mobile
+  baseSpeed: 2.5,  // 5km/h starting speed (mobil için süper yavaş)
+  maxSpeed: 4,     // 40km/h max speed (çok düşük)
+  speedIncreaseInterval: 6000, // SÜPER YAVAŞ artış (was 5000)
+  speedIncreaseAmount: 0.01, // SÜPER KÜÇÜK artış (was 0.015)
 
-  // Spawn rate - MUCH slower obstacle spawning for easier start
-  spawnRate: 150,  // Çok yavaş spawn (was 100)
-  minSpawnRate: 60, // Daha az yoğun (was 40)
+  // Spawn rate - SUPER slow obstacle spawning for mobile-friendly gameplay
+  spawnRate: 350,  // Süper yavaş spawn - çok daha fazla zaman (was 280)
+  minSpawnRate: 150, // Daha az yoğun - minimum spawn aralığı (was 120)
 
   // MOBILE OPTIMIZED - Wider view for better visibility
   orbRadius: 6,      // Smaller orbs for wider view

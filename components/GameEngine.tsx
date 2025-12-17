@@ -1,71 +1,69 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    GRAVITY_CONFIG,
-    INITIAL_CONFIG,
-    MIDLINE_CONFIG,
-    PHANTOM_CONFIG,
+  GRAVITY_CONFIG,
+  INITIAL_CONFIG,
+  MIDLINE_CONFIG,
+  PHANTOM_CONFIG,
 } from "../constants";
 import { getSkinById } from "../data/skins";
 import { useGameStore } from "../store/gameStore";
 import { applyTheme, getColor, hasEffect } from "../systems/themeSystem";
 import {
-    EnhancedResonanceState,
-    GameState,
-    GravityState,
-    MidlineConfig,
-    MidlineState,
-    MissionEvent,
-    NearMissState,
-    Obstacle,
-    Particle,
-    RhythmState,
-    ScorePopup,
-    SnapshotBuffer,
-    VisualEffect
+  EnhancedResonanceState,
+  GameState,
+  GravityState,
+  MidlineConfig,
+  MidlineState,
+  MissionEvent,
+  NearMissState,
+  Obstacle,
+  Particle,
+  RhythmState,
+  ScorePopup,
+  SnapshotBuffer,
+  VisualEffect
 } from "../types";
 import {
-    checkCollision,
-    checkNearMiss,
-    createInitialGravityState,
-    createInitialNearMissState,
-    getFlippedLane,
-    mirrorPlayerPosition,
-    randomRange,
-    shouldTriggerFlip,
-    updateNearMissState,
+  checkCollision,
+  checkNearMiss,
+  createInitialGravityState,
+  createInitialNearMissState,
+  getFlippedLane,
+  mirrorPlayerPosition,
+  randomRange,
+  shouldTriggerFlip,
+  updateNearMissState,
 } from "../utils/gameMath";
 import {
-    calculateDynamicAmplitude,
-    calculateDynamicFrequency,
-    calculateMidlineY,
-    calculateMovementBounds,
-    calculateNormalBounds,
-    calculateNormalizedOffset,
-    calculateTensionIntensity,
-    createInitialMidlineState,
-    getOrbZone,
-    isAtPeak,
-    isCriticalSpace,
-    predictPeakTime,
-    shouldApplyMicroPhasing,
+  calculateDynamicAmplitude,
+  calculateDynamicFrequency,
+  calculateMidlineY,
+  calculateMovementBounds,
+  calculateNormalBounds,
+  calculateNormalizedOffset,
+  calculateTensionIntensity,
+  createInitialMidlineState,
+  getOrbZone,
+  isAtPeak,
+  isCriticalSpace,
+  predictPeakTime,
+  shouldApplyMicroPhasing,
 } from "../utils/midlineSystem";
 import {
-    calculatePhantomBonus,
-    calculatePhantomOpacity,
-    createPhantomObstacle,
-    getEffectiveOpacity,
-    shouldSpawnAsPhantom,
+  calculatePhantomBonus,
+  calculatePhantomOpacity,
+  createPhantomObstacle,
+  getEffectiveOpacity,
+  shouldSpawnAsPhantom,
 } from "../utils/phantomSystem";
 import {
-    calculateExpectedInterval,
-    checkRhythmTiming,
-    createInitialRhythmState,
-    updateRhythmState,
+  calculateExpectedInterval,
+  checkRhythmTiming,
+  createInitialRhythmState,
+  updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
 
-// 🔧 DEBUG: Geçici ölümsüzlük modu - test için true yap, bitince false yap
-const DEBUG_IMMORTAL_MODE = true;
 // Particle System Integration - Requirements 12.1, 12.2, 12.3
 import * as ParticleSystem from "../systems/particleSystem";
 // Screen Shake System Integration - Requirements 10.1, 10.2, 10.3, 10.4
@@ -120,6 +118,8 @@ import * as OrbTrailSystem from "../systems/orbTrailSystem";
 import * as ConstructSystem from "../systems/constructs/ConstructSystem";
 import * as GlitchTokenSpawner from "../systems/GlitchTokenSpawner";
 import * as SecondChanceSystem from "../systems/SecondChanceSystem";
+// Holographic Gate System Integration - Finish line visualization
+import * as HolographicGate from "../systems/holographicGate";
 import type { InputState } from "../types";
 // Echo Constructs VFX Integration - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.6, 6.8
 import * as ConstructRenderer from "../systems/constructs/ConstructRenderer";
@@ -131,7 +131,7 @@ import * as EnvironmentalEffects from "../systems/environmentalEffects";
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
-// Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
+// Campaign Chapter System - Requirements: 4.1, 4.5, 1.5, 6.1, 6.2, 6.3
 export interface CampaignModeConfig {
   enabled: boolean;
   levelConfig?: LevelConfig;
@@ -147,6 +147,14 @@ export interface CampaignModeConfig {
     healthRemaining: number;
   }) => void;
   onDistanceUpdate?: (currentDistance: number, targetDistance: number, progressPercent: number) => void;
+  // Campaign Chapter System - Game over callback with distance info
+  // Requirements: 6.1, 6.2, 6.3 - Pass distance traveled to game over screen
+  onChapterGameOver?: (result: {
+    distanceTraveled: number;
+    targetDistance: number;
+    shardsCollected: number;
+    damageTaken: number;
+  }) => void;
 }
 
 // Daily Challenge mode configuration - Requirements 8.1, 8.2
@@ -247,6 +255,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
     applyTheme(equippedTheme);
   }, [equippedTheme]);
 
+  // Keep latest campaignMode in ref to avoid effect dependencies causing loop restarts
+  const campaignModeRef = useRef(campaignMode);
+  useEffect(() => {
+    campaignModeRef.current = campaignMode;
+  }, [campaignMode]);
+
   // Keep ThemeSystem in sync with custom theme payload
   useEffect(() => {
     setCustomThemeColors(customThemeColors);
@@ -266,7 +280,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Track if game was previously playing (to detect resume vs new game)
   const wasPlayingRef = useRef<boolean>(false);
-  
+
   // Swap Mechanics
   const isSwapped = useRef<boolean>(false); // false = White Top, true = Black Top
   const rotationAngle = useRef<number>(0);
@@ -292,6 +306,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const midlineState = useRef<MidlineState>(
     createInitialMidlineState(window.innerHeight)
   );
+
+  // Holographic Gate State - Requirements 12.1, 12.2
   const gameStartTime = useRef<number>(0);
 
   // Logic Timers
@@ -317,6 +333,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Campaign Mode State - Requirements 7.3
   const levelCompleted = useRef<boolean>(false);
+
+  // Finish Mode State - Player moves right to finish line when reaching target distance
+  const isInFinishMode = useRef<boolean>(false);
+  const finishModePlayerX = useRef<number>(0); // Player X offset during finish mode
+  const finishModeStartTime = useRef<number>(0); // When finish mode started
+  const finishLineX = useRef<number>(0); // Finish line X position
+  const hasReachedFinishLine = useRef<boolean>(false); // Player touched finish line
+  const finishExplosionTriggered = useRef<boolean>(false); // Explosion effect triggered
+  
+  // Holographic Gate State for finish line visualization
+  const holographicGateState = useRef<HolographicGate.HolographicGateState>(
+    HolographicGate.createHolographicGateState()
+  );
 
   // Campaign Update v2.5 - Distance Tracking State
   // Requirements: 2.2, 2.3, 2.4, 3.1, 3.2, 3.3
@@ -546,32 +575,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Reset Campaign Mode State - Requirements 7.3
     levelCompleted.current = false;
+    
+    // Reset Finish Mode State
+    isInFinishMode.current = false;
+    finishModePlayerX.current = 0;
+    finishModeStartTime.current = 0;
+    finishLineX.current = 0;
+    hasReachedFinishLine.current = false;
+    finishExplosionTriggered.current = false;
+    holographicGateState.current = HolographicGate.createHolographicGateState();
 
     // Campaign Update v2.5 - Initialize Distance Tracking
     // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
-    console.log('[RESET GAME] campaignMode:', {
-      enabled: campaignMode?.enabled,
-      useDistanceMode: campaignMode?.useDistanceMode,
-      targetDistance: campaignMode?.targetDistance,
-    });
-    if (campaignMode?.enabled && campaignMode.useDistanceMode && campaignMode.targetDistance) {
-      console.log('[RESET GAME] Initializing distance tracker with target:', campaignMode.targetDistance);
+    // Use campaignModeRef.current to get the latest value (prop may not be updated yet)
+    const activeCampaignMode = campaignModeRef.current;
+    if (activeCampaignMode?.enabled && activeCampaignMode.useDistanceMode && activeCampaignMode.targetDistance) {
       // Initialize distance tracker with target distance
-      distanceTrackerRef.current = createDistanceTracker(campaignMode.targetDistance);
-      
+      distanceTrackerRef.current = createDistanceTracker(activeCampaignMode.targetDistance);
+
       // Initialize speed controller for the level
-      const levelId = campaignMode.levelConfig?.id || 1;
+      const levelId = activeCampaignMode.levelConfig?.id || 1;
       speedControllerRef.current = createSpeedController(levelId);
-      
+
       // Reset distance state
       distanceStateRef.current = {
         currentDistance: 0,
-        targetDistance: campaignMode.targetDistance,
+        targetDistance: activeCampaignMode.targetDistance,
         progressPercent: 0,
         isInClimaxZone: false,
         isNearFinish: false,
       };
-      
+
       // Reset star rating tracking
       shardsCollectedRef.current = 0;
       totalShardsSpawnedRef.current = 0;
@@ -597,6 +631,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     onScoreUpdate(score.current);
     setGameSpeedDisplay(INITIAL_CONFIG.baseSpeed);
 
+    // Reset level completion flag on game start
+    levelCompleted.current = false;
+
     // Reset UI state indicators
     onRhythmStateUpdate?.(1, 0);
     onNearMissStateUpdate?.(0);
@@ -608,6 +645,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset ParticleSystem - Requirements 12.5
     ParticleSystem.reset();
 
+    // Reset Holographic Gate - Requirements 12.1
     // Reset ScreenShake - Requirements 10.4
     ScreenShake.reset();
 
@@ -704,7 +742,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     constructRenderState.current = ConstructRenderer.createConstructRenderState();
     transformationVFXState.current = TransformationVFX.createTransformationVFXState();
     secondChanceVFXState.current = SecondChanceVFX.createSecondChanceVFXState();
-    
+
     // Reset Environmental Effects State - Requirements 14.1, 14.2, 14.3, 14.4
     EnvironmentalEffects.resetGlobalEnvironmentalEffects();
   }, [
@@ -782,8 +820,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // 3. Zıt renkli top, bloka değerse ölür
     // 4. Max geçiş = connector uzunluğu (oyuncunun uzanabileceği max nokta)
 
-    // Minimum boşluk = connector + 2 orb + güvenlik payı (artırıldı)
-    const minGap = connectorLen + orbRadius * 2 + 25;
+    // Minimum boşluk = connector + 2 orb + güvenlik payı (mobil için daha geniş)
+    const minGap = connectorLen + orbRadius * 2 + 45;
 
     // Rastgele polarite - üst ve alt bloklar ZIT renklerde
     const topPolarity: "white" | "black" = Math.random() > 0.5 ? "white" : "black";
@@ -923,12 +961,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // GÜNCELLEME: Daha uzun geçiş = daha dinamik oyun
     const maxCrossing = connectorLen / 2 - orbRadius + 8; // Artırıldı
 
-    // BOŞLUK = çubuk uzunluğu + orb çapları (geçilebilir)
-    const minGap = connectorLen + orbRadius * 2 + 9;
+    // BOŞLUK = çubuk uzunluğu + orb çapları (mobil için daha geniş)
+    const minGap = connectorLen + orbRadius * 2 + 35;
 
     // RASTGELE POLARİTE - ama aynı renk üst üste 4 kere gelmesin
     let topPolarity: "white" | "black" = nextRunRand() > 0.5 ? "white" : "black";
-    
+
     // Eğer aynı renk 3 kere üst üste geldiyse, zorla değiştir
     if (topPolarity === lastTopPolarity.current) {
       consecutivePolarityCount.current++;
@@ -941,7 +979,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       consecutivePolarityCount.current = 0;
     }
     lastTopPolarity.current = topPolarity;
-    
+
     const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
 
     // RASTGELE GAP TİPİ:
@@ -1109,15 +1147,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
     pooled.lane = lane;
     pooled.type = actualType;
     // Bonus shardlar 3x değer verir
-    pooled.value = actualType === "bonus" 
-      ? ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue * 3 
+    pooled.value = actualType === "bonus"
+      ? ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue * 3
       : ShardPlacement.DEFAULT_SHARD_CONFIG.baseShardValue;
     pooled.collected = false;
     pooled.movement = movement;
     pooled.spawnTime = Date.now();
     (pooled as ShardPlacement.PlacedShard).isBonus = actualType === "bonus";
     activeShards.current.push(pooled);
-    
+
     // Campaign Update v2.5 - Track total shards spawned for star rating
     // Requirements: 4.2
     if (campaignMode?.enabled && campaignMode.useDistanceMode) {
@@ -1634,6 +1672,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Main Loop
   useEffect(() => {
+    // GAME_OVER or VICTORY state - stop the game loop completely
+    if (gameState === GameState.GAME_OVER || gameState === GameState.VICTORY) {
+      // Cancel any running animation frame to stop the game
+      if (frameId.current) {
+        cancelAnimationFrame(frameId.current);
+        frameId.current = 0;
+      }
+      return;
+    }
+
     if (gameState === GameState.MENU) {
       wasPlayingRef.current = false; // Reset flag when returning to menu
       resetGame();
@@ -1676,7 +1724,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     }
 
     if (gameState !== GameState.PLAYING) return;
-    
+
     // Only reset if this is a NEW game, not resuming from pause
     if (!wasPlayingRef.current) {
       console.log("[GAME] Starting NEW game, resetting...");
@@ -1684,7 +1732,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     } else {
       console.log("[GAME] Resuming from pause, NOT resetting");
     }
-    
+
     // Mark that we're now playing
     wasPlayingRef.current = true;
 
@@ -1694,42 +1742,160 @@ const GameEngine: React.FC<GameEngineProps> = ({
         frameId.current = requestAnimationFrame(loop);
         return;
       }
+
+      // Pause game loop when pending restore (waiting for user decision)
+      // Game should freeze while SYSTEM CRASH prompt is shown
+      if (pendingRestore.current) {
+        frameId.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Distance-based level completion logic with finish mode
+      const currentCampaignMode = campaignModeRef.current;
       
-      // CRITICAL: Check level completion FIRST before any collision detection
-      // This ensures the level ends when target distance is reached
-      if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current) {
-        const isComplete = distanceTrackerRef.current.isLevelComplete();
+      // DEBUG: Log every 60 frames (~1 second)
+      if (framesSinceSpawn.current % 60 === 0) {
+        console.log('[DEBUG] Campaign:', currentCampaignMode?.enabled, 
+          'DistanceMode:', currentCampaignMode?.useDistanceMode,
+          'Tracker:', !!distanceTrackerRef.current,
+          'FinishMode:', isInFinishMode.current,
+          'Completed:', levelCompleted.current);
+        if (distanceTrackerRef.current) {
+          console.log('[DEBUG] Distance:', distanceTrackerRef.current.getCurrentDistance().toFixed(1), 
+            '/', distanceTrackerRef.current.getTargetDistance(),
+            'Complete:', distanceTrackerRef.current.isLevelComplete());
+        }
+      }
+      
+      if (currentCampaignMode?.enabled && currentCampaignMode.useDistanceMode && distanceTrackerRef.current) {
         const currentDist = distanceTrackerRef.current.getCurrentDistance();
         const targetDist = distanceTrackerRef.current.getTargetDistance();
+        const isComplete = distanceTrackerRef.current.isLevelComplete();
         
-        // DEBUG: Log distance info every 60 frames (~1 second)
-        if (framesSinceSpawn.current % 60 === 0) {
-          console.log('[LEVEL COMPLETE CHECK]', {
-            currentDistance: currentDist,
-            targetDistance: targetDist,
-            isComplete,
-            levelCompleted: levelCompleted.current,
-            campaignEnabled: campaignMode?.enabled,
-            useDistanceMode: campaignMode?.useDistanceMode,
-            trackerExists: !!distanceTrackerRef.current
-          });
+        const canvas = canvasRef.current;
+        const screenWidth = canvas?.width || window.innerWidth;
+        const screenHeight = canvas?.height || window.innerHeight;
+        
+        // When target distance is reached, enter finish mode
+        if (isComplete && !isInFinishMode.current && !levelCompleted.current) {
+          console.log('[FINISH MODE] Starting - Distance:', currentDist, '/', targetDist);
+          isInFinishMode.current = true;
+          finishModePlayerX.current = 0;
+          finishModeStartTime.current = Date.now();
+          // Finish line at 85% of screen width
+          finishLineX.current = screenWidth * 0.85;
+          hasReachedFinishLine.current = false;
+          finishExplosionTriggered.current = false;
+          
+          // Initialize holographic gate at finish line position
+          holographicGateState.current = {
+            ...HolographicGate.createHolographicGateState(),
+            visible: true,
+            distanceFromPlayer: finishLineX.current - (screenWidth / 8),
+          };
+          
+          // Trigger haptic feedback
+          getHapticSystem().trigger('success');
         }
         
-        if (isComplete && !levelCompleted.current) {
-          console.log('[LEVEL COMPLETE] Triggering completion callback');
-          levelCompleted.current = true;
+        // In finish mode, animate player moving to finish line
+        if (isInFinishMode.current && !levelCompleted.current) {
+          const basePlayerX = screenWidth / 8;
+          const currentPlayerX = basePlayerX + finishModePlayerX.current;
           
-          // Trigger distance-based level completion callback
-          campaignMode.onDistanceLevelComplete?.({
-            distanceTraveled: distanceStateRef.current.currentDistance,
-            shardsCollected: shardsCollectedRef.current,
-            totalShardsSpawned: totalShardsSpawnedRef.current,
-            damageTaken: damageTakenRef.current,
-            healthRemaining: playerHealthRef.current > 0 ? playerHealthRef.current : 1, // Ensure at least 1 health for completion
-          });
+          // Phase 1: Player moves towards finish line
+          if (!hasReachedFinishLine.current) {
+            // Accelerating movement towards finish line
+            const progress = finishModePlayerX.current / (finishLineX.current - basePlayerX);
+            const acceleration = 1 + progress * 2; // Speed up as we approach
+            finishModePlayerX.current += 6 * acceleration;
+            
+            // Update holographic gate pulse
+            holographicGateState.current = HolographicGate.updateHolographicGate(
+              holographicGateState.current,
+              Date.now(),
+              finishLineX.current - currentPlayerX,
+              HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+            );
+            
+            // Check if player reached finish line
+            if (currentPlayerX >= finishLineX.current - 20) {
+              console.log('[FINISH MODE] Player reached finish line!');
+              hasReachedFinishLine.current = true;
+              
+              // Trigger gate shatter animation
+              holographicGateState.current = HolographicGate.triggerGateShatter(
+                holographicGateState.current,
+                Date.now(),
+                finishLineX.current,
+                screenHeight / 2,
+                HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+              );
+              
+              // Play victory sound
+              AudioSystem.playNewHighScore();
+              
+              // Strong haptic feedback for explosion
+              getHapticSystem().trigger('heavy');
+              
+              // Trigger screen shake for explosion effect
+              ScreenShake.triggerCollision();
+            }
+          }
           
-          // Stop the game loop immediately
-          return;
+          // Phase 2: Explosion animation after reaching finish line
+          if (hasReachedFinishLine.current && !finishExplosionTriggered.current) {
+            finishExplosionTriggered.current = true;
+            
+            // Create explosion particles at finish line using ParticleSystem
+            ParticleSystem.emitBurst(
+              finishLineX.current,
+              screenHeight / 2,
+              ['#00ffff', '#ffffff', '#00ff88']
+            );
+          }
+          
+          // Phase 3: Wait for explosion animation then trigger victory
+          if (hasReachedFinishLine.current) {
+            // Update shatter particles
+            holographicGateState.current = HolographicGate.updateHolographicGate(
+              holographicGateState.current,
+              Date.now(),
+              0,
+              HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+            );
+            
+            // Continue moving player off screen after explosion
+            finishModePlayerX.current += 12;
+            
+            // Check if animation is complete (player off screen or enough time passed)
+            // Extended animation time for better visual experience
+            const timeSinceFinishLine = Date.now() - (finishModeStartTime.current + 500);
+            const playerOffScreen = currentPlayerX > screenWidth + 50;
+            
+            // Wait at least 1.5 seconds after reaching finish line for full animation
+            if (playerOffScreen || timeSinceFinishLine > 1500) {
+              console.log('[LEVEL COMPLETE] Animation finished - triggering victory');
+              levelCompleted.current = true;
+
+              // Stop game loop
+              if (frameId.current) {
+                cancelAnimationFrame(frameId.current);
+                frameId.current = 0;
+              }
+
+              // Trigger victory callback
+              currentCampaignMode.onDistanceLevelComplete?.({
+                distanceTraveled: currentDist,
+                shardsCollected: shardsCollectedRef.current,
+                totalShardsSpawned: totalShardsSpawnedRef.current,
+                damageTaken: damageTakenRef.current,
+                healthRemaining: playerHealthRef.current,
+              });
+
+              return; // Stop game loop
+            }
+          }
         }
       }
 
@@ -1814,7 +1980,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         transformationVFXState.current,
         Date.now()
       );
-      
+
       // Update Second Chance VFX
       secondChanceVFXState.current = SecondChanceVFX.updateSecondChanceVFX(
         secondChanceVFXState.current,
@@ -1839,8 +2005,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Campaign Mode: Check if midline mechanic is enabled - Requirements 7.6
       // Daily Challenge Mode: Apply noMidline modifier - Requirements 8.2
       const midlineEnabled =
-        (!campaignMode?.enabled ||
-          campaignMode.levelConfig?.mechanics.midline !== false) &&
+        (!campaignModeRef.current?.enabled ||
+          campaignModeRef.current.levelConfig?.mechanics.midline !== false) &&
         !(
           dailyChallengeMode?.enabled &&
           dailyChallengeMode.config?.modifiers.noMidline
@@ -1941,38 +2107,39 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (usePatternBasedSpawning.current) {
         // Campaign Update v2.5 - Distance-based speed calculation
         // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
-        if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current && speedControllerRef.current) {
+        const activeCampaign = campaignModeRef.current;
+        if (activeCampaign?.enabled && activeCampaign.useDistanceMode && distanceTrackerRef.current && speedControllerRef.current) {
           const currentTime = Date.now();
           const deltaTimeMs = currentTime - lastDistanceUpdateTime.current;
           const deltaTimeSec = deltaTimeMs / 1000;
           lastDistanceUpdateTime.current = currentTime;
-          
+
           // Get current distance state
           const distState = distanceTrackerRef.current.getState();
-          
+
           // Update speed controller transition (for smooth climax zone entry)
           speedControllerRef.current.update(deltaTimeMs, distState.isInClimaxZone);
-          
+
           // Calculate speed using progressive formula with climax boost
-          const levelId = campaignMode.levelConfig?.id || 1;
+          const levelId = activeCampaign.levelConfig?.id || 1;
           speed.current = speedControllerRef.current.calculateSpeed(distState, levelId);
-          
+
           // Update distance based on current speed
           // Convert speed from pixels/frame to meters/second
-          // Factor 0.5 gives good pacing (~30-45 seconds for early levels)
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 0.5;
+          // Factor 0.8 gives good pacing (~45-60 seconds for level 1 with 100m target)
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 0.8;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
-          
+
           // Update distance state ref
           distanceStateRef.current = distanceTrackerRef.current.getState();
-          
+
           // Notify parent of distance update
-          campaignMode.onDistanceUpdate?.(
+          activeCampaign.onDistanceUpdate?.(
             distanceStateRef.current.currentDistance,
             distanceStateRef.current.targetDistance,
             distanceStateRef.current.progressPercent
           );
-          
+
           // Environmental Effects: Haptic feedback on distance bar pulse - Requirements 14.4
           // Trigger haptic when near finish (within 50m of target)
           if (distanceStateRef.current.isNearFinish) {
@@ -1985,56 +2152,29 @@ const GameEngine: React.FC<GameEngineProps> = ({
               EnvironmentalEffects.triggerDistanceBarPulseHaptic(envState, currentTime);
             }
           }
-          
-          // Check for level completion
-          // IMPORTANT: Level is only complete if player reaches target distance AND is still alive
-          // If player dies before reaching target, they must retry the level
-          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current && playerHealthRef.current > 0) {
-            levelCompleted.current = true;
-            
-            // Trigger distance-based level completion callback
-            campaignMode.onDistanceLevelComplete?.({
-              distanceTraveled: distanceStateRef.current.currentDistance,
-              shardsCollected: shardsCollectedRef.current,
-              totalShardsSpawned: totalShardsSpawnedRef.current,
-              damageTaken: damageTakenRef.current,
-              healthRemaining: playerHealthRef.current,
-            });
-            
-            // CRITICAL: Return immediately to stop the game loop
-            return;
-          }
+
+          // Level completion is now handled at the start of loop()
+          // This section removed to avoid duplicate checks
         } else {
           // Legacy: Update speed using Flow Curve (score-based)
           speed.current = FlowCurve.calculateGameSpeed(score.current);
         }
-        
-        // FALLBACK: Check level completion outside pattern spawning block
-        // This ensures level completion works even if pattern spawning is disabled
-        if (campaignMode?.enabled && campaignMode.useDistanceMode && distanceTrackerRef.current) {
-          if (distanceTrackerRef.current.isLevelComplete() && !levelCompleted.current && playerHealthRef.current > 0) {
-            levelCompleted.current = true;
-            
-            campaignMode.onDistanceLevelComplete?.({
-              distanceTraveled: distanceStateRef.current.currentDistance,
-              shardsCollected: shardsCollectedRef.current,
-              totalShardsSpawned: totalShardsSpawnedRef.current,
-              damageTaken: damageTakenRef.current,
-              healthRemaining: playerHealthRef.current,
-            });
-            
-            return;
-          }
-        }
 
         // Pattern-Based Spawning
+        // Stop spawning new obstacles when at 95% of target distance or in finish mode
+        // This gives player a clear path to the finish line
+        const shouldStopSpawning = isInFinishMode.current || 
+          (distanceStateRef.current.targetDistance > 0 && 
+           distanceStateRef.current.progressPercent >= 95);
+        
         // Check if we need to select a new pattern
         if (
-          !patternManagerState.current.currentPattern ||
+          !shouldStopSpawning &&
+          (!patternManagerState.current.currentPattern ||
           PatternManager.isPatternComplete(
             patternManagerState.current,
             spawnTime
-          )
+          ))
         ) {
           // Stabilize polarity: flip only every few patterns (readability)
           patternPolarity.current =
@@ -2083,14 +2223,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
 
         // Update pattern spawn - spawn obstacles and shards based on time
-        patternManagerState.current = PatternManager.updatePatternSpawn(
-          patternManagerState.current,
-          spawnTime,
-          (lane: Lane, heightRatio: number) =>
-            spawnPatternObstacle(lane, heightRatio, height, width),
-          (lane: Lane, type: "safe" | "risky") =>
-            spawnPatternShard(lane, type, height, width)
-        );
+        // Skip spawning when near finish to give player clear path
+        if (!shouldStopSpawning) {
+          patternManagerState.current = PatternManager.updatePatternSpawn(
+            patternManagerState.current,
+            spawnTime,
+            (lane: Lane, heightRatio: number) =>
+              spawnPatternObstacle(lane, heightRatio, height, width),
+            (lane: Lane, type: "safe" | "risky") =>
+              spawnPatternShard(lane, type, height, width)
+          );
+        }
 
         // Update spawn rate based on speed for UI display
         const spawnInterval = PatternManager.calculateSpawnInterval(
@@ -2130,10 +2273,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       framesSinceGlitchTokenSpawn.current++;
       if (framesSinceGlitchTokenSpawn.current >= 60) { // Check every ~1 second
         framesSinceGlitchTokenSpawn.current = 0;
-        
+
         // Get unlocked constructs from store
         const unlockedConstructs = useGameStore.getState().unlockedConstructs;
-        
+
         // Try to spawn a token
         const newToken = GlitchTokenSpawner.trySpawnToken(
           score.current,
@@ -2143,7 +2286,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           width,
           height
         );
-        
+
         if (newToken) {
           glitchTokens.current.push(newToken);
         }
@@ -2258,7 +2401,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Emit DISTANCE events periodically (every ~100ms) to avoid excessive callbacks
       const distanceThisFrame = speed.current * slowMotionMultiplier * constructSpeedMultiplier;
       accumulatedDistance.current += distanceThisFrame / 10; // Convert pixels to approximate meters
-      
+
       if (currentTime - lastDistanceEmitTime.current >= 100) {
         const distanceToEmit = Math.floor(accumulatedDistance.current);
         if (distanceToEmit > 0) {
@@ -2268,8 +2411,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         lastDistanceEmitTime.current = currentTime;
       }
 
-      // Orb Positions
-      const playerX = width / 4;
+      // Orb Positions - moved further left for ultra-wide view angle
+      // In finish mode, player moves right towards screen exit
+      const basePlayerX = width / 8;
+      const playerX = basePlayerX + finishModePlayerX.current;
 
       const yOffset = Math.cos(rotationAngle.current) * halfLen;
       const xRotOffset = Math.sin(rotationAngle.current) * 15;
@@ -2325,44 +2470,44 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
       glitchTokens.current = glitchTokens.current.filter((token) => {
         if (token.collected) return false;
-        
+
         // Move token with game speed
         const updatedToken = GlitchTokenSpawner.updateTokenPosition(
           token,
           -speed.current * slowMotionMultiplier * constructSpeedMultiplier
         );
         token.x = updatedToken.x;
-        
+
         // Check if off-screen
         if (GlitchTokenSpawner.isTokenOffScreen(token)) {
           return false;
         }
-        
+
         // Check collision with white orb
         const whiteTokenCollision = GlitchTokenSpawner.canCollectToken(
           whiteOrbX, whiteOrbY, token
         );
-        
+
         // Check collision with black orb
         const blackTokenCollision = GlitchTokenSpawner.canCollectToken(
           blackOrbX, blackOrbY, token
         );
-        
+
         if (whiteTokenCollision || blackTokenCollision) {
           // Mark as collected
           token.collected = true;
-          
+
           // Get position for VFX
           const vfxX = whiteTokenCollision ? whiteOrbX : blackOrbX;
           const vfxY = whiteTokenCollision ? whiteOrbY : blackOrbY;
-          
+
           // Transform to the construct - Requirements 1.3, 2.1
           constructSystemState.current = ConstructSystem.transformTo(
             constructSystemState.current,
             token.constructType,
             Date.now()
           );
-          
+
           // Trigger transformation VFX - Requirements 2.2
           transformationVFXState.current = TransformationVFX.triggerTransformation(
             transformationVFXState.current,
@@ -2370,14 +2515,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
             vfxY,
             Date.now()
           );
-          
+
           // Play transformation sound - Requirements 6.5
           AudioSystem.playConstructTransform();
           AudioSystem.playGlitchTokenCollect();
           ScreenShake.triggerNearMiss();
           ChromaticAberration.setStreakLevel(3); // Trigger chromatic aberration effect
           getHapticSystem().trigger("heavy");
-          
+
           // Score popup for transformation
           scorePopups.current.push({
             x: token.x,
@@ -2387,10 +2532,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
             life: 2.0,
             vy: -2,
           });
-          
+
           return false;
         }
-        
+
         return true;
       });
 
@@ -2565,10 +2710,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         shard.y = dynamicPos.y;
 
         // Check collection with both orbs
-        const playerX = width / 4;
+        // In finish mode, player moves right
+        const shardPlayerX = (width / 8) + finishModePlayerX.current;
         const xRotOffset = Math.sin(rotationAngle.current) * 15;
-        const whiteOrbX = playerX - xRotOffset;
-        const blackOrbX = playerX + xRotOffset;
+        const whiteOrbX = shardPlayerX - xRotOffset;
+        const blackOrbX = shardPlayerX + xRotOffset;
         const whiteOrbY =
           playerY.current * height -
           Math.cos(rotationAngle.current) *
@@ -2634,14 +2780,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Check for near miss bonus - Requirements 5.5
           const isNearMiss = nearMissState.current.streakCount > 0;
           const awardedValue = ShardPlacement.collectShard(shard, isNearMiss);
-          
+
           // BONUS SHARD: Ekstra ödül ve büyük patlama efekti
           const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
           const finalValue = isBonus ? awardedValue * 2 : awardedValue; // Bonus 2x ekstra
 
           // Campaign Update v2.5 - Track shards collected for star rating
           // Requirements: 4.2
-          if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+          if (campaignModeRef.current?.enabled && campaignModeRef.current.useDistanceMode) {
             shardsCollectedRef.current += 1;
           }
 
@@ -2689,7 +2835,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Audio: Collection SFX on shard pickup - Requirements 14.1
             AudioSystem.playShardCollect();
           }
-          
+
           scorePopups.current.push({
             x: shard.x,
             y: shard.y - 20,
@@ -2745,6 +2891,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           resonanceState: enhancedResonanceState,
           connectorLength: currentConnectorLength.current,
           midlineY: currentMidlineY,
+          currentDistance: distanceTrackerRef.current?.getCurrentDistance() ?? 0,
         });
 
         // Push to circular buffer - Requirements 7.1, 7.3
@@ -2762,7 +2909,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           obstacles.current,
           speed.current,
           currentSpawnRate.current,
-          currentConnectorLength.current
+          currentConnectorLength.current,
+          distanceTrackerRef.current?.getCurrentDistance() ?? 0
         );
         restoreState.current = RestoreSystem.recordSnapshot(
           restoreState.current,
@@ -2894,14 +3042,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
             }
 
             // Campaign Mode: Check for level completion - Requirements 7.3
+            // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
+            // Skip if using distance mode - distance completion is handled separately
+            const campMode = campaignModeRef.current;
             if (
-              campaignMode?.enabled &&
-              campaignMode.targetScore &&
+              campMode?.enabled &&
+              campMode.targetScore &&
+              !campMode.useDistanceMode &&
               !levelCompleted.current
             ) {
-              if (score.current >= campaignMode.targetScore) {
+              if (score.current >= campMode.targetScore) {
                 levelCompleted.current = true;
-                campaignMode.onLevelComplete?.(score.current);
+                campMode.onLevelComplete?.(score.current);
               }
             }
 
@@ -3036,6 +3188,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         );
 
         // Also skip if pending restore (waiting for user decision) or restore animation is playing
+        // Skip collision in finish mode - player is exiting screen
         if (
           isPhasing.current ||
           gravityState.current.isInvincible ||
@@ -3044,7 +3197,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           shieldInvincibleActive ||
           constructInvincible ||
           pendingRestore.current ||
-          isRestoreAnimating.current
+          isRestoreAnimating.current ||
+          isInFinishMode.current
         )
           return;
 
@@ -3223,11 +3377,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 createExplosion(whiteOrb.x, whiteOrb.y, "#FF00FF");
                 ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
                 getHapticSystem().trigger("heavy");
-                
+
                 // Audio for Second Chance - Requirements 6.5
                 AudioSystem.playConstructDestruction();
                 AudioSystem.playSmartBombShockwave();
-                
+
                 scorePopups.current.push({
                   x: whiteOrb.x,
                   y: whiteOrb.y - 20,
@@ -3248,19 +3402,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Normal collision - game over
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
-              
+
               // Campaign Update v2.5 - Track damage taken for star rating
               // Requirements: 4.3
-              if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+              if (campaignModeRef.current?.enabled && campaignModeRef.current.useDistanceMode) {
                 damageTakenRef.current += 1;
                 playerHealthRef.current = 0; // Player died
               }
-              
+
               // Environmental Effects: Glitch artifact on damage - Requirements 14.3
               EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
               // Audio: Glitch damage SFX - Requirements 14.3
               AudioSystem.playGlitchDamage();
-              
+
               // Screen Shake on collision - Requirements 10.1
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
@@ -3435,11 +3589,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 createExplosion(blackOrb.x, blackOrb.y, "#FF00FF");
                 ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
                 getHapticSystem().trigger("heavy");
-                
+
                 // Audio for Second Chance - Requirements 6.5
                 AudioSystem.playConstructDestruction();
                 AudioSystem.playSmartBombShockwave();
-                
+
                 scorePopups.current.push({
                   x: blackOrb.x,
                   y: blackOrb.y - 20,
@@ -3460,19 +3614,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Normal collision - game over
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
               collisionDetected = true;
-              
+
               // Campaign Update v2.5 - Track damage taken for star rating
               // Requirements: 4.3
-              if (campaignMode?.enabled && campaignMode.useDistanceMode) {
+              if (campaignModeRef.current?.enabled && campaignModeRef.current.useDistanceMode) {
                 damageTakenRef.current += 1;
                 playerHealthRef.current = 0; // Player died
               }
-              
+
               // Environmental Effects: Glitch artifact on damage - Requirements 14.3
               EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
               // Audio: Glitch damage SFX - Requirements 14.3
               AudioSystem.playGlitchDamage();
-              
+
               // Screen Shake on collision - Requirements 10.1
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
@@ -3556,15 +3710,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 score.current += finalBonus;
                 onScoreUpdate(score.current);
 
-                // Campaign Mode: Check for level completion - Requirements 7.3
+                // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
+                // Skip if using distance mode - distance completion is handled separately
+                const campMode = campaignModeRef.current;
                 if (
-                  campaignMode?.enabled &&
-                  campaignMode.targetScore &&
+                  campMode?.enabled &&
+                  campMode.targetScore &&
+                  !campMode.useDistanceMode &&
                   !levelCompleted.current
                 ) {
-                  if (score.current >= campaignMode.targetScore) {
+                  if (score.current >= campMode.targetScore) {
                     levelCompleted.current = true;
-                    campaignMode.onLevelComplete?.(score.current);
+                    campMode.onLevelComplete?.(score.current);
                   }
                 }
               }
@@ -3639,10 +3796,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 score.current += finalBonusBlack;
                 onScoreUpdate(score.current);
 
-                // Campaign Mode: Check for level completion - Requirements 7.3
+                // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
+                // Skip if using distance mode - distance completion is handled separately
                 if (
                   campaignMode?.enabled &&
                   campaignMode.targetScore &&
+                  !campaignMode.useDistanceMode &&
                   !levelCompleted.current
                 ) {
                   if (score.current >= campaignMode.targetScore) {
@@ -4098,7 +4257,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           Date.now(),
           EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM
         );
-        
+
         // Apply pulse scale transform centered on obstacle
         const obsCenterX = obs.x + obs.width / 2;
         const obsCenterY = obs.y + obs.height / 2;
@@ -4168,7 +4327,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Restore context from BPM pulse transform - Requirements 14.2
         ctx.restore();
-        
+
         // Reset opacity
         ctx.globalAlpha = 1.0;
       });
@@ -4180,7 +4339,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         const shardTime = Date.now() * 0.003;
         const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
-        
+
         // Bonus shardlar daha büyük ve daha hızlı pulse
         const pulseSpeed = isBonus ? 2.5 : 1;
         const pulseScale = 1 + Math.sin(shardTime * pulseSpeed) * (isBonus ? 0.2 : 0.1);
@@ -4189,7 +4348,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         ctx.save();
         ctx.translate(shard.x, shard.y);
-        
+
         // Bonus shardlar döner
         if (isBonus) {
           ctx.rotate(shardTime * 2);
@@ -4238,7 +4397,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.strokeStyle = isBonus ? "#FFFFFF" : "#FFFFFF";
         ctx.lineWidth = isBonus ? 3 : 2;
         ctx.stroke();
-        
+
         // Bonus için ekstra iç yıldız
         if (isBonus) {
           ctx.beginPath();
@@ -4259,19 +4418,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const tokenTime = Date.now() * 0.001;
       glitchTokens.current.forEach((token) => {
         if (token.collected) return;
-        
+
         // Pulsing glow effect
         const pulseIntensity = 0.5 + 0.5 * Math.sin(tokenTime * 5);
         const glowSize = 20 + pulseIntensity * 15;
-        
+
         ctx.save();
         ctx.shadowColor = "#00F0FF";
         ctx.shadowBlur = glowSize;
-        
+
         // Draw rotating hexagon
         ctx.translate(token.x, token.y);
         ctx.rotate(tokenTime * 3);
-        
+
         // Outer hexagon
         ctx.beginPath();
         const hexSize = 25;
@@ -4286,7 +4445,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.strokeStyle = "#00F0FF";
         ctx.lineWidth = 3;
         ctx.stroke();
-        
+
         // Inner hexagon with different color
         ctx.beginPath();
         const innerHexSize = 15;
@@ -4301,10 +4460,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.strokeStyle = `rgba(255, 0, 255, ${0.5 + pulseIntensity * 0.5})`;
         ctx.lineWidth = 2;
         ctx.stroke();
-        
+
         ctx.rotate(-tokenTime * 3);
         ctx.translate(-token.x, -token.y);
-        
+
         // Draw construct type indicator
         ctx.font = "bold 12px Arial";
         ctx.fillStyle = "#00F0FF";
@@ -4312,11 +4471,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.textBaseline = "middle";
         ctx.shadowColor = "#FF00FF";
         ctx.shadowBlur = 8;
-        
+
         // Show first letter of construct type
         const typeLabel = token.constructType.charAt(0);
         ctx.fillText(typeLabel, token.x, token.y);
-        
+
         ctx.restore();
       });
 
@@ -4335,13 +4494,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const hudWidth = letterSpacing * 5 + 20;
       const hudHeight = 36;
       ctx.save();
-      
+
       // Yarı saydam arka plan
       ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
       ctx.beginPath();
       ctx.roundRect(hudX - hudWidth / 2, hudY - hudHeight / 2, hudWidth, hudHeight, 8);
       ctx.fill();
-      
+
       // Çerçeve
       ctx.strokeStyle = "rgba(0, 240, 255, 0.3)";
       ctx.lineWidth = 1;
@@ -4361,7 +4520,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glowGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
           ctx.fillStyle = glowGrad;
           ctx.fill();
-          
+
           // Harf
           ctx.font = "bold 16px 'Arial Black', sans-serif";
           ctx.fillStyle = "#00F0FF";
@@ -4406,7 +4565,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         barGrad.addColorStop(0, "#00F0FF");
         barGrad.addColorStop(0.5, "#8A2BE2");
         barGrad.addColorStop(1, "#FF00FF");
-        
+
         ctx.fillStyle = barGrad;
         ctx.shadowColor = "#00F0FF";
         ctx.shadowBlur = 10 + overdrivePulse * 5;
@@ -4617,6 +4776,40 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Render trails BEFORE orbs so they appear behind
       OrbTrailSystem.renderTrails(ctx, trailConfig);
 
+      // --- HOLOGRAPHIC GATE / FINISH LINE RENDER ---
+      // Requirements: 12.1, 12.2 - Render finish line when in finish mode
+      if (isInFinishMode.current && !levelCompleted.current) {
+        const gateState = holographicGateState.current;
+        
+        // Render holographic gate (finish line)
+        if (gateState.visible && !gateState.isShattered) {
+          HolographicGate.renderHolographicGate(
+            ctx,
+            gateState,
+            finishLineX.current,
+            height / 2,
+            HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+          );
+        }
+        
+        // Render shatter particles after gate is broken
+        if (gateState.isShattered && gateState.shatterParticles.length > 0) {
+          HolographicGate.renderShatterParticles(ctx, gateState.shatterParticles);
+        }
+        
+        // Draw "FINISH" text above gate
+        if (gateState.visible && !hasReachedFinishLine.current) {
+          ctx.save();
+          ctx.font = 'bold 24px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#00ffff';
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 15;
+          ctx.fillText('FINISH', finishLineX.current, height / 2 - 180);
+          ctx.restore();
+        }
+      }
+
       // --- CONSTRUCT RENDERING - Requirements 3.5, 4.5, 5.6 ---
       // Update construct render state for animations
       const playerCenterX = playerX;
@@ -4627,20 +4820,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
         playerCenterX,
         playerCenterY
       );
-      
+
       // Render construct sprite if active (instead of normal orbs)
       const activeConstruct = constructSystemState.current.activeConstruct;
       const isConstructInvulnerable = ConstructSystem.isInvulnerable(
         constructSystemState.current,
         Date.now()
       );
-      
+
       if (activeConstruct !== 'NONE') {
         // Get ghost Y for Blink construct (from input state)
         const blinkGhostY = activeConstruct === 'BLINK' && inputStateRef.current.isPressed
           ? inputStateRef.current.y
           : null;
-        
+
         // Render the construct at player position
         ConstructRenderer.renderConstruct(
           ctx,
@@ -4711,30 +4904,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
           constructSystemState.current,
           Date.now()
         );
-        
+
         // Pulsing magenta glow around orbs
         const pulseIntensity = 15 + 10 * Math.sin(Date.now() * 0.02);
         const flashOpacity = 0.3 + 0.4 * Math.sin(Date.now() * 0.015);
-        
+
         ctx.save();
         ctx.shadowColor = "#FF00FF";
         ctx.shadowBlur = pulseIntensity;
         ctx.globalAlpha = flashOpacity;
-        
+
         // Glow around white orb
         ctx.beginPath();
         ctx.arc(whiteOrb.x, whiteOrb.y, whiteOrb.radius + 8, 0, Math.PI * 2);
         ctx.strokeStyle = "#FF00FF";
         ctx.lineWidth = 4;
         ctx.stroke();
-        
+
         // Glow around black orb
         ctx.beginPath();
         ctx.arc(blackOrb.x, blackOrb.y, blackOrb.radius + 8, 0, Math.PI * 2);
         ctx.stroke();
-        
+
         ctx.restore();
-        
+
         // Show active construct indicator
         if (constructSystemState.current.activeConstruct !== 'NONE') {
           ctx.fillStyle = `rgba(255, 0, 255, ${0.5 + 0.3 * Math.sin(Date.now() * 0.01)})`;
@@ -4753,7 +4946,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (TransformationVFX.isTransformationActive(transformationVFXState.current)) {
         TransformationVFX.renderTransformationVFX(ctx, canvas, transformationVFXState.current);
       }
-      
+
       // Render Second Chance VFX (shockwave, explosion)
       if (SecondChanceVFX.isSecondChanceVFXActive(secondChanceVFXState.current)) {
         SecondChanceVFX.renderSecondChanceVFX(ctx, secondChanceVFXState.current);
@@ -4892,7 +5085,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         EnvironmentalEffects.applyGlitchArtifact(ctx, canvas, envEffectsState);
       }
 
-      if (collisionDetected && !DEBUG_IMMORTAL_MODE) {
+      if (collisionDetected) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2
         if (zenMode?.enabled && zenModeState.current.isActive) {
           const collisionTime = Date.now();
@@ -4965,12 +5158,28 @@ const GameEngine: React.FC<GameEngineProps> = ({
             onMissionEvent?.({ type: 'STAY_LANE', value: finalLaneStayDuration });
           }
 
+          // Campaign Chapter System - Game over handling
+          // Requirements: 6.1, 6.2, 6.3 - Pass distance traveled to game over screen
+          // Note: Chapter is NOT unlocked on game over (handled by NOT calling onDistanceLevelComplete)
+          const currentCampaign = campaignModeRef.current;
+          if (currentCampaign?.enabled && currentCampaign.useDistanceMode && distanceTrackerRef.current) {
+            // Call chapter game over callback with distance info
+            currentCampaign.onChapterGameOver?.({
+              distanceTraveled: distanceTrackerRef.current.getCurrentDistance(),
+              targetDistance: distanceTrackerRef.current.getTargetDistance(),
+              shardsCollected: shardsCollectedRef.current,
+              damageTaken: damageTakenRef.current,
+            });
+          }
+
           setTimeout(() => {
             onGameOver(score.current);
           }, 50);
           return;
         }
       }
+
+
 
       frameId.current = requestAnimationFrame(loop);
     };
@@ -4997,6 +5206,313 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Handle restore request - Requirements 2.5, 2.6
   // Plays back recorded snapshots in REVERSE for a true rewind effect
   useEffect(() => {
+    if (restoreRequested && pendingRestore.current && restoreMode?.enabled) {
+      // Get all snapshots for rewind animation (last 2 seconds of gameplay)
+      const allSnapshots = [...restoreState.current.snapshots];
+
+      if (allSnapshots.length === 0) {
+        pendingRestore.current = false;
+        return;
+      }
+
+      // Store snapshots for rewind playback (will play in reverse)
+      restoreSnapshotsForRewind.current = allSnapshots;
+      rewindFrameIndex.current = allSnapshots.length - 1; // Start from most recent
+      rewindStartTime.current = Date.now();
+
+      const playerX = (canvasRef.current?.width || window.innerWidth) / 8;
+      const { newState } = RestoreSystem.executeRestore(
+        restoreState.current,
+        playerX
+      );
+
+      // Update restore state
+      restoreState.current = newState;
+      pendingRestore.current = false;
+
+      // Notify parent of restore state change - Requirements 2.8
+      onRestoreStateUpdate?.(false, true);
+
+      // Start restore animation
+      isRestoreAnimating.current = true;
+
+      // VHS-style rewind animation - plays snapshots backwards
+      const animateRewind = () => {
+        if (!isRestoreAnimating.current) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const width = canvas.width;
+        const height = canvas.height;
+        const halfHeight = height / 2;
+        const snapshots = restoreSnapshotsForRewind.current;
+
+        // 2 second rewind animation - play snapshots backwards smoothly
+        const elapsed = Date.now() - rewindStartTime.current;
+        const rewindDuration = 2000; // 2 seconds rewind animation
+        const progress = Math.min(1, elapsed / rewindDuration);
+
+        // Calculate which snapshot to show based on progress
+        const currentIndex = Math.max(0, Math.floor((1 - progress) * (snapshots.length - 1)));
+
+        // Get current snapshot to display
+        const currentSnapshot = snapshots[currentIndex];
+        if (!currentSnapshot) {
+          isRestoreAnimating.current = false;
+          return;
+        }
+
+        // === RENDER NORMAL GAME VIEW WITH REWIND EFFECTS ===
+
+        // Normal game background - top half black, bottom half white (or theme colors)
+        ctx.fillStyle = getColor('topBg');
+        ctx.fillRect(0, 0, width, halfHeight);
+        ctx.fillStyle = getColor('bottomBg');
+        ctx.fillRect(0, halfHeight, width, halfHeight);
+
+        // Draw midline
+        ctx.strokeStyle = getColor('connector');
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, halfHeight);
+        ctx.lineTo(width, halfHeight);
+        ctx.stroke();
+
+        // Draw obstacles from snapshot (moving RIGHT = rewinding effect)
+        const obstacleShift = (1 - progress) * 150; // Obstacles shift right during rewind
+        currentSnapshot.obstacles.forEach(obs => {
+          const obsColor = obs.polarity === 'white' ? getColor('topOrb') : getColor('bottomOrb');
+          ctx.fillStyle = obsColor;
+          ctx.fillRect(obs.x + obstacleShift, obs.y, obs.width || INITIAL_CONFIG.obstacleWidth, obs.height || 100);
+        });
+
+        // Draw player orbs from snapshot
+        const snapshotPlayerY = currentSnapshot.playerY;
+        const snapshotIsSwapped = currentSnapshot.isSwapped;
+        const orbRadius = INITIAL_CONFIG.orbRadius;
+        const snapshotConnectorLength = currentSnapshot.connectorLength || Math.min(
+          INITIAL_CONFIG.maxConnectorLength,
+          INITIAL_CONFIG.minConnectorLength + (currentSnapshot.score * INITIAL_CONFIG.connectorGrowthRate)
+        );
+        const halfLen = snapshotConnectorLength / 2;
+
+        const snapshotRotation = snapshotIsSwapped ? Math.PI : 0;
+        const yOffset = Math.cos(snapshotRotation) * halfLen;
+        const xRotOffset = Math.sin(snapshotRotation) * 15;
+
+        const whiteOrbY = snapshotPlayerY * height - yOffset;
+        const whiteOrbX = playerX - xRotOffset;
+        const blackOrbY = snapshotPlayerY * height + yOffset;
+        const blackOrbX = playerX + xRotOffset;
+
+        // Draw connector with cyan glow
+        ctx.strokeStyle = getColor('connector');
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = 15 * (1 - progress * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(whiteOrbX, whiteOrbY);
+        ctx.lineTo(blackOrbX, blackOrbY);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Draw orbs with intense rewind glow
+        const glowIntensity = 25 * (1 - progress * 0.3);
+
+        // White orb
+        ctx.beginPath();
+        ctx.arc(whiteOrbX, whiteOrbY, orbRadius, 0, Math.PI * 2);
+        ctx.fillStyle = getColor('topOrb');
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = glowIntensity;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Black orb
+        ctx.beginPath();
+        ctx.arc(blackOrbX, blackOrbY, orbRadius, 0, Math.PI * 2);
+        ctx.fillStyle = getColor('bottomOrb');
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = glowIntensity;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // === REWIND OVERLAY EFFECTS ===
+
+        // Semi-transparent cyan overlay for rewind feel
+        ctx.fillStyle = `rgba(0, 240, 255, ${0.05 + 0.05 * Math.sin(elapsed * 0.01)})`;
+        ctx.fillRect(0, 0, width, height);
+
+        // Horizontal scan lines moving RIGHT (rewind direction)
+        const scanLineCount = 5;
+        for (let i = 0; i < scanLineCount; i++) {
+          const lineY = ((elapsed * 0.3 + i * (height / scanLineCount)) % height);
+          ctx.fillStyle = `rgba(0, 240, 255, 0.15)`;
+          ctx.fillRect(0, lineY, width, 2);
+        }
+
+        // Rewind icon (◀◀) with pulsing effect
+        const pulse = 0.7 + Math.sin(elapsed * 0.005) * 0.3;
+        ctx.fillStyle = `rgba(0, 240, 255, ${pulse})`;
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = 20;
+        ctx.fillText('◀◀', width / 2, height / 2 - 40);
+        ctx.shadowBlur = 0;
+
+        // "GERİ SARILIYOR" text
+        ctx.fillStyle = `rgba(0, 240, 255, 0.9)`;
+        ctx.font = 'bold 24px monospace';
+        ctx.fillText('GERİ SARILIYOR', width / 2, height / 2 + 10);
+
+        // Time indicator (showing how far back we're going)
+        const secondsBack = (progress * 2).toFixed(1); // 2 second rewind
+        ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
+        ctx.font = '16px monospace';
+        ctx.fillText(`-${secondsBack} sn`, width / 2, height / 2 + 40);
+
+        // Progress bar at bottom
+        const barWidth = width * 0.5;
+        const barX = (width - barWidth) / 2;
+        const barY = height - 50;
+
+        // Bar background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX - 2, barY - 2, barWidth + 4, 12);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(barX, barY, barWidth, 8);
+
+        // Bar fill (cyan, filling from left to right)
+        ctx.fillStyle = '#00F0FF';
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(barX, barY, barWidth * progress, 8);
+        ctx.shadowBlur = 0;
+
+        // Check if rewind is complete
+        if (currentIndex <= 0 || progress >= 1) {
+          // Rewind complete - apply final state from first snapshot
+          const finalSnapshot = snapshots[0];
+
+          score.current = finalSnapshot.score;
+          playerY.current = finalSnapshot.playerY;
+          targetPlayerY.current = finalSnapshot.playerY;
+          isSwapped.current = finalSnapshot.isSwapped;
+          speed.current = finalSnapshot.speed;
+
+          rotationAngle.current = finalSnapshot.isSwapped ? Math.PI : 0;
+          targetRotation.current = finalSnapshot.isSwapped ? Math.PI : 0;
+
+          // Reset connector length to minimum
+          currentConnectorLength.current = INITIAL_CONFIG.minConnectorLength;
+
+          // Reset midline state to prevent visual glitches
+          midlineState.current = createInitialMidlineState(window.innerHeight);
+
+          // Reset phasing state
+          isPhasing.current = false;
+
+          // Restore obstacles from final snapshot with correct dimensions
+          // Also apply safe zone clearing to prevent immediate collision after restore
+          const canvas = canvasRef.current;
+          const playerX = canvas ? canvas.width / 8 : 100;
+          const safeZoneRadius = 150; // Clear obstacles within 150px of player
+          
+          obstacles.current = finalSnapshot.obstacles
+            .filter(obs => {
+              // Remove obstacles that are too close to player (safe zone)
+              const distance = Math.abs(obs.x - playerX);
+              return distance > safeZoneRadius;
+            })
+            .map(obs => ({
+              id: obs.id,
+              x: obs.x,
+              y: obs.y,
+              targetY: obs.y,
+              width: obs.width || INITIAL_CONFIG.obstacleWidth,
+              height: obs.height || 100,
+              lane: obs.lane,
+              polarity: obs.polarity,
+              passed: obs.passed,
+              isLatent: obs.type === 'phantom',
+              latentOpacity: obs.type === 'phantom' ? 0.3 : 1,
+              hasPhased: false,
+            }));
+
+          // Clear animation state
+          isRestoreAnimating.current = false;
+          restoreSnapshotsForRewind.current = [];
+
+          // Restore connector length from snapshot
+          if (finalSnapshot.connectorLength) {
+            currentConnectorLength.current = finalSnapshot.connectorLength;
+          } else {
+            const restoredConnectorLength = Math.min(
+              INITIAL_CONFIG.maxConnectorLength,
+              INITIAL_CONFIG.minConnectorLength + (finalSnapshot.score * INITIAL_CONFIG.connectorGrowthRate)
+            );
+            currentConnectorLength.current = restoredConnectorLength;
+          }
+
+          // Restore spawn rate from snapshot
+          if (finalSnapshot.spawnRate) {
+            currentSpawnRate.current = finalSnapshot.spawnRate;
+          } else {
+            const estimatedSpawns = Math.floor(finalSnapshot.score / 10);
+            currentSpawnRate.current = Math.max(30, INITIAL_CONFIG.spawnRate - (estimatedSpawns * 0.5));
+          }
+
+          // Reset frames since spawn to prevent immediate spawn
+          framesSinceSpawn.current = 0;
+
+          // CRITICAL: Reset pattern manager state to prevent duplicate obstacle spawning
+          // This fixes the bug where obstacles would overlap after restore
+          patternManagerState.current = PatternManager.createPatternManagerState();
+          patternStartTime.current = 0;
+
+          // CRITICAL: Reset lastDistanceUpdateTime to prevent huge deltaTime jump
+          // This fixes the bug where distance would jump after restore animation
+          lastDistanceUpdateTime.current = Date.now();
+
+          // Restore distance from snapshot if available
+          if (distanceTrackerRef.current && finalSnapshot.currentDistance !== undefined) {
+            distanceTrackerRef.current.setDistance(finalSnapshot.currentDistance);
+            // Update distance state ref
+            distanceStateRef.current = distanceTrackerRef.current.getState();
+            // Notify parent of restored distance
+            const activeCampaign = campaignModeRef.current;
+            if (activeCampaign?.enabled && activeCampaign.useDistanceMode) {
+              activeCampaign.onDistanceUpdate?.(
+                distanceStateRef.current.currentDistance,
+                distanceStateRef.current.targetDistance,
+                distanceStateRef.current.progressPercent
+              );
+            }
+          }
+
+          // Enable post-restore invincibility (1 second)
+          postRestoreInvincible.current = true;
+          postRestoreStartTime.current = Date.now();
+
+          // Update score display
+          onScoreUpdate(score.current);
+          setGameSpeedDisplay(speed.current);
+
+          // Notify restore complete
+          restoreMode?.onRestoreComplete?.();
+        } else {
+          // Continue rewind animation
+          requestAnimationFrame(animateRewind);
+        }
+      };
+
+      // Start the rewind animation
+      requestAnimationFrame(animateRewind);
+    }
   }, [
     restoreRequested,
     restoreMode,

@@ -24,16 +24,16 @@ import {
 
 describe('Holographic Gate Visibility Properties', () => {
   /**
-   * **Feature: campaign-update-v25, Property 25: Holographic gate visibility**
-   * **Validates: Requirements 12.1**
+   * **Feature: campaign-chapter-system, Property 6: Finish Line Visibility Threshold**
+   * **Validates: Requirements 3.1**
    *
-   * For any currentDistance within 100 meters of targetDistance, the holographic gate SHALL be visible.
+   * For any currentDistance within visibility threshold (50m) of targetDistance, the holographic gate SHALL be visible.
    */
-  test('Property 25: Gate is visible when within 100 meters of target', () => {
-    // Generator for remaining distance within visibility threshold
+  test('Property 6: Gate is visible when within 50 meters of target', () => {
+    // Generator for remaining distance within visibility threshold (50m)
     const remainingDistanceArb = fc.double({ 
       min: 0.01, // Just above 0 (not yet passed)
-      max: 100,  // Visibility threshold
+      max: DEFAULT_HOLOGRAPHIC_GATE_CONFIG.visibilityThreshold,  // Visibility threshold (50m)
       noNaN: true 
     });
 
@@ -43,7 +43,7 @@ describe('Holographic Gate Visibility Properties', () => {
         (remainingDistance) => {
           const isVisible = shouldGateBeVisible(remainingDistance, DEFAULT_HOLOGRAPHIC_GATE_CONFIG);
           
-          // Gate must be visible when within 100m and distance > 0
+          // Gate must be visible when within threshold and distance > 0
           return isVisible === true;
         }
       ),
@@ -52,15 +52,15 @@ describe('Holographic Gate Visibility Properties', () => {
   });
 
   /**
-   * **Feature: campaign-update-v25, Property 25: Gate not visible when far from target**
-   * **Validates: Requirements 12.1**
+   * **Feature: campaign-chapter-system, Property 6: Gate not visible when far from target**
+   * **Validates: Requirements 3.1**
    *
-   * Gate SHALL NOT be visible when more than 100 meters from target.
+   * Gate SHALL NOT be visible when more than visibility threshold (50m) from target.
    */
-  test('Property 25: Gate is not visible when more than 100 meters from target', () => {
+  test('Property 6: Gate is not visible when more than 50 meters from target', () => {
     // Generator for remaining distance beyond visibility threshold
     const remainingDistanceArb = fc.double({ 
-      min: 100.01, // Just beyond threshold
+      min: DEFAULT_HOLOGRAPHIC_GATE_CONFIG.visibilityThreshold + 0.01, // Just beyond threshold
       max: 10000,  // Far from target
       noNaN: true 
     });
@@ -71,7 +71,7 @@ describe('Holographic Gate Visibility Properties', () => {
         (remainingDistance) => {
           const isVisible = shouldGateBeVisible(remainingDistance, DEFAULT_HOLOGRAPHIC_GATE_CONFIG);
           
-          // Gate must NOT be visible when beyond 100m
+          // Gate must NOT be visible when beyond threshold
           return isVisible === false;
         }
       ),
@@ -80,13 +80,13 @@ describe('Holographic Gate Visibility Properties', () => {
   });
 
   /**
-   * **Feature: campaign-update-v25, Property 25: Gate not visible when passed**
-   * **Validates: Requirements 12.1**
+   * **Feature: campaign-chapter-system, Property 6: Gate visible when passed (at target)**
+   * **Validates: Requirements 3.1**
    *
-   * Gate SHALL NOT be visible when player has passed it (distance <= 0).
+   * Gate SHALL be visible when player is at or past target (distance <= 0) since they're within threshold.
    */
-  test('Property 25: Gate is not visible when player has passed it', () => {
-    // Generator for negative or zero remaining distance
+  test('Property 6: Gate is visible when player has reached or passed target', () => {
+    // Generator for zero or negative remaining distance (at or past target)
     const remainingDistanceArb = fc.double({ 
       min: -100,
       max: 0,
@@ -99,8 +99,8 @@ describe('Holographic Gate Visibility Properties', () => {
         (remainingDistance) => {
           const isVisible = shouldGateBeVisible(remainingDistance, DEFAULT_HOLOGRAPHIC_GATE_CONFIG);
           
-          // Gate must NOT be visible when passed
-          return isVisible === false;
+          // Gate is visible when at or past target (within threshold of 0)
+          return isVisible === true;
         }
       ),
       { numRuns: 100 }
