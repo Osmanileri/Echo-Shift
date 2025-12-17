@@ -86,6 +86,9 @@ export interface UpgradeEffects {
   magnetLevel: number; // Phase 2
   magnetRadiusFactor: number; // Phase 2 (0..1 of min canvas dim)
   shieldCharges: number; // Phase 2
+  // Phase Dash
+  dashDuration: number; // ms (3000-5000)
+  dashRechargeMultiplier: number; // 1.0-2.0x
 }
 
 export function getActiveUpgradeEffects(): UpgradeEffects {
@@ -96,6 +99,9 @@ export function getActiveUpgradeEffects(): UpgradeEffects {
   const shieldLevel = store.getUpgradeLevel("shield");
   const scoreMultiplierLevel = store.getUpgradeLevel("score-multiplier");
   const slowMotionLevel = store.getUpgradeLevel("slow-motion");
+  // Phase Dash upgrades
+  const dashDurationLevel = store.getUpgradeLevel("dash-duration");
+  const dashRechargeLevel = store.getUpgradeLevel("dash-recharge");
 
   return {
     startingScore: getUpgradeEffect("starting-score", startingScoreLevel),
@@ -104,6 +110,9 @@ export function getActiveUpgradeEffects(): UpgradeEffects {
     magnetLevel,
     magnetRadiusFactor: getUpgradeEffect("magnet", magnetLevel),
     shieldCharges: getUpgradeEffect("shield", shieldLevel),
+    // Phase Dash - return base values if not upgraded
+    dashDuration: dashDurationLevel > 0 ? getUpgradeEffect("dash-duration", dashDurationLevel) : 3000,
+    dashRechargeMultiplier: dashRechargeLevel > 0 ? getUpgradeEffect("dash-recharge", dashRechargeLevel) : 1.0,
   };
 }
 

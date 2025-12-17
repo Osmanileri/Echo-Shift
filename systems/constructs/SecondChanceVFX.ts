@@ -90,7 +90,7 @@ export function triggerExplosion(
   currentTime: number
 ): SecondChanceVFXState {
   const config = SECOND_CHANCE_VFX_CONFIG;
-  
+
   // Trigger heavy screen shake
   ScreenShake.trigger({
     intensity: config.shakeIntensity,
@@ -98,7 +98,7 @@ export function triggerExplosion(
     frequency: 25,
     decay: true,
   });
-  
+
   // Emit explosion particles - multiple waves
   // Wave 1: Fast outward burst
   ParticleSystem.emit(x, y, {
@@ -110,7 +110,7 @@ export function triggerExplosion(
     spread: Math.PI * 2,
     gravity: 0.1,
   }, 'burst');
-  
+
   // Wave 2: Slower debris
   setTimeout(() => {
     ParticleSystem.emit(x, y, {
@@ -123,7 +123,7 @@ export function triggerExplosion(
       gravity: 0.2,
     }, 'burst');
   }, 50);
-  
+
   // Wave 3: Sparks
   setTimeout(() => {
     ParticleSystem.emit(x, y, {
@@ -136,7 +136,7 @@ export function triggerExplosion(
       gravity: 0.05,
     }, 'spark');
   }, 100);
-  
+
   return {
     ...state,
     explosionActive: true,
@@ -203,7 +203,7 @@ export function updateSecondChanceVFX(
 ): SecondChanceVFXState {
   const config = SECOND_CHANCE_VFX_CONFIG;
   let newState = { ...state };
-  
+
   // Update explosion state
   if (state.explosionActive) {
     const explosionElapsed = currentTime - state.explosionStartTime;
@@ -211,19 +211,19 @@ export function updateSecondChanceVFX(
       newState.explosionActive = false;
     }
   }
-  
+
   // Update shockwave state
   if (state.shockwaveActive) {
     const shockwaveElapsed = currentTime - state.shockwaveStartTime;
     const progress = Math.min(1, shockwaveElapsed / config.shockwaveDuration);
-    
+
     newState.shockwaveProgress = progress;
-    
+
     if (progress >= 1) {
       newState.shockwaveActive = false;
     }
   }
-  
+
   return newState;
 }
 
@@ -238,34 +238,34 @@ export function renderSecondChanceVFX(
   state: SecondChanceVFXState
 ): void {
   const config = SECOND_CHANCE_VFX_CONFIG;
-  
+
   // Render shockwave
   if (state.shockwaveActive) {
     const { x, y } = state.shockwavePosition;
     const progress = state.shockwaveProgress;
     const currentRadius = config.shockwaveMaxRadius * progress;
     const alpha = 1 - progress;
-    
+
     ctx.save();
-    
+
     // Outer ring
     ctx.globalAlpha = alpha * 0.8;
     ctx.strokeStyle = config.shockwaveColor;
     ctx.lineWidth = 6 * (1 - progress);
     ctx.shadowColor = config.shockwaveColor;
     ctx.shadowBlur = 20;
-    
+
     ctx.beginPath();
     ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
     ctx.stroke();
-    
+
     // Inner ring
     ctx.globalAlpha = alpha * 0.5;
     ctx.lineWidth = 3 * (1 - progress);
     ctx.beginPath();
     ctx.arc(x, y, currentRadius * 0.7, 0, Math.PI * 2);
     ctx.stroke();
-    
+
     // Fill gradient
     ctx.globalAlpha = alpha * 0.2;
     const gradient = ctx.createRadialGradient(x, y, 0, x, y, currentRadius);
@@ -276,10 +276,10 @@ export function renderSecondChanceVFX(
     ctx.beginPath();
     ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
     ctx.fill();
-    
+
     ctx.restore();
   }
-  
+
   // Render explosion flash (brief white flash at center)
   if (state.explosionActive) {
     const elapsed = Date.now() - state.explosionStartTime;
@@ -287,20 +287,20 @@ export function renderSecondChanceVFX(
       const { x, y } = state.explosionPosition;
       const flashAlpha = 1 - (elapsed / 100);
       const flashRadius = 50 + elapsed * 0.5;
-      
+
       ctx.save();
       ctx.globalAlpha = flashAlpha * 0.6;
-      
+
       const gradient = ctx.createRadialGradient(x, y, 0, x, y, flashRadius);
       gradient.addColorStop(0, '#FFFFFF');
       gradient.addColorStop(0.5, '#FF6600');
       gradient.addColorStop(1, 'transparent');
-      
+
       ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.arc(x, y, flashRadius, 0, Math.PI * 2);
       ctx.fill();
-      
+
       ctx.restore();
     }
   }
@@ -325,42 +325,42 @@ export function renderInvincibilityFlash(
 ): void {
   const config = SECOND_CHANCE_VFX_CONFIG;
   const currentTime = Date.now();
-  
+
   // Calculate flash intensity based on time
   const flashPhase = currentTime * config.invincibilityFlashFrequency * 0.001 * Math.PI * 2;
   const flashIntensity = 0.3 + 0.4 * Math.sin(flashPhase);
-  
+
   // Increase flash frequency as invincibility runs out
   const urgencyFactor = remainingTime < 500 ? 2 : 1;
   const urgentFlashPhase = currentTime * config.invincibilityFlashFrequency * urgencyFactor * 0.001 * Math.PI * 2;
   const urgentFlashIntensity = 0.3 + 0.4 * Math.sin(urgentFlashPhase);
-  
+
   const finalIntensity = remainingTime < 500 ? urgentFlashIntensity : flashIntensity;
-  
+
   ctx.save();
   ctx.globalAlpha = finalIntensity;
-  
+
   // Pulsing glow ring
   ctx.strokeStyle = '#00FFFF';
   ctx.lineWidth = 4;
   ctx.shadowColor = '#00FFFF';
   ctx.shadowBlur = 15 + 10 * Math.sin(flashPhase);
-  
+
   ctx.beginPath();
   ctx.arc(x, y, radius + 8, 0, Math.PI * 2);
   ctx.stroke();
-  
+
   // Inner glow
   const gradient = ctx.createRadialGradient(x, y, radius, x, y, radius + 15);
   gradient.addColorStop(0, 'transparent');
   gradient.addColorStop(0.5, '#00FFFF40');
   gradient.addColorStop(1, 'transparent');
-  
+
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(x, y, radius + 15, 0, Math.PI * 2);
   ctx.fill();
-  
+
   ctx.restore();
 }
 

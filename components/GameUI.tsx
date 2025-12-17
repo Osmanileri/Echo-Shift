@@ -1,24 +1,24 @@
 import {
-    ArrowRightLeft,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    Clock,
-    Gem,
-    Home,
-    Palette,
-    Pause,
-    Play,
-    PlayCircle,
-    RotateCcw,
-    Settings,
-    ShoppingCart,
-    Star,
-    Target,
-    Trophy,
-    Volume2,
-    VolumeX,
-    X
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Gem,
+  Ghost,
+  Home,
+  Palette,
+  Pause,
+  Play,
+  PlayCircle,
+  RotateCcw,
+  Settings,
+  ShoppingCart,
+  Star,
+  Target,
+  Trophy,
+  Volume2,
+  VolumeX,
+  X
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
@@ -63,6 +63,12 @@ interface GameUIProps {
   progressPercent?: number;
   isNearFinish?: boolean;
   shardsCollectedInRun?: number;
+  // Ghost Pace Indicator - Requirements 15.1, 15.3
+  previousBestDistance?: number;
+  hasPassedGhost?: boolean;
+  // Phase Dash - Energy bar props
+  dashEnergy?: number;
+  dashActive?: boolean;
 }
 
 const GameUI: React.FC<GameUIProps> = ({
@@ -102,9 +108,15 @@ const GameUI: React.FC<GameUIProps> = ({
   progressPercent = 0,
   isNearFinish = false,
   shardsCollectedInRun = 0,
+  // Ghost Pace Indicator
+  previousBestDistance = 0,
+  hasPassedGhost = false,
+  // Phase Dash
+  dashEnergy = 0,
+  dashActive = false,
 }) => {
   const [showContent, setShowContent] = useState(false);
-  
+
   // Audio volume state
   const [sfxVolume, setSfxVolume] = useState(() => AudioSystem.getVolume());
   const [sfxEnabled, setSfxEnabled] = useState(() => AudioSystem.isEnabled());
@@ -115,7 +127,7 @@ const GameUI: React.FC<GameUIProps> = ({
     AudioSystem.playButtonClick();
     callback();
   };
-  
+
   // Volume control handlers
   const handleVolumeChange = (newVolume: number) => {
     setSfxVolume(newVolume);
@@ -125,7 +137,7 @@ const GameUI: React.FC<GameUIProps> = ({
       AudioSystem.playButtonClick();
     }
   };
-  
+
   const handleToggleSfx = () => {
     const newEnabled = !sfxEnabled;
     setSfxEnabled(newEnabled);
@@ -200,38 +212,6 @@ const GameUI: React.FC<GameUIProps> = ({
               <span className="text-[10px] md:text-xs text-gray-400 font-bold mt-1 uppercase tracking-widest">
                 Mesafe
               </span>
-              {/* Distance Bar - Requirements 6.2, 6.3, 6.4 */}
-              <div className="mt-2 w-32 md:w-40">
-                <div 
-                  className={`relative h-2 bg-white/10 rounded-full overflow-hidden border border-white/20 ${
-                    isNearFinish ? 'animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.5)]' : ''
-                  }`}
-                >
-                  {/* Progress fill */}
-                  <div 
-                    className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${
-                      isNearFinish 
-                        ? 'bg-gradient-to-r from-cyan-400 to-cyan-300 shadow-[0_0_8px_rgba(0,240,255,0.6)]' 
-                        : 'bg-gradient-to-r from-cyan-500 to-cyan-400'
-                    }`}
-                    style={{ width: `${Math.min(100, progressPercent)}%` }}
-                  />
-                  {/* Position indicator */}
-                  <div 
-                    className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg transition-all duration-300 ${
-                      isNearFinish ? 'bg-cyan-300 animate-ping' : 'bg-white'
-                    }`}
-                    style={{ left: `calc(${Math.min(100, progressPercent)}% - 6px)` }}
-                  />
-                </div>
-                {/* Distance labels - Requirements 6.3 */}
-                <div className="flex justify-between mt-1">
-                  <span className="text-[8px] text-white/40 font-mono">0m</span>
-                  <span className={`text-[8px] font-mono ${isNearFinish ? 'text-cyan-400' : 'text-white/40'}`}>
-                    {Math.floor(targetDistance)}m
-                  </span>
-                </div>
-              </div>
             </div>
           ) : (
             <div className="flex flex-col items-start">
@@ -259,19 +239,107 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
         </div>
 
+        {/* Distance Progress Bar - Bottom Center (Mobile Optimized) */}
+        {distanceMode && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[80%] max-w-md pointer-events-none z-10">
+            <div
+              className={`relative h-4 bg-black/40 backdrop-blur-sm rounded-full overflow-visible border-2 ${isNearFinish
+                ? 'border-cyan-400 shadow-[0_0_20px_rgba(0,240,255,0.6)] animate-pulse'
+                : 'border-white/30'
+                }`}
+            >
+              {/* Progress fill */}
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${isNearFinish
+                  ? 'bg-gradient-to-r from-cyan-400 to-cyan-300 shadow-[0_0_12px_rgba(0,240,255,0.8)]'
+                  : 'bg-gradient-to-r from-cyan-600 via-cyan-500 to-cyan-400'
+                  }`}
+                style={{ width: `${Math.min(100, progressPercent)}%` }}
+              />
+
+              {/* Ghost Marker - Previous Best Distance - Requirements 15.1, 15.3 */}
+              {previousBestDistance > 0 && targetDistance > 0 && (
+                <div
+                  className={`absolute z-30 transition-all duration-700 ease-out ${hasPassedGhost
+                    ? 'opacity-60 scale-90'
+                    : 'opacity-100'
+                    }`}
+                  style={{
+                    left: `calc(${Math.min(98, (previousBestDistance / targetDistance) * 100)}%)`,
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)'
+                  }}
+                >
+                  {/* Ghost container with glow effect */}
+                  <div className={`relative group ${!hasPassedGhost ? 'animate-bounce' : ''}`}>
+                    {/* Outer glow ring */}
+                    <div className={`absolute inset-0 rounded-full blur-md transition-all duration-500 ${hasPassedGhost
+                      ? 'bg-green-400/40'
+                      : 'bg-rose-400/60 animate-ping'
+                      }`} style={{ transform: 'scale(1.5)' }} />
+
+                    {/* Main ghost circle */}
+                    <div className={`relative flex items-center justify-center w-8 h-8 rounded-full border-2 backdrop-blur-sm transition-all duration-500 ${hasPassedGhost
+                      ? 'bg-green-900/80 border-green-400 shadow-[0_0_20px_rgba(74,222,128,0.6)]'
+                      : 'bg-rose-900/80 border-rose-400 shadow-[0_0_20px_rgba(251,113,133,0.6)]'
+                      }`}>
+                      <Ghost className={`w-5 h-5 transition-all duration-300 ${hasPassedGhost
+                        ? 'text-green-300 drop-shadow-[0_0_8px_rgba(74,222,128,1)]'
+                        : 'text-rose-300 drop-shadow-[0_0_8px_rgba(251,113,133,1)]'
+                        }`} />
+                    </div>
+
+                    {/* Label above ghost */}
+                    <div className={`absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-500 ${hasPassedGhost
+                      ? 'bg-green-500/30 text-green-300 border border-green-400/50'
+                      : 'bg-rose-500/30 text-rose-300 border border-rose-400/50'
+                      }`}>
+                      {hasPassedGhost ? '✓ GEÇTİN!' : `👻 ${Math.floor(previousBestDistance)}m`}
+                    </div>
+
+                    {/* Vertical line indicator */}
+                    <div className={`absolute top-full left-1/2 -translate-x-1/2 w-0.5 h-3 transition-all duration-300 ${hasPassedGhost
+                      ? 'bg-gradient-to-b from-green-400 to-transparent'
+                      : 'bg-gradient-to-b from-rose-400 to-transparent'
+                      }`} />
+                  </div>
+                </div>
+              )}
+
+              {/* Current Position indicator */}
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-lg transition-all duration-300 z-20 ${isNearFinish ? 'bg-cyan-300 shadow-[0_0_15px_rgba(0,240,255,0.8)]' : 'bg-white'
+                  }`}
+                style={{ left: `calc(${Math.min(100, progressPercent)}% - 10px)` }}
+              />
+
+              {/* Finish flag at end */}
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2">
+                <Target className={`w-5 h-5 ${isNearFinish ? 'text-cyan-400' : 'text-white/50'}`} />
+              </div>
+            </div>
+
+            {/* Distance labels */}
+            <div className="flex justify-between mt-2 px-1">
+              <span className="text-xs text-white/50 font-mono">0m</span>
+              <span className={`text-xs font-mono font-bold ${isNearFinish ? 'text-cyan-400' : 'text-white/50'}`}>
+                {Math.floor(targetDistance)}m
+              </span>
+            </div>
+          </div>
+        )}
+
         {rhythmMultiplier > 1 && (
           <div className="absolute top-20 left-4 pointer-events-none z-10">
             <div
-              className={`px-3 py-1.5 rounded-lg backdrop-blur-sm border ${
-                rhythmMultiplier === 3
-                  ? "bg-yellow-500/20 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.3)]"
-                  : "bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]"
-              }`}
+              className={`px-3 py-1.5 rounded-lg backdrop-blur-sm border ${rhythmMultiplier === 3
+                ? "bg-yellow-500/20 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.3)]"
+                : "bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]"
+                }`}
             >
               <span
-                className={`text-xl md:text-2xl font-black tracking-wider ${
-                  rhythmMultiplier === 3 ? "text-yellow-400" : "text-cyan-400"
-                }`}
+                className={`text-xl md:text-2xl font-black tracking-wider ${rhythmMultiplier === 3 ? "text-yellow-400" : "text-cyan-400"
+                  }`}
               >
                 x{rhythmMultiplier}
               </span>
@@ -302,17 +370,6 @@ const GameUI: React.FC<GameUIProps> = ({
           )}
         </div>
 
-        <div className="absolute bottom-6 right-6 pointer-events-none z-10 opacity-70">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-14 h-14 md:w-16 md:h-16 rounded-full border-2 border-cyan-500/50 flex items-center justify-center bg-black/20 backdrop-blur-sm shadow-[0_0_15px_rgba(0,240,255,0.2)]">
-              <ArrowRightLeft className="text-cyan-400 w-6 h-6 md:w-8 md:h-8" />
-            </div>
-            <span className="text-[9px] md:text-[10px] font-bold text-cyan-400 tracking-widest uppercase">
-              Dokun: Değiştir
-            </span>
-          </div>
-        </div>
-
         {slowMotionUsesRemaining > 0 && onActivateSlowMotion && (
           <div className="absolute bottom-6 left-6 z-10">
             <button
@@ -321,23 +378,20 @@ const GameUI: React.FC<GameUIProps> = ({
                 handleButtonClick(onActivateSlowMotion);
               }}
               disabled={slowMotionActive}
-              className={`pointer-events-auto flex flex-col items-center gap-2 transition-all duration-300 ${
-                slowMotionActive ? "opacity-50" : "opacity-100 hover:scale-105"
-              }`}
+              className={`pointer-events-auto flex flex-col items-center gap-2 transition-all duration-300 ${slowMotionActive ? "opacity-50" : "opacity-100 hover:scale-105"
+                }`}
             >
               <div
-                className={`w-14 h-14 md:w-16 md:h-16 rounded-full border-2 flex items-center justify-center backdrop-blur-sm transition-all duration-300 ${
-                  slowMotionActive
-                    ? "border-purple-500 bg-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.5)]"
-                    : "border-purple-500/50 bg-black/20 shadow-[0_0_15px_rgba(168,85,247,0.2)] hover:bg-purple-500/20"
-                }`}
+                className={`w-14 h-14 md:w-16 md:h-16 rounded-full border-2 flex items-center justify-center backdrop-blur-sm transition-all duration-300 ${slowMotionActive
+                  ? "border-purple-500 bg-purple-500/30 shadow-[0_0_20px_rgba(168,85,247,0.5)]"
+                  : "border-purple-500/50 bg-black/20 shadow-[0_0_15px_rgba(168,85,247,0.2)] hover:bg-purple-500/20"
+                  }`}
               >
                 <Clock
-                  className={`w-6 h-6 md:w-8 md:h-8 ${
-                    slowMotionActive
-                      ? "text-purple-300 animate-pulse"
-                      : "text-purple-400"
-                  }`}
+                  className={`w-6 h-6 md:w-8 md:h-8 ${slowMotionActive
+                    ? "text-purple-300 animate-pulse"
+                    : "text-purple-400"
+                    }`}
                 />
               </div>
               <span className="text-[9px] md:text-[10px] font-bold text-purple-400 tracking-widest uppercase">
@@ -351,6 +405,56 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {slowMotionActive && (
           <div className="absolute inset-0 pointer-events-none z-5 border-4 border-purple-500/30 animate-pulse" />
+        )}
+
+        {/* Phase Dash Circular Energy Icon */}
+        <div className="absolute bottom-24 right-6 pointer-events-none z-10 flex flex-col items-center gap-2">
+          <div className="relative w-16 h-16 flex items-center justify-center">
+            {/* Background Circle */}
+            <div className="absolute inset-0 rounded-full border-2 border-white/10 bg-black/40 backdrop-blur-sm" />
+
+            {/* Progress Circle (Conic Gradient) */}
+            <div
+              className="absolute inset-0 rounded-full transition-all duration-300"
+              style={{
+                background: `conic-gradient(${dashEnergy >= 100 ? '#FACC15' : '#06B6D4'} ${dashEnergy}%, transparent 0)`,
+                maskImage: 'radial-gradient(transparent 55%, black 56%)',
+                WebkitMaskImage: 'radial-gradient(transparent 55%, black 56%)'
+              }}
+            />
+
+            {/* Glowing Ring when full */}
+            {dashEnergy >= 100 && (
+              <div className="absolute inset-0 rounded-full border-2 border-yellow-400 animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.6)]" />
+            )}
+
+            {/* Center Icon */}
+            <div className={`z-10 transition-transform duration-300 ${dashEnergy >= 100 ? 'scale-110' : 'scale-100'}`}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`w-7 h-7 ${dashEnergy >= 100 ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse' : 'text-cyan-400/50'}`}
+              >
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Label */}
+          <span className={`text-[10px] font-bold uppercase tracking-widest ${dashEnergy >= 100 ? 'text-yellow-400 animate-pulse' : 'text-cyan-400/60'
+            }`}>
+            {dashActive ? 'AKTİF!' : dashEnergy >= 100 ? 'HAZIR' : `${Math.floor(dashEnergy)}%`}
+          </span>
+        </div>
+
+        {/* Phase Dash Active Border */}
+        {dashActive && (
+          <div className="absolute inset-0 pointer-events-none z-5 border-4 border-cyan-500/50 animate-pulse" />
         )}
       </>
     );
@@ -368,7 +472,7 @@ const GameUI: React.FC<GameUIProps> = ({
           DURAKLADI
         </h2>
         <div className="w-24 h-0.5 bg-gradient-to-r from-transparent via-cyan-500 to-transparent mb-6" />
-        
+
         {/* Volume Control */}
         <div className="relative z-10 w-full max-w-xs mb-6 p-4 bg-white/5 rounded-xl border border-white/10">
           <div className="flex items-center gap-3">
@@ -421,7 +525,7 @@ const GameUI: React.FC<GameUIProps> = ({
             </div>
           </div>
         </div>
-        
+
         <div className="flex flex-col gap-3 relative z-10 w-full max-w-xs">
           <button
             onClick={() => handleButtonClick(onResume)}
@@ -476,9 +580,8 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {/* Content */}
         <div
-          className={`absolute inset-0 flex flex-col px-4 py-6 transition-all duration-700 ${
-            showContent ? "opacity-100" : "opacity-0"
-          }`}
+          className={`absolute inset-0 flex flex-col px-4 py-6 transition-all duration-700 ${showContent ? "opacity-100" : "opacity-0"
+            }`}
         >
           {/* ===== SETTINGS BUTTON (Top Right) ===== */}
           <div className="absolute top-4 right-4 z-30">
@@ -487,17 +590,15 @@ const GameUI: React.FC<GameUIProps> = ({
                 AudioSystem.playButtonClick();
                 setShowSettings(!showSettings);
               }}
-              className={`p-2.5 rounded-full backdrop-blur-sm border transition-all duration-300 ${
-                showSettings 
-                  ? 'bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]' 
-                  : 'bg-black/40 border-white/10 hover:bg-white/10'
-              }`}
+              className={`p-2.5 rounded-full backdrop-blur-sm border transition-all duration-300 ${showSettings
+                ? 'bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]'
+                : 'bg-black/40 border-white/10 hover:bg-white/10'
+                }`}
             >
-              <Settings className={`w-5 h-5 transition-transform duration-300 ${
-                showSettings ? 'text-cyan-400 rotate-90' : 'text-white/70'
-              }`} />
+              <Settings className={`w-5 h-5 transition-transform duration-300 ${showSettings ? 'text-cyan-400 rotate-90' : 'text-white/70'
+                }`} />
             </button>
-            
+
             {/* Settings Panel */}
             {showSettings && (
               <div className="absolute top-14 right-0 w-56 p-4 bg-black/80 backdrop-blur-md rounded-2xl border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.5)] animate-in fade-in slide-in-from-top-2 duration-200">
@@ -510,7 +611,7 @@ const GameUI: React.FC<GameUIProps> = ({
                     <X className="w-4 h-4 text-white/50" />
                   </button>
                 </div>
-                
+
                 {/* Volume Control */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -531,7 +632,7 @@ const GameUI: React.FC<GameUIProps> = ({
                       {Math.round(sfxVolume * 100)}%
                     </span>
                   </div>
-                  
+
                   <input
                     type="range"
                     min="0"
@@ -562,7 +663,7 @@ const GameUI: React.FC<GameUIProps> = ({
               </div>
             )}
           </div>
-          
+
           {/* ===== HEADER: Logo + Slogan ===== */}
           <div className="text-center mb-3">
             <h1 className="text-4xl sm:text-5xl font-black tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-100 to-cyan-300 drop-shadow-[0_0_30px_rgba(0,240,255,0.3)]">
@@ -779,7 +880,7 @@ const GameUI: React.FC<GameUIProps> = ({
               {/* Bottom edge for depth */}
               <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-t from-black/25 to-transparent" />
             </button>
-            
+
             {/* Subtitle hint */}
             <p className="text-center text-[9px] text-white/30 mt-2 tracking-wider uppercase">
               Seviye Seç ve Başla
@@ -833,14 +934,14 @@ const GameUI: React.FC<GameUIProps> = ({
                   Gidilen Mesafe / Hedef Mesafe
                 </span>
               </div>
-              
+
               {/* Progress percentage */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
                 <span className="text-sm font-bold text-cyan-400">
                   %{Math.floor(progressPercent)} tamamlandı
                 </span>
               </div>
-              
+
               {/* Shards collected during run */}
               {shardsCollectedInRun > 0 && (
                 <div className="flex items-center gap-2">

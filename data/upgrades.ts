@@ -92,6 +92,27 @@ export const UPGRADES: Upgrade[] = [
     // Effect: 1, 2, 3 uses per game
     effect: (level: number) => level,
   },
+  // Phase Dash Upgrades
+  {
+    id: "dash-duration",
+    name: "Overclock Chip",
+    description: "Phase Dash süresini uzatır",
+    maxLevel: 5,
+    baseCost: 1000,
+    costMultiplier: 1.8,
+    // Effect: 3000, 3500, 4000, 4500, 5000 ms
+    effect: (level: number) => 3000 + level * 500,
+  },
+  {
+    id: "dash-recharge",
+    name: "Recharge Core",
+    description: "Enerji barı daha hızlı dolar",
+    maxLevel: 5,
+    baseCost: 1500,
+    costMultiplier: 1.7,
+    // Effect: 1.0, 1.2, 1.4, 1.6, 1.8, 2.0x multiplier
+    effect: (level: number) => 1.0 + level * 0.2,
+  },
 ];
 
 /**
