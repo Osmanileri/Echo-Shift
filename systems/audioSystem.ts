@@ -30,6 +30,10 @@ interface AudioState {
   masterGain: GainNode | null;
   enabled: boolean;
   volume: number;
+  // Glitch Protocol low-pass filter state
+  glitchFilter: BiquadFilterNode | null;
+  glitchFilterActive: boolean;
+  glitchFilterFadeTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 const persisted = loadPersistedSettings();
@@ -38,6 +42,10 @@ const state: AudioState = {
   masterGain: null,
   enabled: persisted.enabled,
   volume: persisted.volume,
+  // Glitch Protocol filter state
+  glitchFilter: null,
+  glitchFilterActive: false,
+  glitchFilterFadeTimeout: null,
 };
 
 // Lazy initialization of AudioContext
@@ -767,6 +775,228 @@ export function playGlitchTokenCollect() {
   playNoise(0.06, 4000, 'highpass', 0.08);
 }
 
+// ============ GLITCH PROTOCOL SOUNDS ============
+
+/**
+ * Glitch Shard spawn - distorted beep sound
+ * Requirements 9.1: Play glitch spawn sound (distorted beep)
+ */
+export function playGlitchSpawn() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Distorted beep with frequency modulation
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const distortion = ctx.createWaveShaper();
+  const gain = ctx.createGain();
+  
+  osc1.type = 'square';
+  osc2.type = 'sawtooth';
+  
+  // Glitchy frequency jumps for distorted beep effect
+  osc1.frequency.setValueAtTime(800, ctx.currentTime);
+  osc1.frequency.setValueAtTime(1200, ctx.currentTime + 0.03);
+  osc1.frequency.setValueAtTime(600, ctx.currentTime + 0.06);
+  osc1.frequency.setValueAtTime(1000, ctx.currentTime + 0.09);
+  osc1.frequency.setValueAtTime(700, ctx.currentTime + 0.12);
+  
+  // Secondary oscillator for thickness
+  osc2.frequency.setValueAtTime(850, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(650, ctx.currentTime + 0.15);
+  
+  // Create distortion curve
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 128) - 1;
+    curve[i] = Math.tanh(x * 3);
+  }
+  distortion.curve = curve;
+  
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.18);
+  
+  osc1.connect(distortion);
+  osc2.connect(distortion);
+  distortion.connect(gain);
+  gain.connect(master);
+  
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.18);
+  osc2.stop(ctx.currentTime + 0.18);
+  
+  // High frequency glitch noise
+  playNoise(0.1, 5000, 'highpass', 0.08);
+}
+
+/**
+ * Glitch Shard impact - heavy bass hit with distortion
+ * Requirements 9.2: Play glitch impact sound (heavy bass hit with distortion)
+ */
+export function playGlitchImpact() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Heavy bass hit
+  const bassOsc = ctx.createOscillator();
+  const subOsc = ctx.createOscillator();
+  const distortion = ctx.createWaveShaper();
+  const bassGain = ctx.createGain();
+  const subGain = ctx.createGain();
+  const masterImpactGain = ctx.createGain();
+  
+  bassOsc.type = 'sine';
+  subOsc.type = 'sine';
+  
+  // Bass sweep down for impact
+  bassOsc.frequency.setValueAtTime(150, ctx.currentTime);
+  bassOsc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.25);
+  
+  // Sub bass layer
+  subOsc.frequency.setValueAtTime(80, ctx.currentTime);
+  subOsc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.3);
+  
+  // Create heavy distortion curve
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 128) - 1;
+    curve[i] = Math.tanh(x * 5) * 0.8;
+  }
+  distortion.curve = curve;
+  
+  bassGain.gain.setValueAtTime(0.35, ctx.currentTime);
+  bassGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+  
+  subGain.gain.setValueAtTime(0.25, ctx.currentTime);
+  subGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+  
+  masterImpactGain.gain.setValueAtTime(1, ctx.currentTime);
+  
+  bassOsc.connect(bassGain);
+  subOsc.connect(subGain);
+  bassGain.connect(distortion);
+  subGain.connect(distortion);
+  distortion.connect(masterImpactGain);
+  masterImpactGain.connect(master);
+  
+  bassOsc.start(ctx.currentTime);
+  subOsc.start(ctx.currentTime);
+  bassOsc.stop(ctx.currentTime + 0.35);
+  subOsc.stop(ctx.currentTime + 0.35);
+  
+  // Distorted mid-range punch
+  const punchOsc = ctx.createOscillator();
+  const punchGain = ctx.createGain();
+  
+  punchOsc.type = 'sawtooth';
+  punchOsc.frequency.setValueAtTime(200, ctx.currentTime);
+  punchOsc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.15);
+  
+  punchGain.gain.setValueAtTime(0.2, ctx.currentTime);
+  punchGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  
+  punchOsc.connect(distortion);
+  punchOsc.start(ctx.currentTime);
+  punchOsc.stop(ctx.currentTime + 0.2);
+  
+  // Heavy noise burst
+  playNoise(0.2, 400, 'lowpass', 0.25);
+  
+  // Glitch crackle
+  setTimeout(() => playNoise(0.1, 3000, 'bandpass', 0.12), 50);
+}
+
+/**
+ * Apply low-pass filter to background music during Quantum Lock
+ * Requirements 9.3: Apply low-pass filter to background music (distorted/bass-heavy version)
+ * 
+ * Note: This creates a low-pass filter effect on the master output.
+ * For actual background music filtering, integrate with your music system.
+ */
+export function applyGlitchMusicFilter() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+  
+  // Clear any pending fade timeout
+  if (state.glitchFilterFadeTimeout) {
+    clearTimeout(state.glitchFilterFadeTimeout);
+    state.glitchFilterFadeTimeout = null;
+  }
+  
+  // If filter already exists and active, just ensure it's at target frequency
+  if (state.glitchFilter && state.glitchFilterActive) {
+    state.glitchFilter.frequency.cancelScheduledValues(ctx.currentTime);
+    state.glitchFilter.frequency.setValueAtTime(state.glitchFilter.frequency.value, ctx.currentTime);
+    state.glitchFilter.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.1);
+    return;
+  }
+  
+  // Create low-pass filter for bass-heavy distorted effect
+  state.glitchFilter = ctx.createBiquadFilter();
+  state.glitchFilter.type = 'lowpass';
+  state.glitchFilter.frequency.setValueAtTime(20000, ctx.currentTime); // Start at full range
+  state.glitchFilter.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.15); // Sweep down to bass-heavy
+  state.glitchFilter.Q.setValueAtTime(1.5, ctx.currentTime); // Slight resonance for character
+  
+  // Reconnect audio chain: masterGain -> glitchFilter -> destination
+  master.disconnect();
+  master.connect(state.glitchFilter);
+  state.glitchFilter.connect(ctx.destination);
+  
+  state.glitchFilterActive = true;
+}
+
+/**
+ * Remove low-pass filter and restore normal audio
+ * Requirements 9.4: Fade out filter effect and restore normal audio over 500ms
+ */
+export function removeGlitchMusicFilter() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+  
+  // Clear any pending fade timeout
+  if (state.glitchFilterFadeTimeout) {
+    clearTimeout(state.glitchFilterFadeTimeout);
+    state.glitchFilterFadeTimeout = null;
+  }
+  
+  if (!state.glitchFilter || !state.glitchFilterActive) return;
+  
+  // Fade out filter over 500ms by sweeping frequency back up
+  state.glitchFilter.frequency.cancelScheduledValues(ctx.currentTime);
+  state.glitchFilter.frequency.setValueAtTime(state.glitchFilter.frequency.value, ctx.currentTime);
+  state.glitchFilter.frequency.linearRampToValueAtTime(20000, ctx.currentTime + 0.5);
+  
+  // After fade completes, remove filter from chain
+  state.glitchFilterFadeTimeout = setTimeout(() => {
+    if (state.glitchFilter && master && ctx) {
+      try {
+        master.disconnect();
+        state.glitchFilter.disconnect();
+        master.connect(ctx.destination);
+      } catch {
+        // Ignore disconnection errors
+      }
+      state.glitchFilter = null;
+      state.glitchFilterActive = false;
+    }
+    state.glitchFilterFadeTimeout = null;
+  }, 500);
+}
+
+/**
+ * Check if glitch music filter is currently active
+ */
+export function isGlitchMusicFilterActive(): boolean {
+  return state.glitchFilterActive;
+}
+
 /**
  * Glitch damage - distorted digital damage sound
  * Requirements 14.3: Trigger glitch SFX on damage taken
@@ -922,6 +1152,13 @@ export const AudioSystem = {
   
   // Environmental Effects - Requirements 14.3
   playGlitchDamage,
+  
+  // Glitch Protocol - Requirements 9.1, 9.2, 9.3, 9.4
+  playGlitchSpawn,
+  playGlitchImpact,
+  applyGlitchMusicFilter,
+  removeGlitchMusicFilter,
+  isGlitchMusicFilterActive,
 };
 
 export default AudioSystem;

@@ -143,6 +143,10 @@ export interface Obstacle {
   isLatent?: boolean;           // Engelin görünmez modda başlayıp başlamadığı
   revealDistance?: number;      // Tam görünür olacağı mesafe (piksel)
   initialX?: number;            // Spawn anındaki X koordinatı
+  // Oscillation Properties - Selective block animation
+  shouldOscillate?: boolean;    // Bu blok sallanacak mı (rastgele belirlenir)
+  oscillationIntensity?: number; // Sallanma yoğunluğu (0.5 - 2.0 arası)
+  oscillationPhase?: number;    // Sallanma fazı (her blok farklı zamanda sallanır)
 }
 
 export interface Particle {
@@ -458,4 +462,65 @@ export interface ZoneUnlockState {
 export interface MissionEvent {
   type: MissionType;
   value: number;
+}
+
+
+// ============================================================================
+// Glitch Protocol Types - Requirements 1.1, 2.1, 4.1, 7.1
+// ============================================================================
+
+/**
+ * Phase type for Glitch Protocol state machine
+ * Requirements 7.1, 7.2, 7.3, 7.4: Define phase transitions
+ */
+export type GlitchPhase = 'inactive' | 'active' | 'warning' | 'exiting' | 'ghost';
+
+/**
+ * Glitch Shard interface - the collectible that triggers Quantum Lock
+ * Requirements 1.1, 2.1: Define Glitch Shard properties
+ */
+export interface GlitchShard {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  active: boolean;
+  colorTimer: number;           // Timer for color flicker effect (50ms cycle)
+  spawnTime: number;            // When the shard was spawned
+}
+
+/**
+ * Glitch Mode state tracking
+ * Requirements 4.1, 7.1: Define state for Quantum Lock mode
+ */
+export interface GlitchModeState {
+  isActive: boolean;
+  startTime: number;
+  duration: number;             // 8000ms
+  originalConnectorLength: number;
+  waveOffset: number;           // For sinusoidal wave animation
+  phase: GlitchPhase;
+  ghostModeEndTime: number;
+  // Paused mode tracking for priority system
+  pausedOverdriveTime: number;
+  pausedResonanceTime: number;
+}
+
+/**
+ * Glitch Protocol configuration
+ * Requirements 7.1, 6.5, 2.7, 2.6: Define configuration constants
+ */
+export interface GlitchConfig {
+  duration: number;              // 8000ms
+  idealConnectorLength: number;  // 120px
+  waveSpeed: number;             // 0.05
+  waveAmplitude: number;         // 120px
+  ghostModeDuration: number;     // 1500ms
+  warningThreshold: number;      // 0.75 (75%)
+  flattenThreshold: number;      // 0.80 (80%)
+  shardMultiplier: number;       // 2x
+  minSpawnDistance: number;      // 500m
+  spawnClearance: number;        // 150px
+  colors: string[];              // Flicker colors
 }

@@ -149,3 +149,46 @@ export const SHIFT_CONFIG = {
     oscillationFrequency: 1.2,  // Wobble frequency
   },
 };
+
+
+// Glitch Protocol Configuration - Requirements 7.1, 6.5, 2.7, 2.6
+export const GLITCH_CONFIG = {
+  // Duration - Requirements 7.1
+  duration: 8000,                // Quantum Lock duration (8 seconds)
+
+  // Connector - Requirements 4.2
+  idealConnectorLength: 120,     // Target connector length during Quantum Lock (pixels)
+
+  // Wave Animation - Requirements 5.2
+  waveSpeed: 0.05,               // Wave offset increment per frame
+  waveAmplitude: 120,            // Sinusoidal wave amplitude (pixels)
+
+  // Ghost Mode - Requirements 7.4
+  ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)
+
+  // Phase Thresholds - Requirements 7.2, 7.3
+  warningThreshold: 0.75,        // 75% - start exit warning
+  flattenThreshold: 0.80,        // 80% - start wave flattening
+
+  // Shard Value - Requirements 6.5
+  shardMultiplier: 2,            // 2x shard value during Quantum Lock
+
+  // Spawn Rules - Requirements 2.7, 2.6
+  minSpawnDistance: 100,         // Minimum distance traveled before spawn (meters) - TEST: 100m (was 500)
+  spawnClearance: 150,           // Minimum clearance from obstacles (pixels)
+
+  // Visual Effects - Requirements 1.2
+  colors: ['#00FFFF', '#FF00FF', '#FFFFFF', '#00FF00'], // Cyan, Magenta, White, Green
+  colorCycleInterval: 50,        // Color flicker interval (ms)
+
+  // Shard Dimensions
+  shardWidth: 40,                // Glitch Shard width (pixels)
+  shardHeight: 40,               // Glitch Shard height (pixels)
+
+  // Spawn Position - Requirements 2.2, 2.3
+  spawnXOffset: 100,             // Spawn offset beyond right edge (pixels)
+  spawnYRange: 100,              // Y position range from center (±pixels)
+
+  // Hit Stop - Requirements 3.2
+  hitStopFrames: 10,             // Frames to freeze on collision
+};
