@@ -28,11 +28,10 @@ import {
   checkNearMiss,
   createInitialGravityState,
   createInitialNearMissState,
-  getFlippedLane,
   mirrorPlayerPosition,
   randomRange,
   shouldTriggerFlip,
-  updateNearMissState,
+  updateNearMissState
 } from "../utils/gameMath";
 import {
   calculateDynamicAmplitude,
@@ -50,11 +49,7 @@ import {
   shouldApplyMicroPhasing,
 } from "../utils/midlineSystem";
 import {
-  calculatePhantomBonus,
-  calculatePhantomOpacity,
-  createPhantomObstacle,
-  getEffectiveOpacity,
-  shouldSpawnAsPhantom,
+  calculatePhantomBonus
 } from "../utils/phantomSystem";
 import {
   calculateExpectedInterval,
@@ -131,6 +126,13 @@ import * as EnvironmentalEffects from "../systems/environmentalEffects";
 // Phase Dash System Integration - Warp mechanics with energy bar
 import * as PhaseDash from "../systems/phaseDash";
 import * as PhaseDashVFX from "../systems/phaseDashVFX";
+// Block System Integration - Centralized obstacle management
+import * as BlockSystem from "../systems/blockSystem";
+// Glitch Protocol System Integration - Requirements 1.1-10.5
+// Quantum Lock bonus mode triggered by collecting Glitch Shards
+import * as GlitchSystem from "../systems/glitchSystem";
+import * as GlitchVFX from "../systems/GlitchVFX";
+import type { GlitchModeState, GlitchShard } from "../types";
 
 
 // Campaign mode configuration for mechanics enable/disable
@@ -208,7 +210,7 @@ interface GameEngineProps {
   slowMotionActive?: boolean;
   onSlowMotionStateUpdate?: (active: boolean) => void;
   // Phase Dash System - Energy bar updates
-  onDashStateUpdate?: (energy: number, active: boolean) => void;
+  onDashStateUpdate?: (energy: number, active: boolean, remainingPercent?: number) => void;
   // Campaign Mode - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
   campaignMode?: CampaignModeConfig;
   // Daily Challenge Mode - Requirements 8.1, 8.2, 8.3
@@ -522,6 +524,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const lastTapTime = useRef<number>(0);
   const DOUBLE_TAP_THRESHOLD = 300; // ms
 
+  // Glitch Protocol State - Quantum Lock bonus mode
+  // Requirements: All (1.1-10.5)
+  const glitchShardRef = useRef<GlitchShard | null>(null);
+  const glitchModeState = useRef<GlitchModeState>(
+    GlitchSystem.createInitialGlitchModeState()
+  );
+  const hitStopFramesRemaining = useRef<number>(0);
+  const hasSpawnedGlitchShardThisLevel = useRef<boolean>(false);
+  const glitchScreenFlashState = useRef<GlitchVFX.ScreenFlashState>(
+    GlitchVFX.createScreenFlashState()
+  );
+  // Connector animation tracking for elastic easing
+  const connectorAnimationStartTime = useRef<number>(0);
+  // Wave path shards during Quantum Lock
+  const wavePathShards = useRef<GlitchSystem.WavePathShard[]>([]);
+
 
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
@@ -768,7 +786,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Phase Dash State
     phaseDashState.current = PhaseDash.createInitialPhaseDashState();
     phaseDashVFXState.current = PhaseDashVFX.createInitialVFXState();
+    PhaseDashVFX.clearDebris(); // Clear any remaining debris particles
+    PhaseDashVFX.clearConnectorTrail(); // Clear connector trail
     lastTapTime.current = 0;
+
+    // Reset Glitch Protocol State - Requirements All
+    glitchShardRef.current = null;
+    glitchModeState.current = GlitchSystem.createInitialGlitchModeState();
+    hitStopFramesRemaining.current = 0;
+    hasSpawnedGlitchShardThisLevel.current = false;
+    glitchScreenFlashState.current = GlitchVFX.createScreenFlashState();
+    connectorAnimationStartTime.current = 0;
+    wavePathShards.current = [];
+    GlitchSystem.clearInputBuffer();
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -832,277 +862,79 @@ const GameEngine: React.FC<GameEngineProps> = ({
   );
 
   const spawnObstacle = (canvasHeight: number, canvasWidth: number) => {
-    const obsWidth = INITIAL_CONFIG.obstacleWidth;
-    const spawnX = canvasWidth + 50;
-    const midY = canvasHeight / 2; // Merkez çizgi (SIFIR NOKTASI)
-    const orbRadius = INITIAL_CONFIG.orbRadius;
-    const connectorLen = currentConnectorLength.current;
-
-    // OYUN MEKANİĞİ:
-    // 1. Bloklar sıfır noktasını (midline) AGRESİF şekilde GEÇMELİ
-    // 2. Aynı renkli top, aynı renkli blokun içinden geçer (hasar almaz)
-    // 3. Zıt renkli top, bloka değerse ölür
-    // 4. Max geçiş = connector uzunluğu (oyuncunun uzanabileceği max nokta)
-
-    // Minimum boşluk = connector + 2 orb + güvenlik payı (mobil için daha geniş)
-    const minGap = connectorLen + orbRadius * 2 + 45;
-
-    // Rastgele polarite - üst ve alt bloklar ZIT renklerde
-    const topPolarity: "white" | "black" = Math.random() > 0.5 ? "white" : "black";
-    const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
-
-    // === DAHA YUMUŞAK SIFIR GEÇİŞ MEKANİĞİ ===
-    // maxCrossDistance = connector uzunluğu - orb yarıçapı (oyuncunun max erişimi)
-    const maxCrossDistance = connectorLen - orbRadius;
-
-    // Rastgele geçiş miktarı: %15 ile %60 arası (daha kolay başlangıç)
-    // Skor arttıkça zorluk artacak
-    const difficultyFactor = Math.min(1, score.current / 3000); // 3000 skorda max zorluk
-    const minCross = 0.15 + difficultyFactor * 0.15; // 0.15 -> 0.30
-    const maxCross = 0.45 + difficultyFactor * 0.25; // 0.45 -> 0.70
-    const crossAmount = minCross + Math.random() * (maxCross - minCross);
-    const actualCross = crossAmount * maxCrossDistance;
-
-    // TAM RASTGELE YÖN: %50 üst aşağı geçer, %50 alt yukarı geçer
-    const crossFromTop = Math.random() > 0.5;
-
-    // Blok yükseklikleri hesapla
-    let topBlockHeight: number;
-    let bottomBlockTop: number;
-    let bottomBlockHeight: number;
-
-    if (crossFromTop) {
-      // ÜST BLOK AŞAĞI DOĞRU SIFIRI GEÇİYOR
-      // Üst blok midY + actualCross kadar aşağı uzanır
-      topBlockHeight = midY + actualCross;
-      // Alt blok üst bloğun altından minGap kadar aşağıda başlar
-      bottomBlockTop = topBlockHeight + minGap;
-      bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
-    } else {
-      // ALT BLOK YUKARI DOĞRU SIFIRI GEÇİYOR
-      // Alt blok midY - actualCross'tan başlar (yukarı doğru uzanır)
-      bottomBlockTop = midY - actualCross;
-      bottomBlockHeight = canvasHeight - bottomBlockTop;
-      // Üst blok alt bloğun üstünden minGap kadar yukarıda biter
-      topBlockHeight = Math.max(30, bottomBlockTop - minGap);
-    }
-
-    // Güvenlik: ekran sınırları içinde kal
-    topBlockHeight = Math.max(30, topBlockHeight);
-    bottomBlockTop = Math.min(canvasHeight - 30, Math.max(30, bottomBlockTop));
-    bottomBlockHeight = Math.max(30, canvasHeight - bottomBlockTop);
-
-    // --- LANE INVERSION FOR GRAVITY FLIP ---
-    const isGravityFlipped = gravityState.current.isFlipped;
-    const topLane: "top" | "bottom" = isGravityFlipped ? getFlippedLane("top") : "top";
-    const bottomLane: "top" | "bottom" = isGravityFlipped ? getFlippedLane("bottom") : "bottom";
-
-    let topObstacle: Obstacle = {
-      id: Math.random().toString(36).substring(2, 11),
-      x: spawnX,
-      y: -topBlockHeight,
-      targetY: 0,
-      width: obsWidth,
-      height: topBlockHeight,
-      lane: topLane,
-      polarity: topPolarity,
-      passed: false,
-    };
-
-    // Phantom check
+    // Use BlockSystem for spawning
     const phantomEnabled =
       !campaignMode?.enabled ||
       campaignMode.levelConfig?.mechanics.phantom !== false;
     const forcePhantom =
-      dailyChallengeMode?.enabled &&
-      dailyChallengeMode.config?.modifiers.phantomOnly;
-    if (
-      forcePhantom ||
-      (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))
-    ) {
-      topObstacle = createPhantomObstacle(topObstacle, spawnX, PHANTOM_CONFIG);
-    }
-    obstacles.current.push(topObstacle);
+      (dailyChallengeMode?.enabled &&
+      dailyChallengeMode.config?.modifiers.phantomOnly) || false;
 
-    let bottomObstacle: Obstacle = {
-      id: Math.random().toString(36).substring(2, 11),
-      x: spawnX,
-      y: canvasHeight,
-      targetY: bottomBlockTop,
-      width: obsWidth,
-      height: bottomBlockHeight,
-      lane: bottomLane,
-      polarity: bottomPolarity,
-      passed: false,
+    const spawnCtx: BlockSystem.SpawnContext = {
+      canvasHeight,
+      canvasWidth,
+      score: score.current,
+      connectorLength: currentConnectorLength.current,
+      isGravityFlipped: gravityState.current.isFlipped,
+      isDashing: PhaseDash.isDashActive(phaseDashState.current),
+      dashXOffset: PhaseDash.getPlayerXOffset(phaseDashState.current),
+      phantomEnabled: phantomEnabled ?? true,
+      forcePhantom,
+      rng: Math.random,
     };
 
-    // Phantom check
-    if (
-      forcePhantom ||
-      (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))
-    ) {
-      bottomObstacle = createPhantomObstacle(
-        bottomObstacle,
-        spawnX,
-        PHANTOM_CONFIG
-      );
-    }
-    obstacles.current.push(bottomObstacle);
+    const newObstacles = BlockSystem.spawnObstaclePair(spawnCtx);
+    obstacles.current.push(...newObstacles);
   };
 
-  // Son spawn edilen bloğun polaritesini ve boşluk bilgisini takip et
+  // Block System State - tracks polarity and gap info for shard spawning
+  const blockSystemState = useRef<BlockSystem.BlockSystemState>(
+    BlockSystem.createBlockSystemState()
+  );
+
+  // Legacy refs for shard spawning compatibility
   const lastSpawnedPolarity = useRef<"white" | "black" | null>(null);
   const lastGapCenter = useRef<number>(0);
   const lastHalfGap = useRef<number>(0);
-  // Mobile readability: keep polarity stable within a pattern (and across a few patterns)
-  const patternPolarity = useRef<"white" | "black">("white");
   const shardSpawnSequence = useRef<number>(0);
-  // Aynı renk üst üste 4 kere gelmesin
-  const consecutivePolarityCount = useRef<number>(0);
-  const lastTopPolarity = useRef<"white" | "black">("white");
+  // Mobile readability: keep polarity stable within a pattern
+  const patternPolarity = useRef<"white" | "black">("white");
 
-  // Pattern-Based Obstacle Spawn
-  // BLOK SPAWN - İKİ BLOK BİRLİKTE (BEYAZ + SİYAH)
-  // KRİTİK KURAL: Bir blok sıfırı geçerse, sıfırdan itibaren max uzunluğu = çubuk uzunluğu - orb
-  // Bu sayede ters renkteki orbu her zaman kaçırabilirsin
+  // Pattern-Based Obstacle Spawn - Uses BlockSystem
   const spawnPatternObstacle = (
     lane: Lane,
-    heightRatio: number,
+    _heightRatio: number,
     canvasHeight: number,
     canvasWidth: number
   ) => {
-    // Sadece TOP çağrıldığında ikisini birden spawn et
+    // Only spawn on TOP call (spawns both top and bottom)
     if (lane !== "TOP") return;
 
-    const obsWidth = INITIAL_CONFIG.obstacleWidth;
-    const spawnX = canvasWidth + 50;
-    const midY = canvasHeight / 2;
-    const orbRadius = INITIAL_CONFIG.orbRadius;
-    const connectorLen = currentConnectorLength.current;
+    const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+    const forcePhantom = (dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly) || false;
 
-    // MAX SIFIR GEÇİŞ = çubuk uzunluğunun yarısı - orb yarıçapı
-    // Bu, ters orbu kaçırabilmen için gereken maksimum mesafe
-    // GÜNCELLEME: Daha uzun geçiş = daha dinamik oyun
-    const maxCrossing = connectorLen / 2 - orbRadius + 8; // Artırıldı
+    const spawnCtx: BlockSystem.PatternSpawnContext = {
+      canvasHeight,
+      canvasWidth,
+      score: score.current,
+      connectorLength: currentConnectorLength.current,
+      isGravityFlipped: gravityState.current.isFlipped,
+      isDashing: PhaseDash.isDashActive(phaseDashState.current),
+      dashXOffset: PhaseDash.getPlayerXOffset(phaseDashState.current),
+      phantomEnabled: phantomEnabled ?? true,
+      forcePhantom,
+      rng: nextRunRand,
+      obstaclePool: obstaclePool.current,
+      state: blockSystemState.current,
+    };
 
-    // BOŞLUK = çubuk uzunluğu + orb çapları (mobil için daha geniş)
-    const minGap = connectorLen + orbRadius * 2 + 35;
+    const newObstacles = BlockSystem.spawnPatternObstaclePair(spawnCtx);
+    obstacles.current.push(...newObstacles);
 
-    // RASTGELE POLARİTE - ama aynı renk üst üste 4 kere gelmesin
-    let topPolarity: "white" | "black" = nextRunRand() > 0.5 ? "white" : "black";
-
-    // Eğer aynı renk 3 kere üst üste geldiyse, zorla değiştir
-    if (topPolarity === lastTopPolarity.current) {
-      consecutivePolarityCount.current++;
-      if (consecutivePolarityCount.current >= 3) {
-        // Zorla ters renk yap
-        topPolarity = topPolarity === "white" ? "black" : "white";
-        consecutivePolarityCount.current = 0;
-      }
-    } else {
-      consecutivePolarityCount.current = 0;
-    }
-    lastTopPolarity.current = topPolarity;
-
-    const bottomPolarity: "white" | "black" = topPolarity === "white" ? "black" : "white";
-
-    // RASTGELE GAP TİPİ:
-    // 0: Alt blok sıfırı yukarı geçiyor (gap üstte) - %37.5
-    // 1: Üst blok sıfırı aşağı geçiyor (gap altta) - %37.5
-    // 2: İkisi de sıfıra değmiyor (gap ortada) - %25
-    // Toplam %75 sıfır geçişi olasılığı
-    const rand = nextRunRand();
-    const gapType = rand < 0.375 ? 0 : rand < 0.75 ? 1 : 2;
-
-    let topBlockHeight: number;
-    let bottomBlockTop: number;
-
-    if (gapType === 0) {
-      // ALT BLOK SIFIRI GEÇİYOR (yukarı doğru uzanıyor)
-      // Alt blok sıfırın üstüne çıkıyor
-      const crossAmount = 0.3 * maxCrossing + nextRunRand() * 0.7 * maxCrossing; // %30-%100 arası geçiş
-      bottomBlockTop = midY - crossAmount; // Sıfırın üstüne çıkıyor
-      // Üst blok: alt bloğun üstünde, minGap kadar boşluk bırakarak
-      topBlockHeight = bottomBlockTop - minGap;
-    } else if (gapType === 1) {
-      // ÜST BLOK SIFIRI GEÇİYOR (aşağı doğru uzanıyor)
-      // Üst blok sıfırın altına iniyor
-      const crossAmount = 0.3 * maxCrossing + nextRunRand() * 0.7 * maxCrossing; // %30-%100 arası geçiş
-      topBlockHeight = midY + crossAmount; // Sıfırın altına iniyor
-      // Alt blok: üst bloğun altında, minGap kadar boşluk bırakarak
-      bottomBlockTop = topBlockHeight + minGap;
-    } else {
-      // İKİSİ DE SIFIRA DEĞMİYOR (gap ortada)
-      const offset = (nextRunRand() - 0.5) * 60; // Rastgele kayma
-      topBlockHeight = midY - minGap / 2 + offset - 10; // Sıfıra değmiyor
-      bottomBlockTop = midY + minGap / 2 + offset + 10; // Sıfıra değmiyor
-    }
-
-    // Ekran sınırları kontrolü (ama gap'i bozmadan)
-    if (topBlockHeight < 15) {
-      topBlockHeight = 15;
-      bottomBlockTop = topBlockHeight + minGap;
-    }
-    if (bottomBlockTop > canvasHeight - 15) {
-      bottomBlockTop = canvasHeight - 15;
-      topBlockHeight = bottomBlockTop - minGap;
-    }
-
-    // Shard spawn için kaydet
-    lastGapCenter.current = (topBlockHeight + bottomBlockTop) / 2;
-    lastHalfGap.current = (bottomBlockTop - topBlockHeight) / 2;
-    lastSpawnedPolarity.current = topPolarity;
-
-    // ÜST BLOK
-    if (topBlockHeight > 15) {
-      const topPooled = obstaclePool.current.acquire();
-      topPooled.x = spawnX;
-      topPooled.y = -topBlockHeight;
-      topPooled.targetY = 0;
-      topPooled.width = obsWidth;
-      topPooled.height = topBlockHeight;
-      topPooled.lane = gravityState.current.isFlipped ? "bottom" : "top";
-      topPooled.polarity = topPolarity;
-      topPooled.passed = false;
-      topPooled.nearMissChecked = false;
-      topPooled.hasPhased = false;
-      topPooled.isLatent = false;
-      topPooled.initialX = spawnX;
-
-      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
-      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
-      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        obstacles.current.push(createPhantomObstacle(topPooled, spawnX, PHANTOM_CONFIG));
-      } else {
-        obstacles.current.push(topPooled);
-      }
-    }
-
-    // ALT BLOK
-    const bottomBlockHeight = canvasHeight - bottomBlockTop;
-    if (bottomBlockHeight > 15) {
-      const bottomPooled = obstaclePool.current.acquire();
-      bottomPooled.x = spawnX;
-      bottomPooled.y = canvasHeight;
-      bottomPooled.targetY = bottomBlockTop;
-      bottomPooled.width = obsWidth;
-      bottomPooled.height = bottomBlockHeight;
-      bottomPooled.lane = gravityState.current.isFlipped ? "top" : "bottom";
-      bottomPooled.polarity = bottomPolarity;
-      bottomPooled.passed = false;
-      bottomPooled.nearMissChecked = false;
-      bottomPooled.hasPhased = false;
-      bottomPooled.isLatent = false;
-      bottomPooled.initialX = spawnX;
-
-      const phantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
-      const forcePhantom = dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly;
-      if (forcePhantom || (phantomEnabled && shouldSpawnAsPhantom(score.current, PHANTOM_CONFIG))) {
-        obstacles.current.push(createPhantomObstacle(bottomPooled, spawnX, PHANTOM_CONFIG));
-      } else {
-        obstacles.current.push(bottomPooled);
-      }
-    }
+    // Sync state for shard spawning
+    lastSpawnedPolarity.current = blockSystemState.current.lastSpawnedPolarity;
+    lastGapCenter.current = blockSystemState.current.lastGapCenter;
+    lastHalfGap.current = blockSystemState.current.lastHalfGap;
   };
 
   // Pattern-Based Shard Spawn - Requirements 5.1, 5.2, 5.3
@@ -1127,7 +959,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // REMOVED: Early game skipping logic to increase density
     // if (score.current < 800 && shardSpawnSequence.current % 2 === 1) return;
 
-    const spawnX = canvasWidth + 50;
+    // During dash, spawn shards closer to player
+    const dashXOffsetShard = PhaseDash.getPlayerXOffset(phaseDashState.current);
+    const isDashingShard = PhaseDash.isDashActive(phaseDashState.current);
+    const spawnX = isDashingShard 
+      ? canvasWidth * 0.5 + dashXOffsetShard + Math.random() * canvasWidth * 0.2
+      : canvasWidth + 50;
     const midY = canvasHeight / 2; // Merkez çizgi (midlineY)
 
     // Use current gate geometry if available (pattern-defined gap center)
@@ -1512,7 +1349,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           phaseDashVFXState.current = PhaseDashVFX.triggerTransitionIn(
             phaseDashVFXState.current,
             playerX,
-            playerYPos
+            playerYPos,
+            window.innerWidth,
+            window.innerHeight
           );
 
           // Heavy screen shake on activation
@@ -2037,24 +1876,40 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Trigger end VFX and screen shake when dash ends
       if (dashUpdate.dashEnded) {
         phaseDashVFXState.current = PhaseDashVFX.triggerTransitionOut(phaseDashVFXState.current);
-        ScreenShake.trigger({ intensity: 12, duration: 300, frequency: 25, decay: true });
+        ScreenShake.trigger({ intensity: 10, duration: 250, frequency: 20, decay: true });
+        
+        // Create end-of-dash burst particles for celebration effect
+        const dashEndX = width / 8 + PhaseDash.getPlayerXOffset(phaseDashState.current);
+        const dashEndY = playerY.current * height;
+        const endBurstParticles = PhaseDashVFX.createDashEndBurst(dashEndX, dashEndY);
+        phaseDashVFXState.current.burstParticles.push(...endBurstParticles);
+        
+        // Haptic feedback for dash end
+        getHapticSystem().trigger("medium");
       }
 
       // Update Phase Dash VFX state (using ~16ms assumed delta for 60fps)
       // Visual Y offset is calculated later for rendering, here we pass physics Y
+      // Include dash X offset for accurate particle positioning
+      const vfxDashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
       phaseDashVFXState.current = PhaseDashVFX.updateVFXState(
         phaseDashVFXState.current,
         phaseDashState.current.isActive,
-        width / 8, // playerX (approx)
+        width / 8 + vfxDashXOffset, // playerX with dash offset
         playerY.current * height, // playerY
-        16  // Approximate delta time in ms
+        16,  // Approximate delta time in ms
+        width,
+        height
       );
 
       // Get Phase Dash speed multiplier (1.0 normally, 4.0 during dash)
       const phaseDashSpeedMultiplier = PhaseDash.getSpeedMultiplier(phaseDashState.current);
 
       // Report Phase Dash state to parent for UI
-      onDashStateUpdate?.(phaseDashState.current.energy, phaseDashState.current.isActive);
+      // Calculate remaining percent: 100% at start, 0% when dash ends
+      const dashProgress = PhaseDash.getDashProgress(phaseDashState.current);
+      const dashRemainingPercent = phaseDashState.current.isActive ? (1 - dashProgress) * 100 : 100;
+      onDashStateUpdate?.(phaseDashState.current.energy, phaseDashState.current.isActive, dashRemainingPercent);
 
       // --- CONSTRUCT VFX UPDATE - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.8 ---
       // Update transformation VFX
@@ -2209,7 +2064,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Update distance based on current speed
           // Convert speed from pixels/frame to meters/second
           // Factor 0.8 gives good pacing (~45-60 seconds for level 1 with 100m target)
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * 0.8;
+          // During dash, distance increases 4x faster
+          const dashDistanceMultiplier = PhaseDash.getDistanceMultiplier(phaseDashState.current);
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * 0.8;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
 
           // Update distance state ref
@@ -2239,19 +2096,40 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // This section removed to avoid duplicate checks
         } else {
           // Legacy: Update speed using Flow Curve (score-based)
-          speed.current = FlowCurve.calculateGameSpeed(score.current);
+          // Skip speed update during Quantum Lock - Requirements 5.7
+          if (!GlitchSystem.shouldStabilizeSpeed(glitchModeState.current)) {
+            speed.current = FlowCurve.calculateGameSpeed(score.current);
+          }
         }
 
         // Pattern-Based Spawning
         // Stop spawning new obstacles when at 98% of target distance or in finish mode
-        // This gives player a clear path to the finish line
+        // Also stop during post-dash cooldown to give player breathing room
+        // Also stop during Quantum Lock - Requirements 6.1
+        const isInPostDashCooldown = PhaseDash.isInPostDashCooldown(phaseDashState.current);
+        const isDashingNow = PhaseDash.isDashActive(phaseDashState.current);
+        const isQuantumLockActive = GlitchSystem.shouldBlockObstacleSpawn(glitchModeState.current);
         const shouldStopSpawning = isInFinishMode.current ||
+          isInPostDashCooldown ||
+          isQuantumLockActive ||
           (distanceStateRef.current.targetDistance > 0 &&
             distanceStateRef.current.progressPercent >= 98);
 
+        // DASH BURST SPAWN: During dash, spawn obstacles directly every few frames
+        // This bypasses the pattern system for intense obstacle barrage
+        if (isDashingNow && !shouldStopSpawning) {
+          // Spawn obstacle every 30 frames during dash (~2 obstacles per second at 60fps)
+          // Further reduced to avoid overlapping obstacles
+          if (frameId.current % 30 === 0) {
+            spawnPatternObstacle("TOP" as Lane, 0.5, height, width);
+          }
+        }
+
         // Check if we need to select a new pattern
+        // Skip pattern spawning during dash - burst spawn handles it
         if (
           !shouldStopSpawning &&
+          !isDashingNow &&
           (!patternManagerState.current.currentPattern ||
             PatternManager.isPatternComplete(
               patternManagerState.current,
@@ -2275,15 +2153,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Dynamic pattern pacing: scale timings as speed changes (keeps spacing feel consistent)
           // Mobile: don't let patterns compress too aggressively at high speeds
+          // During dash, patterns are 3x faster (more obstacles)
+          const dashPatternMultiplier = PhaseDash.getObstacleSpawnMultiplier(phaseDashState.current);
           const baselineSpeed = 5.0;
           const timeScale = Math.max(
             0.75,
             Math.min(1.35, baselineSpeed / Math.max(0.1, speed.current))
-          );
+          ) / dashPatternMultiplier; // Faster patterns during dash
           const scaledPattern = {
             ...selectedPattern,
             duration: Math.max(
-              250,
+              150, // Shorter minimum during dash
               Math.round(selectedPattern.duration * timeScale)
             ),
             obstacles: selectedPattern.obstacles.map((o) => ({
@@ -2334,8 +2214,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
         framesSinceSpawn.current++;
       } else {
         // Legacy Random Spawning (fallback)
-        framesSinceSpawn.current++;
-        if (framesSinceSpawn.current >= currentSpawnRate.current) {
+        // Skip spawning during post-dash cooldown
+        const isInPostDashCooldownLegacy = PhaseDash.isInPostDashCooldown(phaseDashState.current);
+        
+        if (!isInPostDashCooldownLegacy) {
+          // During dash, spawn obstacles faster (but reduced from 3x to 2x)
+          const dashSpawnMultiplier = PhaseDash.getObstacleSpawnMultiplier(phaseDashState.current);
+          framesSinceSpawn.current += dashSpawnMultiplier;
+        } else {
+          framesSinceSpawn.current++; // Normal increment during cooldown
+        }
+        
+        if (framesSinceSpawn.current >= currentSpawnRate.current && !isInPostDashCooldownLegacy) {
           spawnObstacle(height, width);
           framesSinceSpawn.current = 0;
 
@@ -2371,6 +2261,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         if (newToken) {
           glitchTokens.current.push(newToken);
+        }
+      }
+
+      // --- GLITCH SHARD SPAWN LOGIC - Requirements 2.1, 2.6, 2.7 ---
+      // Spawn Glitch Shard for Quantum Lock bonus mode (once per level)
+      // Only spawn if not already spawned this level and not in Quantum Lock mode
+      if (
+        !hasSpawnedGlitchShardThisLevel.current &&
+        !glitchModeState.current.isActive &&
+        glitchModeState.current.phase === 'inactive' &&
+        !glitchShardRef.current
+      ) {
+        // Get current distance traveled (use distance tracker if available, else estimate from score)
+        const distanceTraveled = distanceTrackerRef.current
+          ? distanceTrackerRef.current.getCurrentDistance()
+          : score.current * 0.5; // Rough estimate: 0.5m per point
+
+        // Check if we should spawn - Requirements 2.7: minimum 500m distance
+        if (GlitchSystem.shouldSpawnGlitchShard(distanceTraveled, hasSpawnedGlitchShardThisLevel.current)) {
+          // Check if spawn position is safe - Requirements 2.6: 150px clearance
+          const centerY = height / 2;
+          const potentialY = centerY + (Math.random() * 2 - 1) * 100; // ±100px from center
+
+          if (GlitchSystem.isSpawnPositionSafe(potentialY, obstacles.current)) {
+            // Create the Glitch Shard - Requirements 2.2, 2.3
+            glitchShardRef.current = GlitchSystem.createGlitchShard(width, height);
+            hasSpawnedGlitchShardThisLevel.current = true;
+
+            // Play spawn sound - Requirements 9.1
+            AudioSystem.playGlitchSpawn();
+          }
         }
       }
 
@@ -2495,11 +2416,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Orb Positions - moved further left for ultra-wide view angle
       // In finish mode, player moves right towards screen exit
+      // During Phase Dash, player also moves forward for visual effect
       const basePlayerX = width / 8;
-      const playerX = basePlayerX + finishModePlayerX.current;
+      const dashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
+      const playerX = basePlayerX + finishModePlayerX.current + dashXOffset;
 
-      const yOffset = Math.cos(rotationAngle.current) * halfLen;
-      const xRotOffset = Math.sin(rotationAngle.current) * 15;
+      // During dash, use spin angle for clockwise rotation effect
+      const dashSpinAngle = PhaseDash.getSpinAngle(phaseDashState.current);
+      const effectiveRotation = phaseDashState.current.isActive 
+        ? rotationAngle.current + dashSpinAngle 
+        : rotationAngle.current;
+
+      const yOffset = Math.cos(effectiveRotation) * halfLen;
+      const xRotOffset = Math.sin(effectiveRotation) * 15;
 
       const whiteOrbY = playerY.current * height - yOffset;
       const whiteOrbX = playerX - xRotOffset;
@@ -2550,13 +2479,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ]);
 
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
+      // Get dash speed multiplier for glitch tokens
+      const dashSpeedMultiplierForTokens = PhaseDash.getSpeedMultiplier(phaseDashState.current);
       glitchTokens.current = glitchTokens.current.filter((token) => {
         if (token.collected) return false;
 
-        // Move token with game speed
+        // Move token with game speed - Apply dash multiplier for warp feel
         const updatedToken = GlitchTokenSpawner.updateTokenPosition(
           token,
-          -speed.current * slowMotionMultiplier * constructSpeedMultiplier
+          -speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForTokens
         );
         token.x = updatedToken.x;
 
@@ -2620,6 +2551,287 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         return true;
       });
+
+      // --- GLITCH SHARD UPDATE AND COLLISION - Requirements 2.4, 2.5, 3.1, 3.2, 3.3 ---
+      // Skip if hit stop is active - Requirements 3.2
+      if (hitStopFramesRemaining.current > 0) {
+        // Decrement hit stop counter
+        hitStopFramesRemaining.current = GlitchSystem.updateHitStop(hitStopFramesRemaining.current);
+
+        // If hit stop just ended, flush buffered input
+        if (hitStopFramesRemaining.current === 0) {
+          const bufferedInput = GlitchSystem.flushBufferedInput();
+          if (bufferedInput && bufferedInput.isReleaseFrame) {
+            // Trigger swap from buffered input
+            triggerSwap();
+          }
+        }
+      } else if (glitchShardRef.current && glitchShardRef.current.active) {
+        // Update shard position - Requirements 2.4
+        const dashSpeedMultiplierForShard = PhaseDash.getSpeedMultiplier(phaseDashState.current);
+        glitchShardRef.current = GlitchSystem.updateGlitchShard(
+          glitchShardRef.current,
+          speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForShard,
+          16.67 // Approximate delta time for 60fps
+        );
+
+        // Check if shard should be removed (exited left edge) - Requirements 2.5
+        if (GlitchSystem.shouldRemoveShard(glitchShardRef.current)) {
+          glitchShardRef.current = null;
+        } else {
+          // Check collision with player connector - Requirements 3.1
+          const collision = GlitchSystem.checkGlitchShardCollision(
+            playerX,
+            playerY.current * height,
+            currentConnectorLength.current,
+            glitchShardRef.current
+          );
+
+          if (collision) {
+            // Handle collision response - Requirements 3.2, 3.3, 3.5, 3.6
+            const collisionResponse = GlitchSystem.handleGlitchShardCollision(
+              glitchModeState.current,
+              currentConnectorLength.current
+            );
+
+            // Update glitch mode state
+            glitchModeState.current = collisionResponse.glitchModeState;
+
+            // Set hit stop frames - Requirements 3.2
+            hitStopFramesRemaining.current = collisionResponse.hitStopFrames;
+
+            // Trigger screen shake - Requirements 3.3
+            if (collisionResponse.shouldTriggerScreenShake) {
+              ScreenShake.triggerCollision();
+            }
+
+            // Play impact sound - Requirements 9.2
+            if (collisionResponse.shouldPlayImpactSound) {
+              AudioSystem.playGlitchImpact();
+            }
+
+            // Remove shard - Requirements 3.5
+            if (collisionResponse.shardRemoved) {
+              glitchShardRef.current = GlitchSystem.deactivateGlitchShard(glitchShardRef.current);
+              glitchShardRef.current = null;
+            }
+
+            // Trigger screen flash - Requirements 8.3
+            glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('enter');
+
+            // Start connector animation - Requirements 4.2
+            connectorAnimationStartTime.current = Date.now();
+
+            // Generate wave path shards - Requirements 5.6, 6.4
+            wavePathShards.current = GlitchSystem.generateWavePathShards(
+              glitchModeState.current.waveOffset,
+              width,
+              height / 2,
+              120 // Wave amplitude
+            );
+
+            // Pause Overdrive if active - Requirements 6.7, 10.1
+            if (shiftState.current.overdriveActive) {
+              const pauseResult = GlitchSystem.pauseOverdrive(
+                glitchModeState.current,
+                shiftState.current
+              );
+              glitchModeState.current = pauseResult.glitchState;
+              shiftState.current = pauseResult.overdriveState;
+            }
+
+            // Pause Resonance if active - Requirements 10.2
+            if (resonanceState.current.isActive && !resonanceState.current.isPaused) {
+              const pauseResult = GlitchSystem.pauseResonance(
+                glitchModeState.current,
+                resonanceState.current
+              );
+              glitchModeState.current = pauseResult.glitchState;
+              resonanceState.current = pauseResult.resonanceState;
+            }
+
+            // Apply low-pass filter to music - Requirements 9.3
+            AudioSystem.applyGlitchMusicFilter();
+
+            // Haptic feedback
+            getHapticSystem().trigger("heavy");
+
+            // Score popup
+            scorePopups.current.push({
+              x: playerX,
+              y: playerY.current * height - 40,
+              text: "⚡ QUANTUM LOCK ⚡",
+              color: "#00FF00",
+              life: 2.0,
+              vy: -2,
+            });
+          }
+        }
+      }
+
+      // --- QUANTUM LOCK MODE UPDATE - Requirements 5.2, 7.2, 7.3, 7.4 ---
+      // Update Glitch Mode state (phase transitions, wave offset, ghost mode)
+      if (glitchModeState.current.isActive || glitchModeState.current.phase === 'ghost') {
+        const previousPhase = glitchModeState.current.phase;
+
+        // Update mode state - Requirements 7.2, 7.3, 7.4
+        glitchModeState.current = GlitchSystem.updateGlitchMode(
+          glitchModeState.current,
+          16.67 // Approximate delta time for 60fps
+        );
+
+        // Check for phase transitions
+        const currentPhase = glitchModeState.current.phase;
+
+        // Handle transition to warning phase - Requirements 7.2
+        if (previousPhase === 'active' && currentPhase === 'warning') {
+          // Start exit warning visual effects
+          scorePopups.current.push({
+            x: width / 2,
+            y: height / 2 - 60,
+            text: "⚠️ EXITING SOON ⚠️",
+            color: "#FFFF00",
+            life: 1.5,
+            vy: -1,
+          });
+        }
+
+        // Handle transition to exiting phase - Requirements 7.3
+        if (previousPhase === 'warning' && currentPhase === 'exiting') {
+          // Start wave flattening animation
+          connectorAnimationStartTime.current = Date.now();
+        }
+
+        // Handle transition to ghost mode - Requirements 7.4
+        if (previousPhase === 'exiting' && currentPhase === 'ghost') {
+          // Trigger exit screen flash - Requirements 8.4
+          glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('exit');
+
+          // Remove low-pass filter from music - Requirements 9.4
+          AudioSystem.removeGlitchMusicFilter();
+
+          // Resume paused modes - Requirements 7.8, 10.3
+          if (glitchModeState.current.pausedOverdriveTime > 0) {
+            shiftState.current = GlitchSystem.resumeOverdrive(
+              glitchModeState.current,
+              shiftState.current
+            );
+          }
+          if (glitchModeState.current.pausedResonanceTime > 0) {
+            resonanceState.current = GlitchSystem.resumeResonance(
+              glitchModeState.current,
+              resonanceState.current
+            );
+          }
+
+          // Clear paused mode times
+          glitchModeState.current = GlitchSystem.clearPausedModeTimes(glitchModeState.current);
+
+          // Clear wave path shards
+          wavePathShards.current = [];
+
+          // Finalize connector length - Requirements 4.4
+          currentConnectorLength.current = GlitchSystem.finalizeConnectorLength(
+            glitchModeState.current,
+            glitchModeState.current.originalConnectorLength
+          );
+
+          scorePopups.current.push({
+            x: width / 2,
+            y: height / 2 - 40,
+            text: "👻 GHOST MODE 👻",
+            color: "#00FF00",
+            life: 1.5,
+            vy: -1,
+          });
+        }
+
+        // Handle ghost mode ending - Requirements 7.7
+        if (previousPhase === 'ghost' && currentPhase === 'inactive') {
+          // Normal gameplay restored
+          scorePopups.current.push({
+            x: width / 2,
+            y: height / 2 - 40,
+            text: "NORMAL MODE",
+            color: "#FFFFFF",
+            life: 1.0,
+            vy: -1,
+          });
+        }
+
+        // Update connector length animation during Quantum Lock - Requirements 4.2, 4.3
+        if (glitchModeState.current.isActive) {
+          const animationProgress = GlitchSystem.getConnectorAnimationProgress(
+            glitchModeState.current,
+            connectorAnimationStartTime.current
+          );
+          const targetLength = GlitchSystem.getTargetConnectorLength(glitchModeState.current);
+
+          currentConnectorLength.current = GlitchSystem.calculateConnectorLength(
+            glitchModeState.current,
+            currentConnectorLength.current,
+            targetLength,
+            16.67,
+            animationProgress
+          );
+        }
+
+        // Update wave path shards positions - Requirements 5.6
+        if (glitchModeState.current.isActive && wavePathShards.current.length > 0) {
+          const waveAmplitude = GlitchSystem.getWaveAmplitudeForPhase(
+            glitchModeState.current.phase,
+            GlitchSystem.getGlitchProgress(glitchModeState.current)
+          ) * 120; // Base amplitude
+
+          wavePathShards.current = GlitchSystem.updateWavePathShards(
+            wavePathShards.current,
+            glitchModeState.current.waveOffset,
+            waveAmplitude,
+            height / 2
+          );
+
+          // Check collection of wave path shards
+          wavePathShards.current.forEach((shard, index) => {
+            if (shard.collected) return;
+
+            // Check collision with player orbs
+            const distToWhite = Math.sqrt(
+              Math.pow(shard.x - whiteOrbX, 2) + Math.pow(shard.y - whiteOrbY, 2)
+            );
+            const distToBlack = Math.sqrt(
+              Math.pow(shard.x - blackOrbX, 2) + Math.pow(shard.y - blackOrbY, 2)
+            );
+
+            if (distToWhite < 30 || distToBlack < 30) {
+              // Collect shard - Requirements 6.5: 2x multiplier
+              wavePathShards.current = GlitchSystem.collectWavePathShard(wavePathShards.current, index);
+
+              const shardValue = GlitchSystem.getShardMultiplier(glitchModeState.current) * 5; // Base 5 * 2x = 10
+              useGameStore.getState().addEchoShards(shardValue);
+
+              // Visual feedback
+              ParticleSystem.emitBurst(shard.x, shard.y, ["#00FF00", "#00FFFF", "#FFFFFF"]);
+              scorePopups.current.push({
+                x: shard.x,
+                y: shard.y - 20,
+                text: `+${shardValue} ⚡`,
+                color: "#00FF00",
+                life: 0.8,
+                vy: -2,
+              });
+
+              // Haptic feedback
+              getHapticSystem().trigger("light");
+
+              // Audio feedback
+              AudioSystem.playShardCollect();
+            }
+          });
+        }
+      }
+
+      // Update screen flash state
+      glitchScreenFlashState.current = GlitchVFX.updateScreenFlash(glitchScreenFlashState.current);
 
       // --- S.H.I.F.T. COLLECTIBLE COLLISION DETECTION - Requirements 9.1, 9.2, 9.3, 9.4 ---
       const orbCollisionRadius = INITIAL_CONFIG.orbRadius;
@@ -2772,6 +2984,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- SHARD MOVEMENT AND COLLECTION - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
       // Move shards with game speed + dynamic oscillation
       // Note: currentTime is already defined above in gravity flip logic
+      // Get dash speed multiplier - makes everything fly faster during dash for warp feel
+      const dashSpeedMultiplierForShards = PhaseDash.getSpeedMultiplier(phaseDashState.current);
       activeShards.current = activeShards.current.filter((shard) => {
         if (shard.collected) {
           shardPool.current.release(
@@ -2780,8 +2994,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           return false;
         }
 
-        // Move base position left with game speed - Apply construct speed multiplier
-        shard.baseX -= speed.current * slowMotionMultiplier * constructSpeedMultiplier;
+        // Move base position left with game speed - Apply construct and dash speed multipliers
+        // Dash multiplier makes shards fly faster too for consistent warp feel
+        shard.baseX -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForShards;
 
         // Calculate dynamic position with oscillation (yukarı-aşağı + ileri-geri)
         const dynamicPos = ShardPlacement.calculateShardPosition(
@@ -2792,8 +3007,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         shard.y = dynamicPos.y;
 
         // Check collection with both orbs
-        // In finish mode, player moves right
-        const shardPlayerX = (width / 8) + finishModePlayerX.current;
+        // In finish mode, player moves right. During dash, player also moves forward.
+        const shardDashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
+        const shardPlayerX = (width / 8) + finishModePlayerX.current + shardDashXOffset;
         const xRotOffset = Math.sin(rotationAngle.current) * 15;
         const whiteOrbX = shardPlayerX - xRotOffset;
         const blackOrbX = shardPlayerX + xRotOffset;
@@ -2865,7 +3081,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // BONUS SHARD: Ekstra ödül ve büyük patlama efekti
           const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
-          const finalValue = isBonus ? awardedValue * 2 : awardedValue; // Bonus 2x ekstra
+          let finalValue = isBonus ? awardedValue * 2 : awardedValue; // Bonus 2x ekstra
+
+          // Apply Quantum Lock shard multiplier - Requirements 6.5
+          const glitchMultiplier = GlitchSystem.getShardMultiplier(glitchModeState.current);
+          finalValue = finalValue * glitchMultiplier;
 
           // Campaign Update v2.5 - Track shards collected for star rating
           // Requirements: 4.2
@@ -3009,9 +3229,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       let collisionDetected = false;
 
+      // Get dash speed multiplier for obstacle movement - makes obstacles fly faster during dash
+      const dashSpeedMultiplier = PhaseDash.getSpeedMultiplier(phaseDashState.current);
+
       obstacles.current.forEach((obs) => {
-        // Horizontal Movement - Apply slow motion and construct speed multipliers - Requirements 6.4, 4.6
-        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier;
+        // Horizontal Movement - Apply slow motion, construct, and dash speed multipliers
+        // Dash multiplier makes obstacles move faster = feels like player is warping through
+        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier;
 
         // Vertical Animation
         if (Math.abs(obs.y - obs.targetY) > 0.5) {
@@ -3276,6 +3500,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           Date.now()
         );
 
+        // Check Quantum Lock / Ghost Mode invulnerability - Requirements 6.3, 7.6
+        const glitchInvincible = GlitchSystem.isInvulnerable(glitchModeState.current);
+
         // Also skip if pending restore (waiting for user decision) or restore animation is playing
         // Skip collision in finish mode - player is exiting screen
         if (
@@ -3285,13 +3512,61 @@ const GameEngine: React.FC<GameEngineProps> = ({
           postRestoreInvincibleActive ||
           shieldInvincibleActive ||
           constructInvincible ||
+          glitchInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current ||
-          isInFinishMode.current ||
-          // Phase Dash invincibility - pass through obstacles
-          PhaseDash.isInvincible(phaseDashState.current)
+          isInFinishMode.current
         )
           return;
+
+        // Phase Dash: Destroy obstacles with satisfying impact
+        if (PhaseDash.isInvincible(phaseDashState.current)) {
+          const whiteOrbPos = { x: whiteOrb.x, y: whiteOrb.y };
+          const blackOrbPos = { x: blackOrb.x, y: blackOrb.y };
+          
+          const whiteHit = checkCollision(whiteOrbPos, whiteOrb.radius, obs);
+          const blackHit = checkCollision(blackOrbPos, blackOrb.radius, obs);
+          
+          if (whiteHit || blackHit) {
+            // Create enhanced debris particles for satisfying destruction
+            const obsColor = obs.polarity === 'white' ? '#FFFFFF' : '#000000';
+            PhaseDashVFX.createObstacleDebris(
+              obs.x,
+              obs.y,
+              obs.width,
+              obs.height,
+              obsColor
+            );
+            
+            // Add particle burst at impact point for extra visual feedback
+            const impactX = obs.x + obs.width / 2;
+            const impactY = obs.y + obs.height / 2;
+            ParticleSystem.emitBurst(impactX, impactY, [
+              obsColor === '#FFFFFF' ? '#00FFFF' : '#FF00FF',
+              '#FFFFFF',
+              obsColor
+            ]);
+            
+            // Mark obstacle for removal
+            obs.passed = true;
+            obs.x = -1000; // Move off screen
+            
+            // Strong screen shake on impact - feels like breaking through
+            ScreenShake.trigger({ 
+              intensity: 12, 
+              duration: 200, 
+              frequency: 40, 
+              decay: true 
+            });
+            
+            // Strong haptic feedback - feels like smashing
+            getHapticSystem().trigger("heavy");
+            
+            // Audio feedback for destruction
+            AudioSystem.playTitanStomp(); // Reuse stomp sound for impact
+          }
+          return;
+        }
 
         const whiteOrbPos = { x: whiteOrb.x, y: whiteOrb.y };
         const blackOrbPos = { x: blackOrb.x, y: blackOrb.y };
@@ -4314,120 +4589,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
         );
       }
 
-      obstacles.current.forEach((obs) => {
-        // Use polarity to determine obstacle color - matches orb colors
-        // white polarity = topOrb color (white orb can pass through)
-        // black polarity = bottomOrb color (black orb can pass through)
-        const isWhitePolarity = obs.polarity === "white";
-        const obstacleColor = isWhitePolarity
-          ? whiteObstacleColor
-          : blackObstacleColor;
-        const oppositeColor = isWhitePolarity
-          ? blackObstacleColor
-          : whiteObstacleColor;
-
-        // --- PHANTOM OPACITY CALCULATION - Requirements 5.3, 5.4, 5.5 ---
-        let obstacleOpacity = 1.0;
-        if (
-          obs.isLatent &&
-          obs.initialX !== undefined &&
-          obs.revealDistance !== undefined
-        ) {
-          // Calculate opacity based on current position - Requirements 5.3
-          const calculatedOpacity = calculatePhantomOpacity(
-            obs.x,
-            obs.initialX,
-            obs.revealDistance
-          );
-          // Apply minimum opacity threshold for ghost outline - Requirements 5.4
-          obstacleOpacity = getEffectiveOpacity(
-            calculatedOpacity,
-            PHANTOM_CONFIG.minOpacity
-          );
-        }
-
-        // Apply opacity to context
-        ctx.globalAlpha = obstacleOpacity;
-
-        // BPM-synced pulse effect - Requirements 14.2
-        // Obstacles pulse (scale slightly up/down) in sync with BPM
-        const pulseScale = EnvironmentalEffects.calculateBPMPulseScale(
-          Date.now(),
-          EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM
-        );
-
-        // Apply pulse scale transform centered on obstacle
-        const obsCenterX = obs.x + obs.width / 2;
-        const obsCenterY = obs.y + obs.height / 2;
-        ctx.save();
-        ctx.translate(obsCenterX, obsCenterY);
-        ctx.scale(pulseScale, pulseScale);
-        ctx.translate(-obsCenterX, -obsCenterY);
-
-        // Draw the block body - Theme System Integration
-        ctx.fillStyle = obstacleColor;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-
-        // Border - contrasting color for visibility
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = oppositeColor;
-        ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-
-        // Theme Effects - Requirements 5.4: Cyberpunk glowing edges
-        if (hasEffect("glowEdges")) {
-          ctx.shadowColor = obstacleColor;
-          ctx.shadowBlur = 10;
-          ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-          ctx.shadowBlur = 0;
-        }
-
-        // Theme Effects - Requirements 5.5: Retro pixelated edges
-        if (hasEffect("pixelated")) {
-          // Add pixelated corner effect
-          const pixelSize = 4;
-          ctx.fillStyle = oppositeColor;
-          // Top-left corner
-          ctx.fillRect(obs.x, obs.y, pixelSize, pixelSize);
-          // Top-right corner
-          ctx.fillRect(
-            obs.x + obs.width - pixelSize,
-            obs.y,
-            pixelSize,
-            pixelSize
-          );
-          // Bottom-left corner
-          ctx.fillRect(
-            obs.x,
-            obs.y + obs.height - pixelSize,
-            pixelSize,
-            pixelSize
-          );
-          // Bottom-right corner
-          ctx.fillRect(
-            obs.x + obs.width - pixelSize,
-            obs.y + obs.height - pixelSize,
-            pixelSize,
-            pixelSize
-          );
-        }
-
-        // Requirements 5.5: When fully transparent, draw faint ghost outline (α = 0.05)
-        // This is already handled by getEffectiveOpacity ensuring minOpacity
-        // But we can add an extra subtle glow for phantom obstacles
-        if (obs.isLatent && obstacleOpacity < 0.5) {
-          ctx.globalAlpha = PHANTOM_CONFIG.minOpacity;
-          ctx.strokeStyle = `${obstacleColor}4D`; // 30% opacity
-          ctx.lineWidth = 1;
-          ctx.setLineDash([5, 5]); // Dashed line for ghost effect
-          ctx.strokeRect(obs.x - 2, obs.y - 2, obs.width + 4, obs.height + 4);
-          ctx.setLineDash([]); // Reset dash
-        }
-
-        // Restore context from BPM pulse transform - Requirements 14.2
-        ctx.restore();
-
-        // Reset opacity
-        ctx.globalAlpha = 1.0;
+      // Render all blocks using BlockSystem
+      BlockSystem.renderAllBlocks(obstacles.current, {
+        ctx,
+        currentTime: Date.now(),
+        bpm: EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM,
+        whiteObstacleColor,
+        blackObstacleColor,
       });
 
       // --- PATTERN SHARD RENDERING - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
@@ -4577,6 +4745,133 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.restore();
       });
 
+      // --- GLITCH SHARD RENDERING - Requirements 1.1, 1.2, 1.3, 1.4, 1.5 ---
+      if (glitchShardRef.current && glitchShardRef.current.active) {
+        GlitchVFX.renderGlitchShard(ctx, glitchShardRef.current);
+      }
+
+      // --- QUANTUM LOCK VFX RENDERING - Requirements 5.3, 5.4, 5.5, 8.1, 8.6 ---
+      if (glitchModeState.current.isActive || glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting') {
+        const glitchProgress = GlitchSystem.getGlitchProgress(glitchModeState.current);
+
+        // Render sinus tunnel - Requirements 5.3, 5.4, 5.5
+        const waveAmplitude = GlitchSystem.getWaveAmplitudeForPhase(
+          glitchModeState.current.phase,
+          glitchProgress
+        ) * 120; // Base amplitude
+
+        if (waveAmplitude > 0) {
+          GlitchVFX.renderSinusTunnel(
+            ctx,
+            width,
+            height,
+            glitchModeState.current.waveOffset,
+            waveAmplitude
+          );
+        }
+
+        // Render static noise - Requirements 8.1, 8.6
+        const noiseIntensity = GlitchVFX.getNoiseIntensity(
+          glitchModeState.current.phase,
+          glitchProgress
+        );
+        if (noiseIntensity > 0) {
+          GlitchVFX.renderStaticNoise(ctx, width, height, noiseIntensity);
+        }
+
+        // Render wave path shards - Requirements 5.6, 6.4
+        wavePathShards.current.forEach((shard) => {
+          if (shard.collected) return;
+
+          const shardTime = Date.now() * 0.003;
+          const pulseScale = 1 + Math.sin(shardTime * 2) * 0.15;
+          const shardSize = 10 * pulseScale;
+
+          ctx.save();
+          ctx.translate(shard.x, shard.y);
+
+          // Green glow for wave path shards
+          ctx.shadowColor = "#00FF00";
+          ctx.shadowBlur = 15 + Math.sin(shardTime * 3) * 5;
+
+          // Draw diamond shape
+          ctx.beginPath();
+          ctx.moveTo(0, -shardSize);
+          ctx.lineTo(shardSize, 0);
+          ctx.lineTo(0, shardSize);
+          ctx.lineTo(-shardSize, 0);
+          ctx.closePath();
+
+          // Green gradient
+          const gradient = ctx.createLinearGradient(-shardSize, -shardSize, shardSize, shardSize);
+          gradient.addColorStop(0, "#00FF00");
+          gradient.addColorStop(0.5, "#00FFFF");
+          gradient.addColorStop(1, "#00FF00");
+          ctx.fillStyle = gradient;
+          ctx.fill();
+
+          ctx.strokeStyle = "#FFFFFF";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.restore();
+        });
+
+        // Quantum Lock timer indicator
+        const remainingMs = glitchModeState.current.duration - (Date.now() - glitchModeState.current.startTime);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        const timerProgress = 1 - glitchProgress;
+
+        // Draw timer bar at top
+        const barWidth = 200;
+        const barHeight = 8;
+        const barX = (width - barWidth) / 2;
+        const barY = 90;
+
+        // Background bar
+        ctx.fillStyle = "#333333";
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // Progress bar with green glow
+        ctx.shadowColor = "#00FF00";
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting' 
+          ? "#FFFF00" 
+          : "#00FF00";
+        ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
+        ctx.shadowBlur = 0;
+
+        // Timer text
+        ctx.font = "bold 16px Arial";
+        ctx.fillStyle = "#00FF00";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          `⚡ QUANTUM LOCK ⚡ ${remainingSeconds}s`,
+          width / 2,
+          barY - 10
+        );
+      }
+
+      // Ghost Mode indicator - Requirements 7.5
+      if (glitchModeState.current.phase === 'ghost') {
+        const ghostProgress = GlitchSystem.getGhostModeProgress(glitchModeState.current);
+        const remainingMs = GlitchSystem.getGhostModeRemainingTime(glitchModeState.current);
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+        // Draw ghost mode indicator
+        ctx.font = "bold 16px Arial";
+        ctx.fillStyle = `rgba(0, 255, 0, ${0.5 + (1 - ghostProgress) * 0.5})`;
+        ctx.textAlign = "center";
+        ctx.fillText(
+          `👻 GHOST MODE 👻 ${remainingSeconds}s`,
+          width / 2,
+          90
+        );
+      }
+
+      // Render screen flash - Requirements 8.3, 8.4
+      GlitchVFX.renderScreenFlash(ctx, width, height, glitchScreenFlashState.current);
+
       // S.H.I.F.T. COLLECTIBLE RENDERING - DISABLED
 
 
@@ -4701,22 +4996,52 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const time = Date.now() * 0.003;
 
       // 1. Draw Connector - Theme System Integration - Requirements 5.1, 5.2, 5.3
-      const gradient = ctx.createLinearGradient(
-        visualWhiteOrb.x,
-        visualWhiteOrb.y,
-        visualBlackOrb.x,
-        visualBlackOrb.y
-      );
-      gradient.addColorStop(0, getColor("topOrb"));
-      gradient.addColorStop(0.5, getColor("connector"));
-      gradient.addColorStop(1, getColor("bottomOrb"));
+      // During dash, fade out normal connector and show neon spin instead
+      const dashTransition = phaseDashVFXState.current.transitionProgress;
+      const normalOpacity = PhaseDashVFX.getNormalConnectorOpacity(dashTransition);
 
-      ctx.beginPath();
-      ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
-      ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
-      ctx.lineWidth = INITIAL_CONFIG.connectorWidth;
-      ctx.strokeStyle = gradient;
-      ctx.stroke();
+      // Get Quantum Lock connector render options - Requirements 4.5, 4.6, 7.5
+      const glitchConnectorOptions = GlitchVFX.getConnectorRenderOptions(glitchModeState.current);
+
+      if (normalOpacity > 0) {
+        ctx.save();
+        ctx.globalAlpha = normalOpacity * glitchConnectorOptions.opacity;
+        
+        // Apply pulse scale during Quantum Lock - Requirements 4.6
+        const pulseScale = glitchConnectorOptions.pulseScale;
+        
+        const gradient = ctx.createLinearGradient(
+          visualWhiteOrb.x,
+          visualWhiteOrb.y,
+          visualBlackOrb.x,
+          visualBlackOrb.y
+        );
+        
+        // Apply green tint during Quantum Lock - Requirements 4.5
+        if (glitchConnectorOptions.greenTint) {
+          gradient.addColorStop(0, "#00FF00");
+          gradient.addColorStop(0.5, "#00FF88");
+          gradient.addColorStop(1, "#00FF00");
+          
+          // Add glow effect
+          ctx.shadowColor = "#00FF00";
+          ctx.shadowBlur = 15;
+        } else {
+          gradient.addColorStop(0, getColor("topOrb"));
+          gradient.addColorStop(0.5, getColor("connector"));
+          gradient.addColorStop(1, getColor("bottomOrb"));
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
+        ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
+        ctx.lineWidth = INITIAL_CONFIG.connectorWidth * pulseScale;
+        ctx.strokeStyle = gradient;
+        ctx.stroke();
+        
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
 
       // Helper to draw an orb - Skin System Integration - Requirements 3.1, 3.2, 3.3, 3.4
       // Theme System Integration - Requirements 5.1, 5.2, 5.3
@@ -4964,8 +5289,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
       } else {
         // Draw the normal orbs when no construct is active
         // Use visual orbs with offset
-        drawOrb(visualBlackOrb, false);
-        drawOrb(visualWhiteOrb, true);
+        // During dash, fade out normal orbs (neon spin replaces them)
+        const orbOpacity = PhaseDashVFX.getNormalConnectorOpacity(phaseDashVFXState.current.transitionProgress);
+        if (orbOpacity > 0) {
+          ctx.save();
+          ctx.globalAlpha = orbOpacity;
+          drawOrb(visualBlackOrb, false);
+          drawOrb(visualWhiteOrb, true);
+          ctx.restore();
+        }
       }
 
       // Post-restore invincibility visual effect - cyan glow and countdown
@@ -5207,23 +5539,26 @@ const GameEngine: React.FC<GameEngineProps> = ({
         PhaseDashVFX.renderAllVFX(ctx, width, height, phaseDashVFXState.current);
       }
 
-      // Render Phase Dash ghost trail (fading player copies)
-      if (phaseDashState.current.isActive && phaseDashState.current.ghostTrail.length > 0) {
+      // Render Phase Dash connector trail (spinning bar effect)
+      if (phaseDashState.current.isActive) {
         const orbRadius = Math.min(width, height) * 0.03;
-        phaseDashState.current.ghostTrail.forEach(ghost => {
-          if (ghost.alpha > 0) {
-            ctx.save();
-            ctx.globalAlpha = ghost.alpha * 0.6;
-            ctx.fillStyle = "#00FFFF";
-            ctx.shadowColor = "#00FFFF";
-            ctx.shadowBlur = 15;
-            ctx.beginPath();
-            ctx.arc(ghost.x, ghost.y, orbRadius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-          }
-        });
+        // Add current connector position to trail
+        const dashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
+        const trailX = width / 8 + dashXOffset;
+        const trailY = playerY.current * height;
+        const trailAngle = rotationAngle.current + PhaseDash.getSpinAngle(phaseDashState.current);
+        PhaseDashVFX.addConnectorTrailPosition(
+          trailX,
+          trailY,
+          trailAngle,
+          currentConnectorLength.current
+        );
+        // Draw the trail
+        PhaseDashVFX.updateAndDrawConnectorTrail(ctx, orbRadius);
       }
+
+      // Render Phase Dash debris particles (from destroyed obstacles)
+      PhaseDashVFX.updateAndDrawDebris(ctx);
 
 
       if (collisionDetected) {

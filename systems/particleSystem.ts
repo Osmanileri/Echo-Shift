@@ -29,6 +29,7 @@ export interface ParticleConfig {
   colors: string[];
   spread: number;
   gravity: number;
+  baseAngle?: number; // Optional base direction for particles (radians)
 }
 
 // Default configurations for different particle types
@@ -39,8 +40,9 @@ export const PARTICLE_CONFIGS: Record<string, ParticleConfig> = {
     size: { min: 2, max: 4 },
     life: { min: 0.3, max: 0.6 },
     colors: ['#00F0FF', '#00CCFF'],
-    spread: 0.3,
+    spread: 0.4,
     gravity: 0,
+    baseAngle: Math.PI, // Trail particles go backward (left, behind the orb)
   },
   burst: {
     count: 12,
@@ -142,14 +144,17 @@ function createParticle(
   if (!particle) return null;
   
   // Calculate velocity based on spread and optional angle
-  const baseAngle = angle ?? randomRange(-config.spread / 2, config.spread / 2);
+  // If config has baseAngle, use it as center direction with spread around it
+  const configBaseAngle = config.baseAngle ?? 0;
+  const spreadAngle = randomRange(-config.spread / 2, config.spread / 2);
+  const finalAngle = angle ?? (configBaseAngle + spreadAngle);
   const speed = randomRange(config.speed.min, config.speed.max);
   
   particle.id = generateParticleId();
   particle.x = x;
   particle.y = y;
-  particle.vx = Math.cos(baseAngle) * speed;
-  particle.vy = Math.sin(baseAngle) * speed;
+  particle.vx = Math.cos(finalAngle) * speed;
+  particle.vy = Math.sin(finalAngle) * speed;
   particle.life = randomRange(config.life.min, config.life.max);
   particle.maxLife = particle.life;
   particle.size = randomRange(config.size.min, config.size.max);
