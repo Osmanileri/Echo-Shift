@@ -22,40 +22,40 @@ import { calculateWaveY, getGhostModeOpacity, getGlitchProgress } from './glitch
 export const GLITCH_VFX_CONFIG = {
   // Jitter effect - Requirements 1.1
   jitterRange: 5,              // ±5 pixels random offset per frame
-  
+
   // Color flicker - Requirements 1.2
   colorCycleInterval: 50,      // 50ms per color
-  
+
   // Distorted polygon - Requirements 1.3
   polygonVertices: 6,          // Hexagon base shape
   vertexOffsetRange: 8,        // Random vertex offset range
-  
+
   // Static noise on shard - Requirements 1.4
   shardNoiseLines: 5,          // 5 random horizontal lines
-  
+
   // Glow effect - Requirements 1.5
   glowBlur: 15,                // Shadow blur for glow
-  
+
   // Sinus tunnel - Requirements 5.3, 5.4, 5.5
   tunnelColor: '#00FF00',      // Matrix green
   tunnelGlowBlur: 10,          // 10px shadow blur
   guidePathWidth: 40,          // 40px wide guide path
   guidePathOpacity: 0.1,       // 10% opacity
-  
+
   // Static noise overlay - Requirements 8.1
   noiseLineChance: 0.2,        // 20% chance per frame
   noiseLineCount: 15,          // Number of noise lines when triggered
-  
+
   // Screen flash - Requirements 8.3, 8.4
   enterFlashDuration: 200,     // 200ms white flash on enter
   exitFadeDuration: 500,       // 500ms vignette fade on exit
-  
+
   // Connector effects - Requirements 4.5, 4.6
   connectorGreenTint: '#00FF00',
   connectorPulseMin: 1.0,
   connectorPulseMax: 1.05,
   connectorPulseSpeed: 0.005,  // Pulse animation speed
-  
+
   // Ghost mode - Requirements 7.5
   ghostOpacity: 0.5,           // 50% opacity during ghost mode
 };
@@ -107,18 +107,18 @@ export function generateDistortedPolygon(
   const vertices: Array<{ x: number; y: number }> = [];
   const numVertices = GLITCH_VFX_CONFIG.polygonVertices;
   const offsetRange = GLITCH_VFX_CONFIG.vertexOffsetRange;
-  
+
   for (let i = 0; i < numVertices; i++) {
     const angle = (i / numVertices) * Math.PI * 2;
     const distortion = (Math.random() * 2 - 1) * offsetRange;
     const r = radius + distortion;
-    
+
     vertices.push({
       x: centerX + Math.cos(angle) * r,
       y: centerY + Math.sin(angle) * r,
     });
   }
-  
+
   return vertices;
 }
 
@@ -145,21 +145,21 @@ export function renderShardNoise(
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.globalAlpha = 0.7;
-  
+
   const halfWidth = width / 2;
   const halfHeight = height / 2;
-  
+
   for (let i = 0; i < GLITCH_VFX_CONFIG.shardNoiseLines; i++) {
     const lineY = y - halfHeight + Math.random() * height;
     const lineStartX = x - halfWidth + Math.random() * halfWidth * 0.3;
     const lineEndX = x + halfWidth - Math.random() * halfWidth * 0.3;
-    
+
     ctx.beginPath();
     ctx.moveTo(lineStartX, lineY);
     ctx.lineTo(lineEndX, lineY);
     ctx.stroke();
   }
-  
+
   ctx.restore();
 }
 
@@ -175,29 +175,29 @@ export function renderGlitchShard(
   shard: GlitchShard
 ): void {
   if (!shard.active) return;
-  
+
   ctx.save();
-  
+
   // Get current flicker color - Requirements 1.2
   const color = getFlickerColor(shard.colorTimer);
-  
+
   // Apply jitter offset - Requirements 1.1
   const jitter = generateJitterOffset();
   const renderX = shard.x + jitter.x;
   const renderY = shard.y + jitter.y;
-  
+
   // Apply glow effect - Requirements 1.5
   ctx.shadowColor = color;
   ctx.shadowBlur = GLITCH_VFX_CONFIG.glowBlur;
-  
+
   // Generate and draw distorted polygon - Requirements 1.3
   const radius = Math.max(shard.width, shard.height) / 2;
   const vertices = generateDistortedPolygon(renderX, renderY, radius);
-  
+
   ctx.fillStyle = color;
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 2;
-  
+
   ctx.beginPath();
   ctx.moveTo(vertices[0].x, vertices[0].y);
   for (let i = 1; i < vertices.length; i++) {
@@ -206,7 +206,7 @@ export function renderGlitchShard(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  
+
   // Draw inner glow
   const gradient = ctx.createRadialGradient(
     renderX, renderY, 0,
@@ -215,15 +215,15 @@ export function renderGlitchShard(
   gradient.addColorStop(0, '#FFFFFF');
   gradient.addColorStop(0.3, color);
   gradient.addColorStop(1, 'transparent');
-  
+
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(renderX, renderY, radius * 0.7, 0, Math.PI * 2);
   ctx.fill();
-  
+
   // Render static noise on shard - Requirements 1.4
   renderShardNoise(ctx, renderX, renderY, shard.width, shard.height, color);
-  
+
   ctx.restore();
 }
 
@@ -253,38 +253,38 @@ export function renderSinusTunnel(
 ): void {
   const centerY = height / 2;
   const config = GLITCH_VFX_CONFIG;
-  
+
   ctx.save();
-  
+
   // Draw guide path first (behind the main wave) - Requirements 5.5
   ctx.globalAlpha = config.guidePathOpacity;
   ctx.fillStyle = config.tunnelColor;
-  
+
   ctx.beginPath();
   ctx.moveTo(0, centerY + amplitude + config.guidePathWidth / 2);
-  
+
   // Draw top edge of guide path
   for (let x = 0; x <= width; x += 5) {
     const y = calculateWaveY(x, offset, amplitude, centerY);
     ctx.lineTo(x, y - config.guidePathWidth / 2);
   }
-  
+
   // Draw bottom edge of guide path (reverse direction)
   for (let x = width; x >= 0; x -= 5) {
     const y = calculateWaveY(x, offset, amplitude, centerY);
     ctx.lineTo(x, y + config.guidePathWidth / 2);
   }
-  
+
   ctx.closePath();
   ctx.fill();
-  
+
   // Draw main wave line with glow - Requirements 5.3, 5.4
   ctx.globalAlpha = 1.0;
   ctx.strokeStyle = config.tunnelColor;
   ctx.lineWidth = 3;
   ctx.shadowColor = config.tunnelColor;
   ctx.shadowBlur = config.tunnelGlowBlur;
-  
+
   ctx.beginPath();
   for (let x = 0; x <= width; x += 2) {
     const y = calculateWaveY(x, offset, amplitude, centerY);
@@ -295,12 +295,12 @@ export function renderSinusTunnel(
     }
   }
   ctx.stroke();
-  
+
   // Draw secondary glow line (thinner, brighter)
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 1;
   ctx.shadowBlur = 5;
-  
+
   ctx.beginPath();
   for (let x = 0; x <= width; x += 2) {
     const y = calculateWaveY(x, offset, amplitude, centerY);
@@ -311,7 +311,7 @@ export function renderSinusTunnel(
     }
   }
   ctx.stroke();
-  
+
   ctx.restore();
 }
 
@@ -339,28 +339,28 @@ export function renderStaticNoise(
   if (Math.random() > GLITCH_VFX_CONFIG.noiseLineChance * intensity) {
     return;
   }
-  
+
   ctx.save();
-  
+
   const lineCount = Math.floor(GLITCH_VFX_CONFIG.noiseLineCount * intensity);
-  
+
   for (let i = 0; i < lineCount; i++) {
     const y = Math.random() * height;
     const lineWidth = Math.random() * width * 0.3 + width * 0.1;
     const startX = Math.random() * (width - lineWidth);
-    
+
     // Random color from glitch palette
     const colorIndex = Math.floor(Math.random() * GLITCH_CONFIG.colors.length);
     ctx.strokeStyle = GLITCH_CONFIG.colors[colorIndex];
     ctx.globalAlpha = 0.3 * intensity;
     ctx.lineWidth = 1 + Math.random() * 2;
-    
+
     ctx.beginPath();
     ctx.moveTo(startX, y);
     ctx.lineTo(startX + lineWidth, y);
     ctx.stroke();
   }
-  
+
   ctx.restore();
 }
 
@@ -429,10 +429,10 @@ export function createScreenFlashState(): ScreenFlashState {
  * @returns Updated screen flash state
  */
 export function triggerScreenFlash(type: 'enter' | 'exit'): ScreenFlashState {
-  const duration = type === 'enter' 
-    ? GLITCH_VFX_CONFIG.enterFlashDuration 
+  const duration = type === 'enter'
+    ? GLITCH_VFX_CONFIG.enterFlashDuration
     : GLITCH_VFX_CONFIG.exitFadeDuration;
-  
+
   return {
     isActive: true,
     type,
@@ -449,12 +449,12 @@ export function triggerScreenFlash(type: 'enter' | 'exit'): ScreenFlashState {
  */
 export function updateScreenFlash(state: ScreenFlashState): ScreenFlashState {
   if (!state.isActive) return state;
-  
+
   const elapsed = Date.now() - state.startTime;
   if (elapsed >= state.duration) {
     return createScreenFlashState();
   }
-  
+
   return state;
 }
 
@@ -466,7 +466,7 @@ export function updateScreenFlash(state: ScreenFlashState): ScreenFlashState {
  */
 export function getScreenFlashProgress(state: ScreenFlashState): number {
   if (!state.isActive) return 0;
-  
+
   const elapsed = Date.now() - state.startTime;
   return Math.min(1, elapsed / state.duration);
 }
@@ -488,11 +488,11 @@ export function renderScreenFlash(
   state: ScreenFlashState
 ): void {
   if (!state.isActive) return;
-  
+
   const progress = getScreenFlashProgress(state);
-  
+
   ctx.save();
-  
+
   if (state.type === 'enter') {
     // Requirements 8.3: White flash that fades out
     // Peak at 50% progress, then fade
@@ -502,13 +502,13 @@ export function renderScreenFlash(
     } else {
       opacity = (1 - progress) * 2; // 1 -> 0
     }
-    
+
     ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.8})`;
     ctx.fillRect(0, 0, width, height);
   } else if (state.type === 'exit') {
     // Requirements 8.4: Vignette that fades out
     const vignetteOpacity = 1 - progress;
-    
+
     // Create radial gradient for vignette
     const gradient = ctx.createRadialGradient(
       width / 2, height / 2, 0,
@@ -517,11 +517,11 @@ export function renderScreenFlash(
     gradient.addColorStop(0, 'transparent');
     gradient.addColorStop(0.5, 'transparent');
     gradient.addColorStop(1, `rgba(0, 255, 0, ${vignetteOpacity * 0.3})`);
-    
+
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
   }
-  
+
   ctx.restore();
 }
 
@@ -549,31 +549,31 @@ export interface ConnectorRenderOptions {
  */
 export function getConnectorRenderOptions(state: GlitchModeState): ConnectorRenderOptions {
   const config = GLITCH_VFX_CONFIG;
-  
+
   // Default options (normal gameplay)
   const options: ConnectorRenderOptions = {
     greenTint: false,
     pulseScale: 1.0,
     opacity: 1.0,
   };
-  
+
   if (state.isActive) {
     // Requirements 4.5: Green tint during Quantum Lock
     options.greenTint = true;
-    
+
     // Requirements 4.6: Pulse animation
     const pulseTime = Date.now() * config.connectorPulseSpeed;
     const pulseValue = (Math.sin(pulseTime) + 1) / 2; // 0 to 1
-    options.pulseScale = config.connectorPulseMin + 
+    options.pulseScale = config.connectorPulseMin +
       (config.connectorPulseMax - config.connectorPulseMin) * pulseValue;
   }
-  
+
   if (state.phase === 'ghost') {
     // Requirements 7.5: Semi-transparent during Ghost Mode
     options.opacity = getGhostModeOpacity(state, true);
     options.greenTint = false; // No green tint during ghost mode
   }
-  
+
   return options;
 }
 
@@ -592,17 +592,17 @@ export function applyConnectorEffects(
   connectorColor: string
 ): string {
   ctx.save();
-  
+
   // Apply opacity
   ctx.globalAlpha = options.opacity;
-  
+
   // Apply glow if green tint is active
   if (options.greenTint) {
     ctx.shadowColor = GLITCH_VFX_CONFIG.connectorGreenTint;
     ctx.shadowBlur = 10;
     return GLITCH_VFX_CONFIG.connectorGreenTint;
   }
-  
+
   return connectorColor;
 }
 
@@ -641,24 +641,24 @@ export function renderGlitchVFX(
   if (shard && shard.active) {
     renderGlitchShard(ctx, shard);
   }
-  
+
   // Render Quantum Lock effects
   if (state.isActive || state.phase === 'warning' || state.phase === 'exiting') {
     const progress = getGlitchProgress(state);
-    
+
     // Render sinus tunnel
     const amplitude = GLITCH_CONFIG.waveAmplitude * getWaveAmplitudeMultiplier(state.phase, progress);
     if (amplitude > 0) {
       renderSinusTunnel(ctx, width, height, state.waveOffset, amplitude);
     }
-    
+
     // Render static noise
     const noiseIntensity = getNoiseIntensity(state.phase, progress);
     if (noiseIntensity > 0) {
       renderStaticNoise(ctx, width, height, noiseIntensity);
     }
   }
-  
+
   // Render screen flash
   renderScreenFlash(ctx, width, height, screenFlash);
 }
@@ -684,3 +684,322 @@ function getWaveAmplitudeMultiplier(phase: GlitchPhase, progress: number): numbe
       return 0.0;
   }
 }
+
+// ============================================================================
+// Quantum Lock Ambiance VFX - Atmospheric Effects
+// ============================================================================
+
+/**
+ * Renders edge vignette during Quantum Lock for dangerous atmosphere
+ * Creates dark green tinted corners that pulse with the wave
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param intensity - Effect intensity (0.0 to 1.0)
+ * @param pulse - Pulse value (0.0 to 1.0) synchronized with wave
+ */
+export function renderQuantumLockVignette(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  intensity: number,
+  pulse: number = 0.5
+): void {
+  if (intensity <= 0) return;
+
+  const config = GLITCH_CONFIG.ambiance;
+  const pulseIntensity = intensity * (0.85 + 0.15 * pulse);
+
+  ctx.save();
+
+  // Create radial gradient for vignette from edges
+  const gradient = ctx.createRadialGradient(
+    width / 2, height / 2, height * 0.25,  // Inner circle (clear)
+    width / 2, height / 2, Math.max(width, height) * 0.85  // Outer circle (dark)
+  );
+
+  const [r, g, b] = config.vignetteColor;
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, ${pulseIntensity * 0.3})`);
+  gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${pulseIntensity * config.vignetteIntensity})`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.restore();
+}
+
+/**
+ * Renders CRT scanlines for retro/digital atmosphere
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param intensity - Effect intensity (0.0 to 1.0)
+ */
+export function renderQuantumLockScanlines(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  intensity: number
+): void {
+  if (intensity <= 0) return;
+
+  const config = GLITCH_CONFIG.ambiance;
+  const opacity = config.scanlineOpacity * intensity;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+
+  // Draw horizontal scanlines
+  for (let y = 0; y < height; y += config.scanlineSpacing) {
+    ctx.fillRect(0, y, width, 1);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Renders danger pulse overlay - subtle red pulse for tension
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param intensity - Effect intensity (0.0 to 1.0)
+ * @param pulse - Pulse value (0.0 to 1.0)
+ */
+export function renderQuantumLockDangerPulse(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  intensity: number,
+  pulse: number
+): void {
+  if (intensity <= 0) return;
+
+  const config = GLITCH_CONFIG.ambiance;
+  const pulseOpacity = config.dangerPulseIntensity * intensity * pulse;
+
+  if (pulseOpacity <= 0.01) return;
+
+  ctx.save();
+
+  // Edge glow effect - danger from the edges
+  const gradient = ctx.createRadialGradient(
+    width / 2, height / 2, height * 0.4,
+    width / 2, height / 2, Math.max(width, height)
+  );
+  gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+  gradient.addColorStop(0.6, 'rgba(255, 0, 0, 0)');
+  gradient.addColorStop(1, `rgba(255, 42, 42, ${pulseOpacity})`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.restore();
+}
+
+/**
+ * Renders all Quantum Lock ambiance effects
+ * Combines vignette, scanlines, and danger pulse for full atmosphere
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param state - Current glitch mode state
+ */
+export function renderQuantumLockAmbiance(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  state: GlitchModeState
+): void {
+  if (!state.isActive && state.phase !== 'warning' && state.phase !== 'exiting') {
+    return;
+  }
+
+  const progress = getGlitchProgress(state);
+  const config = GLITCH_CONFIG.ambiance;
+
+  // Calculate intensity based on phase
+  let intensity = 1.0;
+  if (state.phase === 'exiting') {
+    intensity = 1.0 - ((progress - 0.80) / 0.20);
+  }
+
+  // Sync pulse with wave offset for cohesive feel
+  const pulse = (Math.sin(state.waveOffset * 2) + 1) / 2;
+
+  // Background darkening overlay - creates the distinct atmosphere
+  ctx.save();
+  const darkenAmount = (config.backgroundDarken || 0.3) * intensity;
+  ctx.fillStyle = `rgba(0, 0, 0, ${darkenAmount})`;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  // Electric glow border around screen edges
+  ctx.save();
+  const glowColor = config.glowColor || [0, 255, 200];
+  const glowIntensity = 0.3 * intensity * (0.7 + 0.3 * pulse);
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${glowIntensity})`);
+  gradient.addColorStop(0.1, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.9, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(1, `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${glowIntensity})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  // Render all ambiance layers
+  renderQuantumLockVignette(ctx, width, height, intensity, pulse);
+  renderQuantumLockScanlines(ctx, width, height, intensity);
+
+  // Danger pulse in warning/exiting phases AND subtle pulse always for atmosphere
+  if (state.phase === 'warning' || state.phase === 'exiting') {
+    const dangerPulse = (Math.sin(Date.now() * 0.01) + 1) / 2;
+    renderQuantumLockDangerPulse(ctx, width, height, intensity, dangerPulse);
+  } else {
+    // Subtle cyan pulse for active phase
+    const subtlePulse = (Math.sin(Date.now() * 0.005) + 1) / 2;
+    ctx.save();
+    ctx.fillStyle = `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${0.03 * subtlePulse * intensity})`;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+// Burn Effect - Midline Collision Failure
+// ============================================================================
+
+/**
+ * Burn effect state for tracking animation
+ */
+export interface BurnEffectState {
+  isActive: boolean;
+  startTime: number;
+  duration: number;
+}
+
+/**
+ * Creates initial burn effect state
+ */
+export function createBurnEffectState(): BurnEffectState {
+  return {
+    isActive: false,
+    startTime: 0,
+    duration: 300,
+  };
+}
+
+/**
+ * Triggers burn effect when Quantum Lock ends from too many hits
+ */
+export function triggerBurnEffect(): BurnEffectState {
+  return {
+    isActive: true,
+    startTime: Date.now(),
+    duration: GLITCH_CONFIG.midlineCollision.burnEffectDuration,
+  };
+}
+
+/**
+ * Updates burn effect state
+ */
+export function updateBurnEffect(state: BurnEffectState): BurnEffectState {
+  if (!state.isActive) return state;
+
+  const elapsed = Date.now() - state.startTime;
+  if (elapsed >= state.duration) {
+    return createBurnEffectState();
+  }
+
+  return state;
+}
+
+/**
+ * Renders burn effect - red/orange flash when Quantum Lock fails
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param state - Burn effect state
+ */
+export function renderBurnEffect(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  state: BurnEffectState
+): void {
+  if (!state.isActive) return;
+
+  const elapsed = Date.now() - state.startTime;
+  const progress = Math.min(1, elapsed / state.duration);
+
+  // Peak intensity at 30%, then fade out
+  let intensity: number;
+  if (progress < 0.3) {
+    intensity = progress / 0.3;
+  } else {
+    intensity = (1 - progress) / 0.7;
+  }
+
+  ctx.save();
+
+  // Red/orange gradient from center
+  const gradient = ctx.createRadialGradient(
+    width / 2, height / 2, 0,
+    width / 2, height / 2, Math.max(width, height) * 0.8
+  );
+  gradient.addColorStop(0, `rgba(255, 100, 0, ${intensity * 0.6})`);
+  gradient.addColorStop(0.3, `rgba(255, 50, 0, ${intensity * 0.4})`);
+  gradient.addColorStop(0.7, `rgba(255, 0, 0, ${intensity * 0.2})`);
+  gradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.restore();
+}
+
+/**
+ * Renders midline hit indicator - flash when orb touches wave
+ * 
+ * @param ctx - Canvas 2D rendering context
+ * @param x - Hit X position
+ * @param y - Hit Y position
+ * @param hitCount - Current hit count
+ * @param maxHits - Maximum hits allowed
+ */
+export function renderMidlineHitIndicator(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  hitCount: number,
+  maxHits: number
+): void {
+  ctx.save();
+
+  // Red spark at hit location
+  const pulseSize = 30 + Math.sin(Date.now() * 0.02) * 10;
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, pulseSize);
+  gradient.addColorStop(0, 'rgba(255, 100, 0, 0.8)');
+  gradient.addColorStop(0.5, 'rgba(255, 50, 0, 0.4)');
+  gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, pulseSize, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hit counter text
+  ctx.font = 'bold 14px Arial';
+  ctx.fillStyle = '#FF4444';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${hitCount}/${maxHits}`, x, y - 40);
+
+  ctx.restore();
+}
+

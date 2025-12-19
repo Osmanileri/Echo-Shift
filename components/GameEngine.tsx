@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  GLITCH_CONFIG,
   GRAVITY_CONFIG,
   INITIAL_CONFIG,
   MIDLINE_CONFIG,
@@ -211,6 +212,8 @@ interface GameEngineProps {
   onSlowMotionStateUpdate?: (active: boolean) => void;
   // Phase Dash System - Energy bar updates
   onDashStateUpdate?: (energy: number, active: boolean, remainingPercent?: number) => void;
+  // Quantum Lock updates - Requirements 7.5
+  onQuantumLockStateUpdate?: (isActive: boolean) => void;
   // Campaign Mode - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
   campaignMode?: CampaignModeConfig;
   // Daily Challenge Mode - Requirements 8.1, 8.2, 8.3
@@ -239,6 +242,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   slowMotionActive = false,
   onSlowMotionStateUpdate,
   onDashStateUpdate,
+  onQuantumLockStateUpdate,
   campaignMode,
   dailyChallengeMode,
   zenMode,
@@ -530,6 +534,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const glitchModeState = useRef<GlitchModeState>(
     GlitchSystem.createInitialGlitchModeState()
   );
+  // Track previous state to emit updates
+  const prevQuantumLockActive = useRef<boolean>(false);
+
   const hitStopFramesRemaining = useRef<number>(0);
   const hasSpawnedGlitchShardThisLevel = useRef<boolean>(false);
   const glitchScreenFlashState = useRef<GlitchVFX.ScreenFlashState>(
@@ -539,6 +546,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const connectorAnimationStartTime = useRef<number>(0);
   // Wave path shards during Quantum Lock
   const wavePathShards = useRef<GlitchSystem.WavePathShard[]>([]);
+  // Diamond bonus tracking for reflex rewards
+  const lastDiamondCollectTime = useRef<number>(0);
+  const diamondStreak = useRef<number>(0);
+  // Burn effect state for midline collision failure
+  const burnEffectState = useRef<GlitchVFX.BurnEffectState>(
+    GlitchVFX.createBurnEffectState()
+  );
 
 
   const resetGame = useCallback(() => {
@@ -798,6 +812,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     glitchScreenFlashState.current = GlitchVFX.createScreenFlashState();
     connectorAnimationStartTime.current = 0;
     wavePathShards.current = [];
+    // Reset diamond bonus tracking
+    lastDiamondCollectTime.current = 0;
+    diamondStreak.current = 0;
     GlitchSystem.clearInputBuffer();
   }, [
     onScoreUpdate,
@@ -868,7 +885,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       campaignMode.levelConfig?.mechanics.phantom !== false;
     const forcePhantom =
       (dailyChallengeMode?.enabled &&
-      dailyChallengeMode.config?.modifiers.phantomOnly) || false;
+        dailyChallengeMode.config?.modifiers.phantomOnly) || false;
 
     const spawnCtx: BlockSystem.SpawnContext = {
       canvasHeight,
@@ -962,7 +979,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // During dash, spawn shards closer to player
     const dashXOffsetShard = PhaseDash.getPlayerXOffset(phaseDashState.current);
     const isDashingShard = PhaseDash.isDashActive(phaseDashState.current);
-    const spawnX = isDashingShard 
+    const spawnX = isDashingShard
       ? canvasWidth * 0.5 + dashXOffsetShard + Math.random() * canvasWidth * 0.2
       : canvasWidth + 50;
     const midY = canvasHeight / 2; // Merkez çizgi (midlineY)
@@ -1339,7 +1356,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const now = Date.now();
       if (now - lastTapTime.current < DOUBLE_TAP_THRESHOLD) {
         // Double-tap detected - check if dash can activate
-        if (PhaseDash.canActivate(phaseDashState.current)) {
+        // Requirement: Dash disabled during Quantum Lock (Requirements 7.5)
+        // Prevent activation during Active, Warning, or Exiting phases
+        const isQuantumLockEngaged = glitchModeState.current.isActive ||
+          glitchModeState.current.phase === 'warning' ||
+          glitchModeState.current.phase === 'exiting';
+
+        if (PhaseDash.canActivate(phaseDashState.current) && !isQuantumLockEngaged) {
           const dashDuration = getActiveUpgradeEffects().dashDuration;
           phaseDashState.current = PhaseDash.activateDash(phaseDashState.current, dashDuration);
 
@@ -1877,13 +1900,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (dashUpdate.dashEnded) {
         phaseDashVFXState.current = PhaseDashVFX.triggerTransitionOut(phaseDashVFXState.current);
         ScreenShake.trigger({ intensity: 10, duration: 250, frequency: 20, decay: true });
-        
+
         // Create end-of-dash burst particles for celebration effect
         const dashEndX = width / 8 + PhaseDash.getPlayerXOffset(phaseDashState.current);
         const dashEndY = playerY.current * height;
         const endBurstParticles = PhaseDashVFX.createDashEndBurst(dashEndX, dashEndY);
         phaseDashVFXState.current.burstParticles.push(...endBurstParticles);
-        
+
         // Haptic feedback for dash end
         getHapticSystem().trigger("medium");
       }
@@ -1962,9 +1985,29 @@ const GameEngine: React.FC<GameEngineProps> = ({
         : 0;
 
       // Calculate current midline Y position (static at center if midline disabled)
-      const currentMidlineY = midlineEnabled
+      let currentMidlineY = midlineEnabled
         ? calculateMidlineY(height, elapsedTime, midlineConfig, score.current)
         : height / 2;
+
+      // Quantum Lock: Sync midline with wave position at player X
+      // This makes the "zero line" move proportionally with the green wave line
+      if (glitchModeState.current.isActive || glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting') {
+        const glitchProgress = GlitchSystem.getGlitchProgress(glitchModeState.current);
+        const waveAmplitude = GlitchSystem.getWaveAmplitudeForPhase(
+          glitchModeState.current.phase,
+          glitchProgress
+        ) * GLITCH_CONFIG.waveAmplitude;
+
+        if (waveAmplitude > 0) {
+          const playerX = width / 8; // Player X position
+          currentMidlineY = GlitchSystem.calculateWaveY(
+            playerX,
+            glitchModeState.current.waveOffset,
+            waveAmplitude,
+            height / 2
+          );
+        }
+      }
 
       // Calculate normalized offset for visual effects
       const normalizedOffset = calculateNormalizedOffset(
@@ -2065,8 +2108,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Convert speed from pixels/frame to meters/second
           // Factor 0.8 gives good pacing (~45-60 seconds for level 1 with 100m target)
           // During dash, distance increases 4x faster
+          // During Quantum Lock, distance increases 3x faster
           const dashDistanceMultiplier = PhaseDash.getDistanceMultiplier(phaseDashState.current);
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * 0.8;
+          const quantumLockDistanceMultiplier = GlitchSystem.getDistanceMultiplier(glitchModeState.current);
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * quantumLockDistanceMultiplier * 0.8;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
 
           // Update distance state ref
@@ -2078,6 +2123,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
             distanceStateRef.current.targetDistance,
             distanceStateRef.current.progressPercent
           );
+
+          // Check for Quantum Lock state change updates - Requirements 7.5
+          const isQuantumLockActive = glitchModeState.current.isActive ||
+            glitchModeState.current.phase === 'warning' ||
+            glitchModeState.current.phase === 'exiting';
+
+          if (isQuantumLockActive !== prevQuantumLockActive.current) {
+            prevQuantumLockActive.current = isQuantumLockActive;
+            onQuantumLockStateUpdate?.(isQuantumLockActive);
+          }
 
           // Environmental Effects: Haptic feedback on distance bar pulse - Requirements 14.4
           // Trigger haptic when near finish (within 50m of target)
@@ -2216,7 +2271,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Legacy Random Spawning (fallback)
         // Skip spawning during post-dash cooldown
         const isInPostDashCooldownLegacy = PhaseDash.isInPostDashCooldown(phaseDashState.current);
-        
+
         if (!isInPostDashCooldownLegacy) {
           // During dash, spawn obstacles faster (but reduced from 3x to 2x)
           const dashSpawnMultiplier = PhaseDash.getObstacleSpawnMultiplier(phaseDashState.current);
@@ -2224,7 +2279,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         } else {
           framesSinceSpawn.current++; // Normal increment during cooldown
         }
-        
+
         if (framesSinceSpawn.current >= currentSpawnRate.current && !isInPostDashCooldownLegacy) {
           spawnObstacle(height, width);
           framesSinceSpawn.current = 0;
@@ -2423,8 +2478,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // During dash, use spin angle for clockwise rotation effect
       const dashSpinAngle = PhaseDash.getSpinAngle(phaseDashState.current);
-      const effectiveRotation = phaseDashState.current.isActive 
-        ? rotationAngle.current + dashSpinAngle 
+      const effectiveRotation = phaseDashState.current.isActive
+        ? rotationAngle.current + dashSpinAngle
         : rotationAngle.current;
 
       const yOffset = Math.cos(effectiveRotation) * halfLen;
@@ -2787,8 +2842,71 @@ const GameEngine: React.FC<GameEngineProps> = ({
             wavePathShards.current,
             glitchModeState.current.waveOffset,
             waveAmplitude,
+            height / 2,
+            speed.current, // Pass game speed for horizontal movement
+            width // Canvas width for respawning
+          );
+
+          // --- MIDLINE COLLISION DETECTION ---
+          // Check if orbs are touching the wave (zero line)
+          const whiteOrbWaveY = GlitchSystem.calculateWaveY(
+            whiteOrbX,
+            glitchModeState.current.waveOffset,
+            waveAmplitude,
             height / 2
           );
+          const blackOrbWaveY = GlitchSystem.calculateWaveY(
+            blackOrbX,
+            glitchModeState.current.waveOffset,
+            waveAmplitude,
+            height / 2
+          );
+
+          const whiteHit = GlitchSystem.checkMidlineCollision(whiteOrbY, whiteOrbWaveY, 20);
+          const blackHit = GlitchSystem.checkMidlineCollision(blackOrbY, blackOrbWaveY, 20);
+
+          if (whiteHit || blackHit) {
+            const collisionResult = GlitchSystem.registerMidlineHit(glitchModeState.current);
+
+            if (collisionResult.hit) {
+              glitchModeState.current = collisionResult.updatedState;
+
+              // Visual/audio feedback for hit
+              const hitX = whiteHit ? whiteOrbX : blackOrbX;
+              const hitY = whiteHit ? whiteOrbY : blackOrbY;
+              ParticleSystem.emitBurst(hitX, hitY, ["#FF4400", "#FF0000", "#FFAA00"]);
+              ScreenShake.triggerNearMiss();
+
+              // Show hit counter
+              scorePopups.current.push({
+                x: hitX,
+                y: hitY - 30,
+                text: `⚠️ HIT ${collisionResult.updatedState.midlineHits}/${GLITCH_CONFIG.midlineCollision.maxHits}`,
+                color: "#FF4444",
+                life: 0.8,
+                vy: -2,
+              });
+
+              // Check if Quantum Lock should end
+              if (collisionResult.shouldEndQuantumLock) {
+                glitchModeState.current = GlitchSystem.forceEndQuantumLock(glitchModeState.current);
+                burnEffectState.current = GlitchVFX.triggerBurnEffect();
+
+                // Failure popup
+                scorePopups.current.push({
+                  x: width / 2,
+                  y: height / 2,
+                  text: "🔥 QUANTUM LOCK FAILED 🔥",
+                  color: "#FF0000",
+                  life: 2.0,
+                  vy: -1,
+                });
+
+                ScreenShake.triggerCollision();
+                wavePathShards.current = [];
+              }
+            }
+          }
 
           // Check collection of wave path shards
           wavePathShards.current.forEach((shard, index) => {
@@ -2802,26 +2920,83 @@ const GameEngine: React.FC<GameEngineProps> = ({
               Math.pow(shard.x - blackOrbX, 2) + Math.pow(shard.y - blackOrbY, 2)
             );
 
-            if (distToWhite < 30 || distToBlack < 30) {
+            // Check collision with connector (line between orbs)
+            // Calculate distance from point to line segment
+            const connectorCollision = (() => {
+              const px = shard.x;
+              const py = shard.y;
+              const x1 = whiteOrbX;
+              const y1 = whiteOrbY;
+              const x2 = blackOrbX;
+              const y2 = blackOrbY;
+
+              const dx = x2 - x1;
+              const dy = y2 - y1;
+              const lengthSquared = dx * dx + dy * dy;
+
+              if (lengthSquared === 0) return distToWhite; // Degenerate case
+
+              // Project point onto line, clamped to segment
+              const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared));
+              const closestX = x1 + t * dx;
+              const closestY = y1 + t * dy;
+
+              return Math.sqrt(Math.pow(px - closestX, 2) + Math.pow(py - closestY, 2));
+            })();
+
+            // Collect if touching orbs OR connector
+            if (distToWhite < 30 || distToBlack < 30 || connectorCollision < 15) {
               // Collect shard - Requirements 6.5: 2x multiplier
               wavePathShards.current = GlitchSystem.collectWavePathShard(wavePathShards.current, index);
 
-              const shardValue = GlitchSystem.getShardMultiplier(glitchModeState.current) * 5; // Base 5 * 2x = 10
+              // Diamond Bonus System - Reflex rewards
+              const bonusConfig = GLITCH_CONFIG.diamondBonus;
+              const currentTime = Date.now();
+              const timeSinceLastCollect = currentTime - (lastDiamondCollectTime.current || 0);
+
+              // Calculate reflex bonus (fast collection = 2x)
+              const isReflexCollect = timeSinceLastCollect < bonusConfig.reflexWindowMs && lastDiamondCollectTime.current > 0;
+              const reflexMultiplier = isReflexCollect ? bonusConfig.reflexMultiplier : 1;
+
+              // Update streak
+              if (isReflexCollect) {
+                diamondStreak.current = Math.min(diamondStreak.current + 1, bonusConfig.maxStreak);
+              } else {
+                diamondStreak.current = 1;
+              }
+              lastDiamondCollectTime.current = currentTime;
+
+              // Calculate total value: base * glitch multiplier * reflex * streak
+              const baseValue = bonusConfig.baseValue;
+              const glitchMultiplier = GlitchSystem.getShardMultiplier(glitchModeState.current);
+              const streakBonus = (diamondStreak.current - 1) * bonusConfig.streakBonus;
+              const shardValue = Math.floor((baseValue + streakBonus) * glitchMultiplier * reflexMultiplier);
+
               useGameStore.getState().addEchoShards(shardValue);
 
-              // Visual feedback
+              // Visual feedback with bonus indicator
               ParticleSystem.emitBurst(shard.x, shard.y, ["#00FF00", "#00FFFF", "#FFFFFF"]);
+
+              // Show bonus text
+              let bonusText = `+${shardValue} 💎`;
+              if (isReflexCollect) {
+                bonusText = `+${shardValue} 💎 REFLEX!`;
+              }
+              if (diamondStreak.current >= 3) {
+                bonusText = `+${shardValue} 💎 x${diamondStreak.current} STREAK!`;
+              }
+
               scorePopups.current.push({
                 x: shard.x,
                 y: shard.y - 20,
-                text: `+${shardValue} ⚡`,
-                color: "#00FF00",
-                life: 0.8,
+                text: bonusText,
+                color: isReflexCollect ? "#FFD700" : "#00FF00",
+                life: isReflexCollect ? 1.2 : 0.8,
                 vy: -2,
               });
 
-              // Haptic feedback
-              getHapticSystem().trigger("light");
+              // Haptic feedback - stronger for combos
+              getHapticSystem().trigger(diamondStreak.current >= 3 ? "medium" : "light");
 
               // Audio feedback
               AudioSystem.playShardCollect();
@@ -2832,6 +3007,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Update screen flash state
       glitchScreenFlashState.current = GlitchVFX.updateScreenFlash(glitchScreenFlashState.current);
+
+      // Update burn effect state
+      burnEffectState.current = GlitchVFX.updateBurnEffect(burnEffectState.current);
 
       // --- S.H.I.F.T. COLLECTIBLE COLLISION DETECTION - Requirements 9.1, 9.2, 9.3, 9.4 ---
       const orbCollisionRadius = INITIAL_CONFIG.orbRadius;
@@ -3523,10 +3701,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         if (PhaseDash.isInvincible(phaseDashState.current)) {
           const whiteOrbPos = { x: whiteOrb.x, y: whiteOrb.y };
           const blackOrbPos = { x: blackOrb.x, y: blackOrb.y };
-          
+
           const whiteHit = checkCollision(whiteOrbPos, whiteOrb.radius, obs);
           const blackHit = checkCollision(blackOrbPos, blackOrb.radius, obs);
-          
+
           if (whiteHit || blackHit) {
             // Create enhanced debris particles for satisfying destruction
             const obsColor = obs.polarity === 'white' ? '#FFFFFF' : '#000000';
@@ -3537,7 +3715,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               obs.height,
               obsColor
             );
-            
+
             // Add particle burst at impact point for extra visual feedback
             const impactX = obs.x + obs.width / 2;
             const impactY = obs.y + obs.height / 2;
@@ -3546,22 +3724,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
               '#FFFFFF',
               obsColor
             ]);
-            
+
             // Mark obstacle for removal
             obs.passed = true;
             obs.x = -1000; // Move off screen
-            
+
             // Strong screen shake on impact - feels like breaking through
-            ScreenShake.trigger({ 
-              intensity: 12, 
-              duration: 200, 
-              frequency: 40, 
-              decay: true 
+            ScreenShake.trigger({
+              intensity: 12,
+              duration: 200,
+              frequency: 40,
+              decay: true
             });
-            
+
             // Strong haptic feedback - feels like smashing
             getHapticSystem().trigger("heavy");
-            
+
             // Audio feedback for destruction
             AudioSystem.playTitanStomp(); // Reuse stomp sound for impact
           }
@@ -4779,6 +4957,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           GlitchVFX.renderStaticNoise(ctx, width, height, noiseIntensity);
         }
 
+        // Render Quantum Lock Ambiance - Vignette, Scanlines, Danger Pulse
+        GlitchVFX.renderQuantumLockAmbiance(ctx, width, height, glitchModeState.current);
+
         // Render wave path shards - Requirements 5.6, 6.4
         wavePathShards.current.forEach((shard) => {
           if (shard.collected) return;
@@ -4835,8 +5016,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Progress bar with green glow
         ctx.shadowColor = "#00FF00";
         ctx.shadowBlur = 10;
-        ctx.fillStyle = glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting' 
-          ? "#FFFF00" 
+        ctx.fillStyle = glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting'
+          ? "#FFFF00"
           : "#00FF00";
         ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
         ctx.shadowBlur = 0;
@@ -4871,6 +5052,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Render screen flash - Requirements 8.3, 8.4
       GlitchVFX.renderScreenFlash(ctx, width, height, glitchScreenFlashState.current);
+
+      // Render burn effect - Quantum Lock failure
+      GlitchVFX.renderBurnEffect(ctx, width, height, burnEffectState.current);
 
       // S.H.I.F.T. COLLECTIBLE RENDERING - DISABLED
 
@@ -5006,23 +5190,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (normalOpacity > 0) {
         ctx.save();
         ctx.globalAlpha = normalOpacity * glitchConnectorOptions.opacity;
-        
+
         // Apply pulse scale during Quantum Lock - Requirements 4.6
         const pulseScale = glitchConnectorOptions.pulseScale;
-        
+
         const gradient = ctx.createLinearGradient(
           visualWhiteOrb.x,
           visualWhiteOrb.y,
           visualBlackOrb.x,
           visualBlackOrb.y
         );
-        
+
         // Apply green tint during Quantum Lock - Requirements 4.5
         if (glitchConnectorOptions.greenTint) {
           gradient.addColorStop(0, "#00FF00");
           gradient.addColorStop(0.5, "#00FF88");
           gradient.addColorStop(1, "#00FF00");
-          
+
           // Add glow effect
           ctx.shadowColor = "#00FF00";
           ctx.shadowBlur = 15;
@@ -5038,7 +5222,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.lineWidth = INITIAL_CONFIG.connectorWidth * pulseScale;
         ctx.strokeStyle = gradient;
         ctx.stroke();
-        
+
         ctx.shadowBlur = 0;
         ctx.restore();
       }
@@ -5113,7 +5297,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const currentZoneBg = orb.y < midY ? getColor("topBg") || "#000000" : getColor("bottomBg") || "#FFFFFF";
 
           // Only draw border if orb color matches background (for visibility)
-          const needsBorder = orbFillColor.toLowerCase() === currentZoneBg.toLowerCase();
+          // During Quantum Lock, always show border since ambiance changes background
+          const isQuantumLockActive = glitchModeState.current.isActive ||
+            glitchModeState.current.phase === 'warning' ||
+            glitchModeState.current.phase === 'exiting';
+          const needsBorder = isQuantumLockActive || orbFillColor.toLowerCase() === currentZoneBg.toLowerCase();
 
           // Her zaman içi dolu çiz (orb rengiyle), border SADECE gerektiğinde
           if (skin.id === "default") {
