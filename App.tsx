@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
-    DailyChallengeMode,
-    RestoreModeConfig
+  DailyChallengeMode,
+  RestoreModeConfig
 } from "./components/GameEngine";
 import GameUI from "./components/GameUI";
 import MissionComplete from "./components/Missions/MissionComplete";
@@ -17,15 +17,15 @@ import { GameState, Mission, MissionEvent } from "./types";
 import { calculateEchoShards } from "./utils/echoShards";
 // Daily Challenge System - Requirements 8.1, 8.2, 8.3
 import {
-    DailyChallengeConfig,
-    submitScore as submitDailyChallengeScore,
+  DailyChallengeConfig,
+  submitScore as submitDailyChallengeScore,
 } from "./systems/dailyChallenge";
 // Tutorial System - Requirements 17.1, 17.3, 17.4, 17.5
 import {
-    shouldShowMainTutorial,
-    startContextualTutorial,
-    startMainTutorial,
-    TutorialState,
+  shouldShowMainTutorial,
+  startContextualTutorial,
+  startMainTutorial,
+  TutorialState,
 } from "./systems/tutorialSystem";
 // Restore System - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
 import { RESTORE_CONFIG } from "./systems/restoreSystem";
@@ -33,8 +33,8 @@ import { RESTORE_CONFIG } from "./systems/restoreSystem";
 import { getHapticSystem } from "./systems/hapticSystem";
 // Analytics System - Requirements 5.1, 5.2, 5.4, 5.5, 5.6
 import {
-    AnalyticsSystem,
-    createAnalyticsSystem,
+  AnalyticsSystem,
+  createAnalyticsSystem,
 } from "./systems/analyticsSystem";
 // Daily Rituals System - Requirements 5.5
 import RitualsPanel from "./components/Rituals/RitualsPanel";
@@ -122,6 +122,8 @@ const App: React.FC = () => {
   const [dashEnergy, setDashEnergy] = useState<number>(0);
   const [dashActive, setDashActive] = useState<boolean>(false);
   const [dashRemainingPercent, setDashRemainingPercent] = useState<number>(100); // Remaining dash time (100 = full, 0 = empty)
+  // Quantum Lock UI State - Requirements 7.5
+  const [isQuantumLockActive, setIsQuantumLockActive] = useState<boolean>(false);
 
   // Tutorial state - Requirements 17.1, 17.3, 17.4, 17.5
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
@@ -551,6 +553,11 @@ const App: React.FC = () => {
     setDashEnergy(energy);
     setDashActive(active);
     setDashRemainingPercent(remainingPercent);
+  }, []);
+
+  // Quantum Lock state update handler - Requirements 7.5
+  const handleQuantumLockStateUpdate = useCallback((isActive: boolean) => {
+    setIsQuantumLockActive(isActive);
   }, []);
 
   // Restore System handlers - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
@@ -997,6 +1004,7 @@ const App: React.FC = () => {
         slowMotionActive={slowMotionActive}
         onSlowMotionStateUpdate={handleSlowMotionStateUpdate}
         onDashStateUpdate={handleDashStateUpdate}
+        onQuantumLockStateUpdate={handleQuantumLockStateUpdate}
         campaignMode={React.useMemo(() => campaignLevelConfig ? {
           enabled: true,
           levelConfig: campaignLevelConfig,
@@ -1085,6 +1093,7 @@ const App: React.FC = () => {
         dashEnergy={dashEnergy}
         dashActive={dashActive}
         dashRemainingPercent={dashRemainingPercent}
+        isQuantumLockActive={isQuantumLockActive}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />

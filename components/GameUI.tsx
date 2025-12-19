@@ -1,24 +1,24 @@
 import {
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    Clock,
-    Gem,
-    Ghost,
-    Home,
-    Palette,
-    Pause,
-    Play,
-    PlayCircle,
-    RotateCcw,
-    Settings,
-    ShoppingCart,
-    Star,
-    Target,
-    Trophy,
-    Volume2,
-    VolumeX,
-    X
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Gem,
+  Ghost,
+  Home,
+  Palette,
+  Pause,
+  Play,
+  PlayCircle,
+  RotateCcw,
+  Settings,
+  ShoppingCart,
+  Star,
+  Target,
+  Trophy,
+  Volume2,
+  VolumeX,
+  X
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
@@ -66,10 +66,11 @@ interface GameUIProps {
   // Ghost Pace Indicator - Requirements 15.1, 15.3
   previousBestDistance?: number;
   hasPassedGhost?: boolean;
-  // Phase Dash - Energy bar props
   dashEnergy?: number;
   dashActive?: boolean;
   dashRemainingPercent?: number; // Remaining dash time (100 = full, 0 = empty)
+  // Quantum Lock - Requirements 7.5
+  isQuantumLockActive?: boolean;
 }
 
 const GameUI: React.FC<GameUIProps> = ({
@@ -116,6 +117,7 @@ const GameUI: React.FC<GameUIProps> = ({
   dashEnergy = 0,
   dashActive = false,
   dashRemainingPercent = 100,
+  isQuantumLockActive = false,
 }) => {
   const [showContent, setShowContent] = useState(false);
 
@@ -210,11 +212,10 @@ const GameUI: React.FC<GameUIProps> = ({
               {/* Distance Counter - Requirements 6.1 */}
               {/* During dash, show bonus effect with cyan-to-purple gradient and x4 indicator */}
               <div className="relative">
-                <span className={`text-3xl md:text-4xl font-black tracking-widest drop-shadow-lg transition-all duration-300 ${
-                  dashActive 
-                    ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(0,240,255,0.8)] animate-pulse' 
+                <span className={`text-3xl md:text-4xl font-black tracking-widest drop-shadow-lg transition-all duration-300 ${dashActive
+                    ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(0,240,255,0.8)] animate-pulse'
                     : 'text-white mix-blend-difference'
-                }`}>
+                  }`}>
                   {Math.floor(currentDistance)}m
                 </span>
                 {/* Bonus multiplier badge during dash */}
@@ -224,9 +225,8 @@ const GameUI: React.FC<GameUIProps> = ({
                   </span>
                 )}
               </div>
-              <span className={`text-[10px] md:text-xs font-bold mt-1 uppercase tracking-widest transition-all duration-300 ${
-                dashActive ? 'text-cyan-400' : 'text-gray-400'
-              }`}>
+              <span className={`text-[10px] md:text-xs font-bold mt-1 uppercase tracking-widest transition-all duration-300 ${dashActive ? 'text-cyan-400' : 'text-gray-400'
+                }`}>
                 {dashActive ? 'WARP!' : 'Mesafe'}
               </span>
             </div>
@@ -424,68 +424,66 @@ const GameUI: React.FC<GameUIProps> = ({
           <div className="absolute inset-0 pointer-events-none z-5 border-4 border-purple-500/30 animate-pulse" />
         )}
 
-        {/* Phase Dash Circular Energy Icon */}
-        <div className="absolute bottom-24 right-6 pointer-events-none z-10 flex flex-col items-center gap-2">
-          <div className="relative w-16 h-16 flex items-center justify-center">
-            {/* Background Circle */}
-            <div className={`absolute inset-0 rounded-full border-2 bg-black/40 backdrop-blur-sm transition-all duration-300 ${
-              dashActive ? 'border-yellow-500/50' : 'border-white/10'
-            }`} />
+        {/* Phase Dash Circular Energy Icon - Hidden during Quantum Lock */}
+        {!isQuantumLockActive && (
+          <div className="absolute bottom-24 right-6 pointer-events-none z-10 flex flex-col items-center gap-2">
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              {/* Background Circle */}
+              <div className={`absolute inset-0 rounded-full border-2 bg-black/40 backdrop-blur-sm transition-all duration-300 ${dashActive ? 'border-yellow-500/50' : 'border-white/10'
+                }`} />
 
-            {/* Progress Circle (Conic Gradient) */}
-            {/* When dash is active, show remaining time (yellow draining). Otherwise show energy charging (cyan filling) */}
-            <div
-              className="absolute inset-0 rounded-full transition-all duration-100"
-              style={{
-                background: dashActive 
-                  ? `conic-gradient(#FACC15 ${dashRemainingPercent}%, transparent 0)` // Yellow draining during dash
-                  : `conic-gradient(${dashEnergy >= 100 ? '#FACC15' : '#06B6D4'} ${dashEnergy}%, transparent 0)`, // Cyan charging / Yellow when full
-                maskImage: 'radial-gradient(transparent 55%, black 56%)',
-                WebkitMaskImage: 'radial-gradient(transparent 55%, black 56%)'
-              }}
-            />
+              {/* Progress Circle (Conic Gradient) */}
+              {/* When dash is active, show remaining time (yellow draining). Otherwise show energy charging (cyan filling) */}
+              <div
+                className="absolute inset-0 rounded-full transition-all duration-100"
+                style={{
+                  background: dashActive
+                    ? `conic-gradient(#FACC15 ${dashRemainingPercent}%, transparent 0)` // Yellow draining during dash
+                    : `conic-gradient(${dashEnergy >= 100 ? '#FACC15' : '#06B6D4'} ${dashEnergy}%, transparent 0)`, // Cyan charging / Yellow when full
+                  maskImage: 'radial-gradient(transparent 55%, black 56%)',
+                  WebkitMaskImage: 'radial-gradient(transparent 55%, black 56%)'
+                }}
+              />
 
-            {/* Glowing Ring when full or active */}
-            {(dashEnergy >= 100 || dashActive) && (
-              <div className={`absolute inset-0 rounded-full border-2 animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.6)] ${
-                dashActive ? 'border-yellow-500' : 'border-yellow-400'
-              }`} />
-            )}
+              {/* Glowing Ring when full or active */}
+              {(dashEnergy >= 100 || dashActive) && (
+                <div className={`absolute inset-0 rounded-full border-2 animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.6)] ${dashActive ? 'border-yellow-500' : 'border-yellow-400'
+                  }`} />
+              )}
 
-            {/* Center Icon */}
-            <div className={`z-10 transition-transform duration-300 ${dashActive || dashEnergy >= 100 ? 'scale-110' : 'scale-100'}`}>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`w-7 h-7 transition-all duration-300 ${
-                  dashActive 
-                    ? 'text-yellow-300 drop-shadow-[0_0_15px_rgba(250,204,21,1)] animate-pulse' 
-                    : dashEnergy >= 100 
-                      ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse' 
-                      : 'text-cyan-400/50'
-                }`}
-              >
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
+              {/* Center Icon */}
+              <div className={`z-10 transition-transform duration-300 ${dashActive || dashEnergy >= 100 ? 'scale-110' : 'scale-100'}`}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`w-7 h-7 transition-all duration-300 ${dashActive
+                      ? 'text-yellow-300 drop-shadow-[0_0_15px_rgba(250,204,21,1)] animate-pulse'
+                      : dashEnergy >= 100
+                        ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse'
+                        : 'text-cyan-400/50'
+                    }`}
+                >
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </div>
             </div>
-          </div>
 
-          {/* Label - Shows remaining time during dash */}
-          <span className={`text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${
-            dashActive 
-              ? 'text-yellow-300 animate-pulse' 
-              : dashEnergy >= 100 
-                ? 'text-yellow-400 animate-pulse' 
-                : 'text-cyan-400/60'
-          }`}>
-            {dashActive ? `${Math.floor(dashRemainingPercent)}%` : dashEnergy >= 100 ? 'HAZIR' : `${Math.floor(dashEnergy)}%`}
-          </span>
-        </div>
+            {/* Label - Shows remaining time during dash */}
+            <span className={`text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${dashActive
+                ? 'text-yellow-300 animate-pulse'
+                : dashEnergy >= 100
+                  ? 'text-yellow-400 animate-pulse'
+                  : 'text-cyan-400/60'
+              }`}>
+              {dashActive ? `${Math.floor(dashRemainingPercent)}%` : dashEnergy >= 100 ? 'HAZIR' : `${Math.floor(dashEnergy)}%`}
+            </span>
+          </div>
+        )}
 
         {/* Phase Dash Active Border */}
         {dashActive && (

@@ -505,6 +505,9 @@ export interface GlitchModeState {
   // Paused mode tracking for priority system
   pausedOverdriveTime: number;
   pausedResonanceTime: number;
+  // Midline collision tracking for Quantum Lock
+  midlineHits: number;          // Number of times orbs hit the zero line
+  lastMidlineHitTime: number;   // Prevent rapid-fire hits
 }
 
 /**

@@ -29,6 +29,8 @@ export function createInitialGlitchModeState(): GlitchModeState {
     ghostModeEndTime: 0,
     pausedOverdriveTime: 0,
     pausedResonanceTime: 0,
+    midlineHits: 0,
+    lastMidlineHitTime: 0,
   };
 }
 
@@ -50,6 +52,8 @@ export function activateQuantumLock(
     waveOffset: 0,
     phase: 'active',
     ghostModeEndTime: 0,
+    midlineHits: 0,
+    lastMidlineHitTime: 0,
   };
 }
 
@@ -160,7 +164,7 @@ export function createGlitchShard(
   const centerY = canvasHeight / 2;
   // Random Y within ±spawnYRange of center
   const yOffset = (Math.random() * 2 - 1) * GLITCH_CONFIG.spawnYRange;
-  
+
   return {
     id: `glitch-shard-${++shardIdCounter}`,
     x: canvasWidth + GLITCH_CONFIG.spawnXOffset, // Right edge + 100px
@@ -186,12 +190,12 @@ export function shouldSpawnGlitchShard(
   if (hasSpawnedThisLevel) {
     return false;
   }
-  
+
   // Requirements 2.7: Minimum distance threshold
   if (distanceTraveled < GLITCH_CONFIG.minSpawnDistance) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -204,18 +208,18 @@ export function isSpawnPositionSafe(
   obstacles: Obstacle[]
 ): boolean {
   const clearance = GLITCH_CONFIG.spawnClearance;
-  
+
   for (const obstacle of obstacles) {
     // Check vertical distance from obstacle
     const obstacleTop = obstacle.y;
     const obstacleBottom = obstacle.y + obstacle.height;
-    
+
     // If the shard Y is within clearance distance of the obstacle
     if (y >= obstacleTop - clearance && y <= obstacleBottom + clearance) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -236,7 +240,7 @@ export function updateGlitchShard(
   // Move left at game speed (speed is pixels per frame at 60fps)
   // Normalize for actual deltaTime
   const normalizedSpeed = speed * (deltaTime / 16.67);
-  
+
   return {
     ...shard,
     x: shard.x - normalizedSpeed,
@@ -315,6 +319,14 @@ export function getShardMultiplier(glitchState: GlitchModeState): number {
 }
 
 /**
+ * Gets the distance accumulation multiplier
+ * 3x during Quantum Lock for faster progress
+ */
+export function getDistanceMultiplier(glitchState: GlitchModeState): number {
+  return glitchState.isActive ? GLITCH_CONFIG.distanceMultiplier : 1;
+}
+
+/**
  * Checks if speed should be stabilized (no acceleration)
  * Requirements 5.7: Stabilize game speed during Quantum Lock
  */
@@ -363,7 +375,7 @@ export function handleGlitchShardCollision(
 ): CollisionResponse {
   // Requirements 3.6, 4.1: Activate Quantum Lock mode
   const newGlitchModeState = activateQuantumLock(currentState, connectorLength);
-  
+
   return {
     glitchModeState: newGlitchModeState,
     hitStopFrames: GLITCH_CONFIG.hitStopFrames, // Requirements 3.2: 10 frames
@@ -425,10 +437,10 @@ export function updateHitStop(hitStopFramesRemaining: number): number {
  */
 export function elasticOut(t: number): number {
   const c4 = (2 * Math.PI) / 3;
-  
+
   if (t === 0) return 0;
   if (t === 1) return 1;
-  
+
   return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
 }
 
@@ -455,14 +467,14 @@ export function calculateConnectorLength(
   if (!state.isActive && state.phase !== 'exiting' && state.phase !== 'warning') {
     return currentLength;
   }
-  
+
   // Apply elastic easing to the animation progress
   const easedProgress = elasticOut(Math.min(1, animationProgress));
-  
+
   // Interpolate between original and target length
   const startLength = state.originalConnectorLength;
   const interpolatedLength = startLength + (targetLength - startLength) * easedProgress;
-  
+
   return interpolatedLength;
 }
 
@@ -498,12 +510,12 @@ export function getTargetConnectorLength(state: GlitchModeState): number {
     // During exit, target is original length
     return state.originalConnectorLength;
   }
-  
+
   if (state.isActive) {
     // During active/warning, target is ideal length
     return GLITCH_CONFIG.idealConnectorLength;
   }
-  
+
   // Not in Quantum Lock, return original
   return state.originalConnectorLength;
 }
@@ -544,11 +556,11 @@ export function isConnectorLocked(state: GlitchModeState): boolean {
  * Calculates the Y position on the sinusoidal wave at a given X position
  * Requirements 5.1: Replace normal midline with sinusoidal wave
  * 
- * The wave follows the formula: y = centerY + amplitude * sin(x * frequency + offset)
- * where frequency is derived from waveSpeed to create smooth animation.
+ * The wave follows the formula: y = centerY + amplitude * sin((x + horizontalOffset) * frequency)
+ * The horizontalOffset increases over time, making the wave appear to move towards the player.
  * 
  * @param x - X position on the canvas
- * @param offset - Wave offset for animation (increases over time)
+ * @param offset - Wave offset for animation (increases over time) - controls horizontal movement
  * @param amplitude - Wave amplitude in pixels
  * @param centerY - Center Y position of the wave
  * @returns Y position on the wave at the given X
@@ -560,12 +572,17 @@ export function calculateWaveY(
   centerY: number
 ): number {
   // Frequency determines how many wave cycles fit across the screen
-  // Using a fixed frequency that creates ~2 full waves across a typical screen width
-  const frequency = 0.01; // ~2 waves per 600px
-  
-  // Calculate sinusoidal Y position
-  const waveY = centerY + amplitude * Math.sin(x * frequency + offset);
-  
+  // Lower frequency = wider, smoother waves
+  const frequency = 0.008; // Wider waves for smoother appearance
+
+  // Horizontal offset makes the wave appear to move towards the player (left)
+  // Lower multiplier = smoother, more gradual movement
+  const horizontalWaveSpeed = 20; // Reduced for smoother flow
+  const horizontalOffset = offset * horizontalWaveSpeed;
+
+  // Calculate sinusoidal Y position with smooth horizontal wave movement
+  const waveY = centerY + amplitude * Math.sin((x + horizontalOffset) * frequency);
+
   return waveY;
 }
 
@@ -590,7 +607,7 @@ export function getWaveAmplitudeForPhase(
     case 'warning':
       // Full amplitude during active and warning phases
       return 1.0;
-    
+
     case 'exiting':
       // Requirements 7.3: Wave flattening animation during exit
       // Flatten from 80% to 100% progress (flattenThreshold to 1.0)
@@ -598,7 +615,7 @@ export function getWaveAmplitudeForPhase(
       const flattenProgress = (progress - flattenStart) / (1.0 - flattenStart);
       // Clamp and invert: 1.0 at start of exit, 0.0 at end
       return Math.max(0, 1.0 - Math.min(1, flattenProgress));
-    
+
     case 'ghost':
     case 'inactive':
     default:
@@ -625,8 +642,8 @@ export interface WavePathShard {
  * Requirements 5.6: Spawn bonus shards along the entire wave path (trail formation)
  * Requirements 6.4: Spawn bonus shards along wave trail
  * 
- * Distributes 10-15 shards evenly along the wave path, following the sinusoidal
- * curve so players can "surf" along the wave to collect them.
+ * Spawns diamonds from the right side of the screen, with wide spacing.
+ * Diamonds move left towards the player.
  * 
  * @param waveOffset - Current wave animation offset
  * @param canvasWidth - Width of the canvas
@@ -641,52 +658,75 @@ export function generateWavePathShards(
   amplitude: number
 ): WavePathShard[] {
   const shards: WavePathShard[] = [];
-  
-  // Generate 12 shards (middle of 10-15 range)
-  const shardCount = 12;
-  
-  // Distribute shards evenly across the visible canvas width
-  // Start a bit from the left edge and end before the right edge
-  const startX = canvasWidth * 0.1;  // 10% from left
-  const endX = canvasWidth * 0.9;    // 90% from left (10% from right)
-  const spacing = (endX - startX) / (shardCount - 1);
-  
+
+  // Diamonds with proper spacing - spawn from right side
+  const shardCount = 20;
+  const spacing = 100; // 100 pixels between each diamond
+
   for (let i = 0; i < shardCount; i++) {
-    const x = startX + i * spacing;
+    // Start from right edge and extend off-screen to the right
+    const x = canvasWidth + (i * spacing);
     // Calculate Y position on the wave at this X
     const y = calculateWaveY(x, waveOffset, amplitude, centerY);
-    
+
     shards.push({
       x,
       y,
       collected: false,
     });
   }
-  
+
   return shards;
 }
 
 /**
  * Updates wave path shard positions based on new wave offset
  * Called each frame to keep shards aligned with the moving wave
+ * Shards also move horizontally towards the player (left)
  * 
  * @param shards - Current shard positions
  * @param waveOffset - New wave animation offset
  * @param amplitude - Wave amplitude in pixels
  * @param centerY - Center Y position of the wave
+ * @param gameSpeed - Current game speed for horizontal movement
+ * @param canvasWidth - Canvas width for respawning
  * @returns Updated shard positions
  */
 export function updateWavePathShards(
   shards: WavePathShard[],
   waveOffset: number,
   amplitude: number,
-  centerY: number
+  centerY: number,
+  gameSpeed: number = 5,
+  canvasWidth: number = 400
 ): WavePathShard[] {
-  return shards.map(shard => ({
-    ...shard,
-    // Recalculate Y position based on new wave offset
-    y: calculateWaveY(shard.x, waveOffset, amplitude, centerY),
-  }));
+  // Diamond movement speed - 80% of game speed
+  const diamondSpeed = gameSpeed * 0.8;
+
+  // Spacing between diamonds for respawning
+  const spacing = 80;
+
+  return shards.map(shard => {
+    // Move shard horizontally towards the player (left)
+    let newX = shard.x - diamondSpeed;
+    let collected = shard.collected;
+
+    // If diamond went off left edge, respawn from right
+    if (newX < -30) {
+      // Find the rightmost diamond to maintain spacing
+      const maxX = shards.reduce((max, s) => Math.max(max, s.x), 0);
+      newX = maxX + spacing;
+      collected = false; // Reset collected state for respawned diamond
+    }
+
+    return {
+      ...shard,
+      x: newX,
+      collected,
+      // Recalculate Y position based on new wave offset and new X
+      y: calculateWaveY(newX, waveOffset, amplitude, centerY),
+    };
+  });
 }
 
 /**
@@ -703,8 +743,8 @@ export function collectWavePathShard(
   if (index < 0 || index >= shards.length) {
     return shards;
   }
-  
-  return shards.map((shard, i) => 
+
+  return shards.map((shard, i) =>
     i === index ? { ...shard, collected: true } : shard
   );
 }
@@ -717,6 +757,106 @@ export function collectWavePathShard(
  */
 export function countUncollectedShards(shards: WavePathShard[]): number {
   return shards.filter(shard => !shard.collected).length;
+}
+
+// ============================================================================
+// Midline Collision Detection - Quantum Lock failure condition
+// ============================================================================
+
+/**
+ * Result of midline collision check
+ */
+export interface MidlineCollisionResult {
+  hit: boolean;
+  updatedState: GlitchModeState;
+  shouldEndQuantumLock: boolean;
+  triggerBurnEffect: boolean;
+}
+
+/**
+ * Checks if an orb has collided with the wave midline (zero line)
+ * During Quantum Lock, orbs must avoid the sinusoidal wave
+ * 
+ * @param orbY - Y position of the orb
+ * @param waveY - Current Y position of the wave at the orb's X position
+ * @param threshold - Collision threshold in pixels
+ * @returns true if collision detected
+ */
+export function checkMidlineCollision(
+  orbY: number,
+  waveY: number,
+  threshold: number = 15
+): boolean {
+  return Math.abs(orbY - waveY) < threshold;
+}
+
+/**
+ * Registers a midline hit during Quantum Lock
+ * Includes cooldown to prevent rapid-fire hit registration
+ * 
+ * @param state - Current glitch mode state
+ * @returns Updated state and collision result
+ */
+export function registerMidlineHit(
+  state: GlitchModeState
+): MidlineCollisionResult {
+  if (!state.isActive) {
+    return {
+      hit: false,
+      updatedState: state,
+      shouldEndQuantumLock: false,
+      triggerBurnEffect: false,
+    };
+  }
+
+  const now = Date.now();
+  const cooldown = GLITCH_CONFIG.midlineCollision.hitCooldownMs;
+
+  // Check cooldown
+  if (now - state.lastMidlineHitTime < cooldown) {
+    return {
+      hit: false,
+      updatedState: state,
+      shouldEndQuantumLock: false,
+      triggerBurnEffect: false,
+    };
+  }
+
+  const newHits = state.midlineHits + 1;
+  const maxHits = GLITCH_CONFIG.midlineCollision.maxHits;
+  const shouldEnd = newHits >= maxHits;
+
+  const updatedState: GlitchModeState = {
+    ...state,
+    midlineHits: newHits,
+    lastMidlineHitTime: now,
+  };
+
+  return {
+    hit: true,
+    updatedState,
+    shouldEndQuantumLock: shouldEnd,
+    triggerBurnEffect: shouldEnd,
+  };
+}
+
+/**
+ * Force ends Quantum Lock due to too many midline hits
+ * Triggers burn effect and skips ghost mode
+ * 
+ * @param state - Current glitch mode state
+ * @returns Updated state with Quantum Lock ended
+ */
+export function forceEndQuantumLock(
+  state: GlitchModeState
+): GlitchModeState {
+  return {
+    ...state,
+    isActive: false,
+    phase: 'inactive', // Skip ghost mode - punitive end
+    midlineHits: 0,
+    lastMidlineHitTime: 0,
+  };
 }
 
 // ============================================================================
@@ -953,7 +1093,7 @@ export function clearPausedModeTimes(glitchState: GlitchModeState): GlitchModeSt
  */
 export function activateGhostMode(state: GlitchModeState): GlitchModeState {
   const now = Date.now();
-  
+
   return {
     ...state,
     isActive: false,                    // Quantum Lock is no longer active
@@ -1009,7 +1149,7 @@ export function getGhostModeRemainingTime(state: GlitchModeState): number {
   if (state.phase !== 'ghost') {
     return 0;
   }
-  
+
   const now = Date.now();
   return Math.max(0, state.ghostModeEndTime - now);
 }
@@ -1026,10 +1166,10 @@ export function getGhostModeProgress(state: GlitchModeState): number {
   if (state.phase !== 'ghost') {
     return 0;
   }
-  
+
   const remaining = getGhostModeRemainingTime(state);
   const elapsed = GLITCH_CONFIG.ghostModeDuration - remaining;
-  
+
   return Math.min(1.0, elapsed / GLITCH_CONFIG.ghostModeDuration);
 }
 
@@ -1062,20 +1202,20 @@ export function getGhostModeOpacity(
   if (state.phase !== 'ghost') {
     return 1.0;
   }
-  
+
   if (!smoothFade) {
     // Requirements 7.5: 50% opacity during Ghost Mode
     return 0.5;
   }
-  
+
   // Smooth fade from 0.5 to 1.0 during last 300ms
   const remaining = getGhostModeRemainingTime(state);
   const fadeStartTime = 300; // Start fading 300ms before end
-  
+
   if (remaining > fadeStartTime) {
     return 0.5;
   }
-  
+
   // Linear interpolation from 0.5 to 1.0
   const fadeProgress = 1 - (remaining / fadeStartTime);
   return 0.5 + (0.5 * fadeProgress);
@@ -1125,7 +1265,7 @@ export function createEmptyInputBuffer(): InputBuffer {
  */
 export function bufferInput(input: InputState): void {
   const now = Date.now();
-  
+
   if (inputBuffer === null) {
     // Create new buffer with this input
     inputBuffer = {
@@ -1157,13 +1297,13 @@ export function flushBufferedInput(): InputState | null {
   if (inputBuffer === null) {
     return null;
   }
-  
+
   // Check if there's actually any pending input
   if (!inputBuffer.pendingSwap && !inputBuffer.pendingTap) {
     inputBuffer = null;
     return null;
   }
-  
+
   // Convert buffer to InputState
   const result: InputState = {
     isPressed: inputBuffer.pendingTap, // If tap was pending, consider pressed
@@ -1171,10 +1311,10 @@ export function flushBufferedInput(): InputState | null {
     isTapFrame: inputBuffer.pendingTap,
     isReleaseFrame: inputBuffer.pendingSwap,
   };
-  
+
   // Clear the buffer
   inputBuffer = null;
-  
+
   return result;
 }
 
@@ -1185,8 +1325,8 @@ export function flushBufferedInput(): InputState | null {
  * @returns true if there is buffered input
  */
 export function hasBufferedInput(): boolean {
-  return inputBuffer !== null && 
-         (inputBuffer.pendingSwap || inputBuffer.pendingTap);
+  return inputBuffer !== null &&
+    (inputBuffer.pendingSwap || inputBuffer.pendingTap);
 }
 
 /**

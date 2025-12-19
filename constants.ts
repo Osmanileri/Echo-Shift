@@ -157,11 +157,11 @@ export const GLITCH_CONFIG = {
   duration: 8000,                // Quantum Lock duration (8 seconds)
 
   // Connector - Requirements 4.2
-  idealConnectorLength: 120,     // Target connector length during Quantum Lock (pixels)
+  idealConnectorLength: 80,       // Target connector length during Quantum Lock (minimal growth)
 
   // Wave Animation - Requirements 5.2
-  waveSpeed: 0.05,               // Wave offset increment per frame
-  waveAmplitude: 120,            // Sinusoidal wave amplitude (pixels)
+  waveSpeed: 0.05,                // Wave offset increment per frame (smoother, faster animation)
+  waveAmplitude: 120,             // Sinusoidal wave amplitude (pixels)
 
   // Ghost Mode - Requirements 7.4
   ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)
@@ -172,9 +172,10 @@ export const GLITCH_CONFIG = {
 
   // Shard Value - Requirements 6.5
   shardMultiplier: 2,            // 2x shard value during Quantum Lock
+  distanceMultiplier: 3,         // 3x distance accumulation during Quantum Lock
 
   // Spawn Rules - Requirements 2.7, 2.6
-  minSpawnDistance: 100,         // Minimum distance traveled before spawn (meters) - TEST: 100m (was 500)
+  minSpawnDistance: 0,         // Minimum distance traveled before spawn (meters) - TEST: 100m (was 500)
   spawnClearance: 150,           // Minimum clearance from obstacles (pixels)
 
   // Visual Effects - Requirements 1.2
@@ -191,4 +192,32 @@ export const GLITCH_CONFIG = {
 
   // Hit Stop - Requirements 3.2
   hitStopFrames: 10,             // Frames to freeze on collision
+
+  // Quantum Lock Ambiance VFX - Atmospheric effects (more dramatic)
+  ambiance: {
+    vignetteIntensity: 0.85,       // Strong edge darkening (0-1)
+    vignetteColor: [20, 0, 60],    // RGB for deep purple/electric tint
+    pulseSpeed: 0.006,             // Faster pulse animation
+    scanlineOpacity: 0.12,         // More visible scanlines
+    scanlineSpacing: 2,            // Tighter scanlines for CRT effect
+    dangerPulseIntensity: 0.25,    // Stronger danger pulse overlay
+    glowColor: [0, 255, 200],      // Cyan glow for wave
+    backgroundDarken: 0.3,         // Darken background by 30%
+  },
+
+  // Diamond Bonus System - Reflex rewards
+  diamondBonus: {
+    baseValue: 5,                  // Base diamond value
+    reflexMultiplier: 2,           // Fast collection bonus (2x)
+    reflexWindowMs: 300,           // Time window for reflex bonus (ms)
+    streakBonus: 1,                // Extra value per streak
+    maxStreak: 10,                 // Maximum streak multiplier
+  },
+
+  // Midline Collision - Quantum Lock failure condition
+  midlineCollision: {
+    maxHits: 3,                    // Max hits before Quantum Lock ends
+    hitCooldownMs: 500,            // Cooldown between registering hits (ms)
+    burnEffectDuration: 300,       // Burn effect duration (ms)
+  },
 };
