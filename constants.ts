@@ -205,6 +205,17 @@ export const GLITCH_CONFIG = {
     backgroundDarken: 0.3,         // Darken background by 30%
   },
 
+  // Kuyruklu Yıldız Efekti - Glitch Shard ileri doğru kaçar, arkasından iz bırakır
+  cometTrail: {
+    forwardSpeed: 0.5,             // Shard oyun hızının %50'unda ileri kaçar
+    effectiveSpeedRatio: 0.2,      // Net hareket = oyun hızının %10'u (çok yavaş yaklaşır)
+    trailLength: 12,               // Saklanacak kuyruk pozisyonu sayısı
+    trailDecay: 0.85,              // Pozisyon başına alfa azalması (0.85^n solma)
+    trailColors: ['#00FFFF', '#FF00FF', '#8800FF', '#0088FF'], // Kuyruk renk gradyanı
+    particleSize: 6,               // Kuyruk parçacık boyutu
+    glowIntensity: 25,             // Kuyruk parıltı yoğunluğu
+  },
+
   // Diamond Bonus System - Reflex rewards
   diamondBonus: {
     baseValue: 5,                  // Base diamond value

@@ -164,7 +164,128 @@ export function renderShardNoise(
 }
 
 /**
- * Renders a Glitch Shard with all visual effects
+ * Profesyonel enerji kuyruğu - keskin çizgiler, solan uç
+ * Kuyruk SOLA doğru uzanır, sol ucu yavaşça kaybolur
+ */
+function renderCometTrail(
+  ctx: CanvasRenderingContext2D,
+  shard: GlitchShard
+): void {
+  const time = Date.now() * 0.001;
+
+  ctx.save();
+
+  // Kuyruk uzunluğu
+  const trailLength = 150;
+
+  // === ANA KUYRUK (GRADIENT İLE SOLAN) ===
+  // Sağdan sola doğru solan gradient
+  const mainGradient = ctx.createLinearGradient(
+    shard.x, shard.y,
+    shard.x - trailLength, shard.y
+  );
+  mainGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+  mainGradient.addColorStop(0.3, 'rgba(200, 255, 255, 0.7)');
+  mainGradient.addColorStop(0.6, 'rgba(100, 220, 220, 0.4)');
+  mainGradient.addColorStop(0.85, 'rgba(50, 180, 180, 0.15)');
+  mainGradient.addColorStop(1, 'rgba(0, 150, 150, 0)');
+
+  ctx.fillStyle = mainGradient;
+  ctx.shadowColor = '#00FFFF';
+  ctx.shadowBlur = 20;
+  ctx.globalAlpha = 1;
+
+  // Sivri kuyruk şekli
+  ctx.beginPath();
+  ctx.moveTo(shard.x, shard.y);
+  ctx.lineTo(shard.x - 25, shard.y - 10);
+  ctx.lineTo(shard.x - trailLength, shard.y);
+  ctx.lineTo(shard.x - 25, shard.y + 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // === İÇ PARLAK ÇEKİRDEK ===
+  const coreGradient = ctx.createLinearGradient(
+    shard.x, shard.y,
+    shard.x - trailLength * 0.5, shard.y
+  );
+  coreGradient.addColorStop(0, '#FFFFFF');
+  coreGradient.addColorStop(0.4, 'rgba(220, 255, 255, 0.8)');
+  coreGradient.addColorStop(1, 'transparent');
+
+  ctx.fillStyle = coreGradient;
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.moveTo(shard.x, shard.y);
+  ctx.lineTo(shard.x - 20, shard.y - 5);
+  ctx.lineTo(shard.x - trailLength * 0.5, shard.y);
+  ctx.lineTo(shard.x - 20, shard.y + 5);
+  ctx.closePath();
+  ctx.fill();
+
+  // === SOLAN PARÇACIKLAR (sol uçta) ===
+  // Kuyruğun sol ucunda kaybolan parçacıklar
+  for (let i = 0; i < 8; i++) {
+    // Animasyonlu pozisyon - parçacıklar sola kayıp kaybolur
+    const baseT = (time * 0.5 + i * 0.12) % 1;
+    const particleX = shard.x - trailLength * (0.6 + baseT * 0.4);
+
+    // Yukarı/aşağı dağılım
+    const spreadY = Math.sin(time * 3 + i * 1.5) * (8 + baseT * 12);
+    const particleY = shard.y + spreadY;
+
+    // Alpha: sola gittikçe kaybolur
+    const alpha = (1 - baseT) * 0.6;
+    if (alpha < 0.05) continue;
+
+    // Boyut: sola gittikçe küçülür
+    const size = (1 - baseT) * 4 + 1;
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = `rgba(150, 255, 255, ${alpha})`;
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(particleX, particleY, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // === ENERJİ ÇİZGİLERİ (sola doğru soluyor) ===
+  for (let i = 0; i < 3; i++) {
+    const lineY = shard.y + (i - 1) * 8;
+    const lineStart = shard.x - 30;
+    const animOffset = (time * 60 + i * 20) % 80;
+    const lineEnd = lineStart - 40 - animOffset;
+
+    // Çizgi sola gittikçe solar
+    const lineAlpha = Math.max(0, 0.4 - animOffset * 0.004);
+
+    ctx.globalAlpha = lineAlpha;
+    ctx.strokeStyle = 'rgba(200, 255, 255, 0.8)';
+    ctx.lineWidth = 2 - i * 0.3;
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.moveTo(lineStart, lineY);
+    ctx.lineTo(lineEnd, lineY);
+    ctx.stroke();
+  }
+
+  // === PARLAMA NOKTASI (shard başında) ===
+  const pulseSize = 6 + Math.sin(time * 8) * 2;
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = '#FFFFFF';
+  ctx.shadowBlur = 25;
+  ctx.beginPath();
+  ctx.arc(shard.x - 3, shard.y, pulseSize, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+
+/**
+ * Renders a Glitch Shard with all visual effects including comet trail
  * Requirements 1.1, 1.2, 1.3, 1.4, 1.5
  * 
  * @param ctx - Canvas 2D rendering context
@@ -175,6 +296,9 @@ export function renderGlitchShard(
   shard: GlitchShard
 ): void {
   if (!shard.active) return;
+
+  // Render comet trail FIRST (behind the shard)
+  renderCometTrail(ctx, shard);
 
   ctx.save();
 

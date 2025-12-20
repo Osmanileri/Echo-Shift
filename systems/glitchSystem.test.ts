@@ -10,51 +10,51 @@ import { describe, expect, it } from 'vitest';
 import { GLITCH_CONFIG } from '../constants';
 import { GlitchModeState, InputState } from '../types';
 import {
-    activateGhostMode,
-    activateQuantumLock,
-    bufferInput,
-    calculateConnectorLength,
-    calculateWaveY,
-    checkGlitchShardCollision,
-    clearInputBuffer,
-    collectWavePathShard,
-    countUncollectedShards,
-    createEmptyInputBuffer,
-    createGlitchShard,
-    createInitialGlitchModeState,
-    deactivateGlitchShard,
-    elasticOut,
-    finalizeConnectorLength,
-    flushBufferedInput,
-    generateWavePathShards,
-    getGhostModeOpacity,
-    getGhostModeProgress,
-    getGhostModeRemainingTime,
-    getInputBuffer,
-    getPhaseFromProgress,
-    getPriorityMode,
-    getShardMultiplier,
-    getTargetConnectorLength,
-    getWaveAmplitudeForPhase,
-    handleGlitchShardCollision,
-    hasBufferedInput,
-    isConnectorLocked,
-    isGhostModeActive,
-    isHitStopActive,
-    isInvulnerable,
-    isSpawnPositionSafe,
-    pauseOverdrive,
-    pauseResonance,
-    resumeOverdrive,
-    resumeResonance,
-    shouldBlockObstacleSpawn,
-    shouldRemoveShard,
-    shouldSpawnGlitchShard,
-    shouldStabilizeSpeed,
-    updateGhostMode,
-    updateGlitchShard,
-    updateHitStop,
-    updateWavePathShards
+  activateGhostMode,
+  activateQuantumLock,
+  bufferInput,
+  calculateConnectorLength,
+  calculateWaveY,
+  checkGlitchShardCollision,
+  clearInputBuffer,
+  collectWavePathShard,
+  countUncollectedShards,
+  createEmptyInputBuffer,
+  createGlitchShard,
+  createInitialGlitchModeState,
+  deactivateGlitchShard,
+  elasticOut,
+  finalizeConnectorLength,
+  flushBufferedInput,
+  generateWavePathShards,
+  getGhostModeOpacity,
+  getGhostModeProgress,
+  getGhostModeRemainingTime,
+  getInputBuffer,
+  getPhaseFromProgress,
+  getPriorityMode,
+  getShardMultiplier,
+  getTargetConnectorLength,
+  getWaveAmplitudeForPhase,
+  handleGlitchShardCollision,
+  hasBufferedInput,
+  isConnectorLocked,
+  isGhostModeActive,
+  isHitStopActive,
+  isInvulnerable,
+  isSpawnPositionSafe,
+  pauseOverdrive,
+  pauseResonance,
+  resumeOverdrive,
+  resumeResonance,
+  shouldBlockObstacleSpawn,
+  shouldRemoveShard,
+  shouldSpawnGlitchShard,
+  shouldStabilizeSpeed,
+  updateGhostMode,
+  updateGlitchShard,
+  updateHitStop,
+  updateWavePathShards
 } from './glitchSystem';
 
 describe('Glitch Protocol System', () => {
@@ -72,7 +72,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Duration must be exactly 8000ms
             expect(activatedState.duration).toBe(8000);
             expect(activatedState.duration).toBe(GLITCH_CONFIG.duration);
@@ -94,7 +94,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             expect(activatedState.originalConnectorLength).toBe(connectorLength);
             expect(activatedState.isActive).toBe(true);
             expect(activatedState.phase).toBe('active');
@@ -195,7 +195,7 @@ describe('Glitch Protocol System', () => {
           fc.integer({ min: 100, max: 2000 }), // canvasHeight
           (canvasWidth, canvasHeight) => {
             const shard = createGlitchShard(canvasWidth, canvasHeight);
-            
+
             // X position must be canvasWidth + spawnXOffset (100)
             expect(shard.x).toBe(canvasWidth + GLITCH_CONFIG.spawnXOffset);
           }
@@ -212,11 +212,11 @@ describe('Glitch Protocol System', () => {
           (canvasWidth, canvasHeight) => {
             const shard = createGlitchShard(canvasWidth, canvasHeight);
             const centerY = canvasHeight / 2;
-            
+
             // Y position must be within ±spawnYRange (100) of center
             const minY = centerY - GLITCH_CONFIG.spawnYRange;
             const maxY = centerY + GLITCH_CONFIG.spawnYRange;
-            
+
             expect(shard.y).toBeGreaterThanOrEqual(minY);
             expect(shard.y).toBeLessThanOrEqual(maxY);
           }
@@ -302,7 +302,7 @@ describe('Glitch Protocol System', () => {
               polarity: 'white' as const,
               passed: false,
             };
-            
+
             const result = isSpawnPositionSafe(spawnY, [obstacle]);
             expect(result).toBe(false);
           }
@@ -328,7 +328,7 @@ describe('Glitch Protocol System', () => {
               polarity: 'black' as const,
               passed: false,
             };
-            
+
             const result = isSpawnPositionSafe(spawnY, [obstacle]);
             expect(result).toBe(true);
           }
@@ -366,11 +366,12 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const updatedShard = updateGlitchShard(shard, speed, deltaTime);
             const expectedX = initialX - speed * (deltaTime / 16.67);
-            
+
             // Allow small floating point tolerance
             expect(updatedShard.x).toBeCloseTo(expectedX, 5);
           }
@@ -389,8 +390,9 @@ describe('Glitch Protocol System', () => {
         active: true,
         colorTimer: 100,
         spawnTime: Date.now(),
+        trailPositions: [],
       };
-      
+
       const updatedShard = updateGlitchShard(shard, 5, 16.67);
       expect(updatedShard.colorTimer).toBeCloseTo(116.67, 1);
     });
@@ -417,8 +419,9 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = shouldRemoveShard(shard);
             expect(result).toBe(true);
           }
@@ -442,8 +445,9 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = shouldRemoveShard(shard);
             expect(result).toBe(false);
           }
@@ -462,8 +466,9 @@ describe('Glitch Protocol System', () => {
         active: true,
         colorTimer: 0,
         spawnTime: Date.now(),
+        trailPositions: [],
       };
-      
+
       expect(shouldRemoveShard(shard)).toBe(false);
     });
 
@@ -477,8 +482,9 @@ describe('Glitch Protocol System', () => {
         active: true,
         colorTimer: 0,
         spawnTime: Date.now(),
+        trailPositions: [],
       };
-      
+
       expect(shouldRemoveShard(shard)).toBe(true);
     });
   });
@@ -504,7 +510,7 @@ describe('Glitch Protocol System', () => {
             // Player X is at shard center, player Y is at shard center
             const playerX = shardX;
             const playerY = shardY;
-            
+
             const shard = {
               id: 'test',
               x: shardX,
@@ -514,8 +520,9 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = checkGlitchShardCollision(playerX, playerY, connectorLength, shard);
             expect(result).toBe(true);
           }
@@ -538,7 +545,7 @@ describe('Glitch Protocol System', () => {
             const shardLeft = shardX - shardWidth / 2;
             const playerX = shardLeft - CONNECTOR_WIDTH / 2 - xOffset;
             const playerY = shardY; // Y overlaps, but X doesn't
-            
+
             const shard = {
               id: 'test',
               x: shardX,
@@ -548,8 +555,9 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = checkGlitchShardCollision(playerX, playerY, connectorLength, shard);
             expect(result).toBe(false);
           }
@@ -572,7 +580,7 @@ describe('Glitch Protocol System', () => {
             const shardTop = shardY - shardHeight / 2;
             const playerY = shardTop - connectorLength / 2 - yOffset;
             const playerX = shardX; // X overlaps, but Y doesn't
-            
+
             const shard = {
               id: 'test',
               x: shardX,
@@ -582,8 +590,9 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = checkGlitchShardCollision(playerX, playerY, connectorLength, shard);
             expect(result).toBe(false);
           }
@@ -602,7 +611,7 @@ describe('Glitch Protocol System', () => {
             // Position player directly on shard
             const playerX = shardX;
             const playerY = shardY;
-            
+
             const shard = {
               id: 'test',
               x: shardX,
@@ -612,8 +621,9 @@ describe('Glitch Protocol System', () => {
               active: false, // Inactive!
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const result = checkGlitchShardCollision(playerX, playerY, connectorLength, shard);
             expect(result).toBe(false);
           }
@@ -633,15 +643,16 @@ describe('Glitch Protocol System', () => {
         active: true,
         colorTimer: 0,
         spawnTime: Date.now(),
+        trailPositions: [],
       };
-      
+
       // Player directly on shard
       expect(checkGlitchShardCollision(400, 300, 100, shard)).toBe(true);
-      
+
       // Player just at left edge of shard (should still collide)
       const shardLeft = 400 - 20; // 380
       expect(checkGlitchShardCollision(shardLeft + 5, 300, 100, shard)).toBe(true);
-      
+
       // Player just at right edge of shard (should still collide)
       const shardRight = 400 + 20; // 420
       expect(checkGlitchShardCollision(shardRight - 5, 300, 100, shard)).toBe(true);
@@ -661,7 +672,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const response = handleGlitchShardCollision(initialState, connectorLength);
-            
+
             // Requirements 3.6: Activate Quantum Lock mode
             expect(response.glitchModeState.isActive).toBe(true);
             expect(response.glitchModeState.phase).toBe('active');
@@ -678,7 +689,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const response = handleGlitchShardCollision(initialState, connectorLength);
-            
+
             // Requirements 4.1: Store current connector length as original value
             expect(response.glitchModeState.originalConnectorLength).toBe(connectorLength);
           }
@@ -694,7 +705,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const response = handleGlitchShardCollision(initialState, connectorLength);
-            
+
             // Requirements 3.2: Trigger hit stop effect (10 frames freeze)
             expect(response.hitStopFrames).toBe(GLITCH_CONFIG.hitStopFrames);
             expect(response.hitStopFrames).toBe(10);
@@ -711,7 +722,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const response = handleGlitchShardCollision(initialState, connectorLength);
-            
+
             // Requirements 3.3: Trigger heavy screen shake
             expect(response.shouldTriggerScreenShake).toBe(true);
             // Requirements 3.4: Play impact sound
@@ -739,10 +750,11 @@ describe('Glitch Protocol System', () => {
               active: true,
               colorTimer: 0,
               spawnTime: Date.now(),
+              trailPositions: [],
             };
-            
+
             const deactivated = deactivateGlitchShard(shard);
-            
+
             // Requirements 3.5: Remove the Glitch Shard from screen
             expect(deactivated.active).toBe(false);
             // Other properties should remain unchanged
@@ -806,10 +818,10 @@ describe('Glitch Protocol System', () => {
           (originalLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, originalLength);
-            
+
             // After Quantum Lock ends, finalize should return exact original value
             const finalLength = finalizeConnectorLength(activatedState, activatedState.originalConnectorLength);
-            
+
             // Requirements 4.4: Hard-set to exactly the original stored value (no floating point drift)
             expect(finalLength).toBe(originalLength);
           }
@@ -826,10 +838,10 @@ describe('Glitch Protocol System', () => {
             // Simulate full round-trip: activate -> finalize
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 4.1: Store current connector length as original value
             expect(activatedState.originalConnectorLength).toBe(connectorLength);
-            
+
             // Requirements 4.4: Return exact original value
             const finalLength = finalizeConnectorLength(activatedState, activatedState.originalConnectorLength);
             expect(finalLength).toBe(connectorLength);
@@ -846,7 +858,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // The original connector length should be stored and never change
             expect(activatedState.originalConnectorLength).toBe(connectorLength);
           }
@@ -869,7 +881,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 4.3: Prevent connector length from changing due to normal gameplay
             expect(isConnectorLocked(activatedState)).toBe(true);
           }
@@ -880,7 +892,7 @@ describe('Glitch Protocol System', () => {
 
     it('*For any* inactive state, isConnectorLocked SHALL return false', () => {
       const inactiveState = createInitialGlitchModeState();
-      
+
       // Inactive state should not lock connector
       expect(isConnectorLocked(inactiveState)).toBe(false);
     });
@@ -892,10 +904,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to warning phase
             const warningState = { ...activatedState, phase: 'warning' as const };
-            
+
             // Warning phase should still lock connector
             expect(isConnectorLocked(warningState)).toBe(true);
           }
@@ -911,10 +923,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to exiting phase
             const exitingState = { ...activatedState, phase: 'exiting' as const };
-            
+
             // Exiting phase should still lock connector
             expect(isConnectorLocked(exitingState)).toBe(true);
           }
@@ -930,10 +942,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to ghost phase (mode ended)
             const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
-            
+
             // Ghost phase should not lock connector (mode has ended)
             expect(isConnectorLocked(ghostState)).toBe(false);
           }
@@ -949,7 +961,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 4.2: Animate connector length toward ideal size
             const targetLength = getTargetConnectorLength(activatedState);
             expect(targetLength).toBe(GLITCH_CONFIG.idealConnectorLength);
@@ -966,10 +978,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to exiting phase
             const exitingState = { ...activatedState, phase: 'exiting' as const };
-            
+
             // Requirements 4.4: Animate connector length back to original stored value
             const targetLength = getTargetConnectorLength(exitingState);
             expect(targetLength).toBe(connectorLength);
@@ -1025,7 +1037,7 @@ describe('Glitch Protocol System', () => {
       const t1 = elasticOut(0.7);
       const t2 = elasticOut(0.8);
       const t3 = elasticOut(0.9);
-      
+
       // All should be close to 1
       expect(Math.abs(t1 - 1)).toBeLessThan(0.3);
       expect(Math.abs(t2 - 1)).toBeLessThan(0.2);
@@ -1044,7 +1056,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 30, max: 200, noNaN: true }), // targetLength
           (currentLength, targetLength) => {
             const inactiveState = createInitialGlitchModeState();
-            
+
             const result = calculateConnectorLength(
               inactiveState,
               currentLength,
@@ -1052,7 +1064,7 @@ describe('Glitch Protocol System', () => {
               16.67,
               0.5
             );
-            
+
             // Inactive state should not modify connector length
             expect(result).toBe(currentLength);
           }
@@ -1068,7 +1080,7 @@ describe('Glitch Protocol System', () => {
           (originalLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, originalLength);
-            
+
             const result = calculateConnectorLength(
               activatedState,
               originalLength,
@@ -1076,7 +1088,7 @@ describe('Glitch Protocol System', () => {
               16.67,
               0 // Progress = 0
             );
-            
+
             // At progress 0, should be at original length
             expect(result).toBe(originalLength);
           }
@@ -1093,7 +1105,7 @@ describe('Glitch Protocol System', () => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, originalLength);
             const targetLength = GLITCH_CONFIG.idealConnectorLength;
-            
+
             const result = calculateConnectorLength(
               activatedState,
               originalLength,
@@ -1101,7 +1113,7 @@ describe('Glitch Protocol System', () => {
               16.67,
               1 // Progress = 1
             );
-            
+
             // At progress 1, elasticOut(1) = 1, so should be at target length
             expect(result).toBe(targetLength);
           }
@@ -1126,7 +1138,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 100, max: 500, noNaN: true }),   // centerY
           (x, offset, amplitude, centerY) => {
             const waveY = calculateWaveY(x, offset, amplitude, centerY);
-            
+
             // Wave Y should be within centerY ± amplitude
             expect(waveY).toBeGreaterThanOrEqual(centerY - amplitude);
             expect(waveY).toBeLessThanOrEqual(centerY + amplitude);
@@ -1146,10 +1158,10 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 200, max: 400, noNaN: true }),   // centerY
           (x, offset1, offsetDiff, amplitude, centerY) => {
             const offset2 = offset1 + offsetDiff;
-            
+
             const waveY1 = calculateWaveY(x, offset1, amplitude, centerY);
             const waveY2 = calculateWaveY(x, offset2, amplitude, centerY);
-            
+
             // Different offsets should produce different Y values (wave animation)
             // Note: In rare cases they could be equal if offset difference is exactly 2π
             // but with our test ranges this is extremely unlikely
@@ -1168,7 +1180,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 100, max: 500, noNaN: true }),   // centerY
           (x, offset, centerY) => {
             const waveY = calculateWaveY(x, offset, 0, centerY);
-            
+
             // With zero amplitude, wave should be flat at centerY
             expect(waveY).toBe(centerY);
           }
@@ -1181,17 +1193,17 @@ describe('Glitch Protocol System', () => {
       const centerY = 300;
       const amplitude = 100;
       const offset = 0;
-      
+
       // Sample wave at multiple X positions
       const samples: number[] = [];
       for (let x = 0; x < 1000; x += 50) {
         samples.push(calculateWaveY(x, offset, amplitude, centerY));
       }
-      
+
       // Wave should have both peaks and troughs
       const hasHighValues = samples.some(y => y > centerY + amplitude * 0.5);
       const hasLowValues = samples.some(y => y < centerY - amplitude * 0.5);
-      
+
       expect(hasHighValues).toBe(true);
       expect(hasLowValues).toBe(true);
     });
@@ -1235,7 +1247,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: Math.fround(0.80), max: Math.fround(0.99), noNaN: true }), // progress in exiting phase
           (progress) => {
             const amplitude = getWaveAmplitudeForPhase('exiting', progress);
-            
+
             // Amplitude should be between 0 and 1 during exit
             expect(amplitude).toBeGreaterThanOrEqual(0);
             expect(amplitude).toBeLessThanOrEqual(1);
@@ -1252,16 +1264,16 @@ describe('Glitch Protocol System', () => {
       const amp90 = getWaveAmplitudeForPhase('exiting', 0.90);
       const amp95 = getWaveAmplitudeForPhase('exiting', 0.95);
       const amp99 = getWaveAmplitudeForPhase('exiting', 0.99);
-      
+
       // Each should be less than or equal to the previous
       expect(amp85).toBeLessThanOrEqual(amp80);
       expect(amp90).toBeLessThanOrEqual(amp85);
       expect(amp95).toBeLessThanOrEqual(amp90);
       expect(amp99).toBeLessThanOrEqual(amp95);
-      
+
       // At start of exit (0.80), should be close to 1.0
       expect(amp80).toBeCloseTo(1.0, 1);
-      
+
       // At end of exit (0.99), should be close to 0.0
       expect(amp99).toBeCloseTo(0.05, 1);
     });
@@ -1308,7 +1320,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 50, max: 150, noNaN: true }),    // amplitude
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
-            
+
             // Should generate 10-15 shards (currently 12)
             expect(shards.length).toBeGreaterThanOrEqual(10);
             expect(shards.length).toBeLessThanOrEqual(15);
@@ -1327,7 +1339,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 50, max: 150, noNaN: true }),    // amplitude
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
-            
+
             // Each shard Y should match the wave Y at that X position
             for (const shard of shards) {
               const expectedY = calculateWaveY(shard.x, waveOffset, amplitude, centerY);
@@ -1348,7 +1360,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 50, max: 150, noNaN: true }),    // amplitude
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
-            
+
             // All shards should be within 10%-90% of canvas width (with small tolerance for floating point)
             const minX = canvasWidth * 0.1 - 0.01;
             const maxX = canvasWidth * 0.9 + 0.01;
@@ -1371,7 +1383,7 @@ describe('Glitch Protocol System', () => {
           fc.float({ min: 50, max: 150, noNaN: true }),    // amplitude
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
-            
+
             // All shards should start uncollected
             for (const shard of shards) {
               expect(shard.collected).toBe(false);
@@ -1386,11 +1398,11 @@ describe('Glitch Protocol System', () => {
       const canvasWidth = 800;
       const centerY = 300;
       const amplitude = 100;
-      
+
       const shards = generateWavePathShards(0, canvasWidth, centerY, amplitude);
       const newOffset = 5;
       const updatedShards = updateWavePathShards(shards, newOffset, amplitude, centerY);
-      
+
       // Y positions should change with new offset
       for (let i = 0; i < shards.length; i++) {
         const expectedY = calculateWaveY(shards[i].x, newOffset, amplitude, centerY);
@@ -1403,9 +1415,9 @@ describe('Glitch Protocol System', () => {
     it('collectWavePathShard SHALL mark the correct shard as collected', () => {
       const shards = generateWavePathShards(0, 800, 300, 100);
       const indexToCollect = 5;
-      
+
       const updatedShards = collectWavePathShard(shards, indexToCollect);
-      
+
       // Only the specified shard should be collected
       for (let i = 0; i < updatedShards.length; i++) {
         if (i === indexToCollect) {
@@ -1418,11 +1430,11 @@ describe('Glitch Protocol System', () => {
 
     it('collectWavePathShard with invalid index SHALL return unchanged array', () => {
       const shards = generateWavePathShards(0, 800, 300, 100);
-      
+
       // Test negative index
       const result1 = collectWavePathShard(shards, -1);
       expect(result1).toBe(shards);
-      
+
       // Test out of bounds index
       const result2 = collectWavePathShard(shards, 100);
       expect(result2).toBe(shards);
@@ -1431,15 +1443,15 @@ describe('Glitch Protocol System', () => {
     it('countUncollectedShards SHALL return correct count', () => {
       const shards = generateWavePathShards(0, 800, 300, 100);
       const initialCount = shards.length;
-      
+
       // Initially all uncollected
       expect(countUncollectedShards(shards)).toBe(initialCount);
-      
+
       // Collect some shards
       let updated = collectWavePathShard(shards, 0);
       updated = collectWavePathShard(updated, 1);
       updated = collectWavePathShard(updated, 2);
-      
+
       expect(countUncollectedShards(updated)).toBe(initialCount - 3);
     });
   });
@@ -1457,7 +1469,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 6.1: Stop spawning new obstacles during Quantum Lock
             expect(shouldBlockObstacleSpawn(activatedState)).toBe(true);
           }
@@ -1472,7 +1484,7 @@ describe('Glitch Protocol System', () => {
           fc.constant(null), // No parameters needed
           () => {
             const inactiveState = createInitialGlitchModeState();
-            
+
             // Inactive state should allow obstacle spawning
             expect(shouldBlockObstacleSpawn(inactiveState)).toBe(false);
           }
@@ -1488,10 +1500,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to ghost phase (mode ended)
             const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
-            
+
             // Ghost phase should allow obstacle spawning (mode has ended)
             expect(shouldBlockObstacleSpawn(ghostState)).toBe(false);
           }
@@ -1514,7 +1526,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 6.3: Make player invulnerable during Quantum Lock
             expect(isInvulnerable(activatedState)).toBe(true);
           }
@@ -1530,10 +1542,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to ghost phase
             const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
-            
+
             // Requirements 7.6: Prevent collision damage during Ghost Mode
             expect(isInvulnerable(ghostState)).toBe(true);
           }
@@ -1548,7 +1560,7 @@ describe('Glitch Protocol System', () => {
           fc.constant(null), // No parameters needed
           () => {
             const inactiveState = createInitialGlitchModeState();
-            
+
             // Inactive state should not be invulnerable
             expect(isInvulnerable(inactiveState)).toBe(false);
           }
@@ -1560,22 +1572,22 @@ describe('Glitch Protocol System', () => {
     it('invulnerability covers both active and ghost phases', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
-      
+
       // Active phase - invulnerable
       expect(isInvulnerable(activatedState)).toBe(true);
-      
+
       // Warning phase - still active, invulnerable
       const warningState = { ...activatedState, phase: 'warning' as const };
       expect(isInvulnerable(warningState)).toBe(true);
-      
+
       // Exiting phase - still active, invulnerable
       const exitingState = { ...activatedState, phase: 'exiting' as const };
       expect(isInvulnerable(exitingState)).toBe(true);
-      
+
       // Ghost phase - invulnerable
       const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
       expect(isInvulnerable(ghostState)).toBe(true);
-      
+
       // Inactive phase - not invulnerable
       const inactiveState = { ...activatedState, isActive: false, phase: 'inactive' as const };
       expect(isInvulnerable(inactiveState)).toBe(false);
@@ -1595,7 +1607,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 6.5: Apply 2x shard value multiplier during Quantum Lock
             expect(getShardMultiplier(activatedState)).toBe(2);
             expect(getShardMultiplier(activatedState)).toBe(GLITCH_CONFIG.shardMultiplier);
@@ -1611,7 +1623,7 @@ describe('Glitch Protocol System', () => {
           fc.constant(null), // No parameters needed
           () => {
             const inactiveState = createInitialGlitchModeState();
-            
+
             // Inactive state should have normal multiplier
             expect(getShardMultiplier(inactiveState)).toBe(1);
           }
@@ -1627,10 +1639,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to ghost phase (mode ended)
             const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
-            
+
             // Ghost phase should have normal multiplier (bonus mode ended)
             expect(getShardMultiplier(ghostState)).toBe(1);
           }
@@ -1642,11 +1654,11 @@ describe('Glitch Protocol System', () => {
     it('multiplier is exactly 2x during active mode', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
-      
+
       // Verify multiplier is exactly 2
       const multiplier = getShardMultiplier(activatedState);
       expect(multiplier).toBe(2);
-      
+
       // Verify it matches config
       expect(multiplier).toBe(GLITCH_CONFIG.shardMultiplier);
     });
@@ -1665,7 +1677,7 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 5.7: Stabilize game speed during Quantum Lock
             expect(shouldStabilizeSpeed(activatedState)).toBe(true);
           }
@@ -1680,7 +1692,7 @@ describe('Glitch Protocol System', () => {
           fc.constant(null), // No parameters needed
           () => {
             const inactiveState = createInitialGlitchModeState();
-            
+
             // Inactive state should allow speed changes
             expect(shouldStabilizeSpeed(inactiveState)).toBe(false);
           }
@@ -1696,10 +1708,10 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Manually set to ghost phase (mode ended)
             const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
-            
+
             // Ghost phase should allow speed changes (mode has ended)
             expect(shouldStabilizeSpeed(ghostState)).toBe(false);
           }
@@ -1711,22 +1723,22 @@ describe('Glitch Protocol System', () => {
     it('speed stabilization only during active Quantum Lock phases', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
-      
+
       // Active phase - speed stabilized
       expect(shouldStabilizeSpeed(activatedState)).toBe(true);
-      
+
       // Warning phase - still active, speed stabilized
       const warningState = { ...activatedState, phase: 'warning' as const };
       expect(shouldStabilizeSpeed(warningState)).toBe(true);
-      
+
       // Exiting phase - still active, speed stabilized
       const exitingState = { ...activatedState, phase: 'exiting' as const };
       expect(shouldStabilizeSpeed(exitingState)).toBe(true);
-      
+
       // Ghost phase - not stabilized
       const ghostState = { ...activatedState, isActive: false, phase: 'ghost' as const };
       expect(shouldStabilizeSpeed(ghostState)).toBe(false);
-      
+
       // Inactive phase - not stabilized
       const inactiveState = { ...activatedState, isActive: false, phase: 'inactive' as const };
       expect(shouldStabilizeSpeed(inactiveState)).toBe(false);
@@ -1748,15 +1760,15 @@ describe('Glitch Protocol System', () => {
           (connectorLength, currentDistance, distanceToAdd) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Requirements 6.6: Continue accumulating distance traveled
             // The glitch system does NOT block distance accumulation
             // This is verified by checking that isActive doesn't prevent distance updates
             // Distance accumulation is handled by the game loop, not blocked by glitch state
-            
+
             // Verify the state is active (distance should accumulate)
             expect(activatedState.isActive).toBe(true);
-            
+
             // Simulate distance accumulation (this would happen in game loop)
             const newDistance = currentDistance + distanceToAdd;
             expect(newDistance).toBeGreaterThan(currentDistance);
@@ -1769,18 +1781,18 @@ describe('Glitch Protocol System', () => {
     it('distance accumulation is not blocked by any glitch phase', () => {
       // This test verifies that the glitch system design allows distance accumulation
       // by confirming there's no blocking mechanism in the glitch state
-      
+
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
-      
+
       // The glitch system provides shouldStabilizeSpeed for speed control
       // but does NOT provide any mechanism to block distance accumulation
       // This is by design per Requirements 6.6
-      
+
       // Verify no distance blocking property exists on the state
       expect(activatedState).not.toHaveProperty('blockDistance');
       expect(activatedState).not.toHaveProperty('pauseDistance');
-      
+
       // The game loop should continue accumulating distance during all phases
       // This is verified by the absence of any blocking mechanism
     });
@@ -1921,7 +1933,7 @@ describe('Glitch Protocol System', () => {
     it('pause/resume round-trip preserves exact timer value (no floating point drift)', () => {
       // Test specific edge case values
       const testValues = [1000, 5000, 9999.99, 0.01, 100.123456789];
-      
+
       for (const timerValue of testValues) {
         const overdriveState = {
           targetWord: ['S', 'H', 'I', 'F', 'T'],
@@ -2135,7 +2147,7 @@ describe('Glitch Protocol System', () => {
     it('pause/resume round-trip preserves exact timer value (no floating point drift)', () => {
       // Test specific edge case values
       const testValues = [1000, 5000, 9999.99, 0.01, 100.123456789];
-      
+
       for (const timerValue of testValues) {
         const resonanceState = {
           isActive: true,
@@ -2490,14 +2502,14 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Activate Ghost Mode (simulating Quantum Lock completion)
             const ghostState = activateGhostMode(activatedState);
-            
+
             // Ghost Mode should be active
             expect(ghostState.phase).toBe('ghost');
             expect(ghostState.isActive).toBe(false); // Quantum Lock is no longer active
-            
+
             // Ghost Mode end time should be 1500ms from activation
             const expectedEndTime = Date.now() + GLITCH_CONFIG.ghostModeDuration;
             // Allow small tolerance for test execution time
@@ -2517,7 +2529,7 @@ describe('Glitch Protocol System', () => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
             const ghostState = activateGhostMode(activatedState);
-            
+
             // Requirements 7.4: Ghost Mode is a separate phase after Quantum Lock
             expect(ghostState.phase).toBe('ghost');
             expect(ghostState.isActive).toBe(false);
@@ -2530,17 +2542,17 @@ describe('Glitch Protocol System', () => {
     it('Ghost Mode duration SHALL be exactly 1500ms as per GLITCH_CONFIG', () => {
       // Verify the configuration value
       expect(GLITCH_CONFIG.ghostModeDuration).toBe(1500);
-      
+
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const beforeActivation = Date.now();
       const ghostState = activateGhostMode(activatedState);
       const afterActivation = Date.now();
-      
+
       // Ghost Mode end time should be ~1500ms from now
       const expectedMinEndTime = beforeActivation + 1500;
       const expectedMaxEndTime = afterActivation + 1500;
-      
+
       expect(ghostState.ghostModeEndTime).toBeGreaterThanOrEqual(expectedMinEndTime);
       expect(ghostState.ghostModeEndTime).toBeLessThanOrEqual(expectedMaxEndTime);
     });
@@ -2548,10 +2560,10 @@ describe('Glitch Protocol System', () => {
     it('isGhostModeActive SHALL return true only when phase is "ghost"', () => {
       const initialState = createInitialGlitchModeState();
       expect(isGhostModeActive(initialState)).toBe(false);
-      
+
       const activatedState = activateQuantumLock(initialState, 100);
       expect(isGhostModeActive(activatedState)).toBe(false);
-      
+
       const ghostState = activateGhostMode(activatedState);
       expect(isGhostModeActive(ghostState)).toBe(true);
     });
@@ -2560,10 +2572,10 @@ describe('Glitch Protocol System', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const ghostState = activateGhostMode(activatedState);
-      
+
       // Requirements 7.5: 50% opacity during Ghost Mode
       expect(getGhostModeOpacity(ghostState)).toBe(0.5);
-      
+
       // Should return 1.0 when not in Ghost Mode
       expect(getGhostModeOpacity(initialState)).toBe(1.0);
       expect(getGhostModeOpacity(activatedState)).toBe(1.0);
@@ -2583,19 +2595,19 @@ describe('Glitch Protocol System', () => {
           (connectorLength) => {
             const initialState = createInitialGlitchModeState();
             const activatedState = activateQuantumLock(initialState, connectorLength);
-            
+
             // Activate Ghost Mode
             const ghostState = activateGhostMode(activatedState);
-            
+
             // Simulate Ghost Mode ending by setting ghostModeEndTime to past
             const expiredGhostState: GlitchModeState = {
               ...ghostState,
               ghostModeEndTime: Date.now() - 100, // Already expired
             };
-            
+
             // Update should transition to inactive
             const restoredState = updateGhostMode(expiredGhostState, 16.67);
-            
+
             // Requirements 7.7: Restore normal gameplay state
             expect(restoredState.isActive).toBe(false);
             expect(restoredState.phase).toBe('inactive');
@@ -2616,7 +2628,7 @@ describe('Glitch Protocol System', () => {
             const inactiveState = createInitialGlitchModeState();
             const updatedInactive = updateGhostMode(inactiveState, 16.67);
             expect(updatedInactive).toEqual(inactiveState);
-            
+
             // Test with active Quantum Lock state
             const activeState = activateQuantumLock(inactiveState, connectorLength);
             const updatedActive = updateGhostMode(activeState, 16.67);
@@ -2631,10 +2643,10 @@ describe('Glitch Protocol System', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const ghostState = activateGhostMode(activatedState);
-      
+
       // Ghost Mode just started, should not expire yet
       const updatedState = updateGhostMode(ghostState, 16.67);
-      
+
       // State should remain in Ghost Mode
       expect(updatedState.phase).toBe('ghost');
       expect(updatedState.isActive).toBe(false);
@@ -2644,24 +2656,24 @@ describe('Glitch Protocol System', () => {
     it('Ghost Mode completion SHALL reset waveOffset to 0', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
-      
+
       // Set a non-zero waveOffset
       const stateWithWave: GlitchModeState = {
         ...activatedState,
         waveOffset: 5.5,
       };
-      
+
       const ghostState = activateGhostMode(stateWithWave);
-      
+
       // Simulate Ghost Mode ending
       const expiredGhostState: GlitchModeState = {
         ...ghostState,
         ghostModeEndTime: Date.now() - 100,
         waveOffset: 5.5, // Still has wave offset
       };
-      
+
       const restoredState = updateGhostMode(expiredGhostState, 16.67);
-      
+
       // Wave offset should be reset
       expect(restoredState.waveOffset).toBe(0);
     });
@@ -2670,13 +2682,13 @@ describe('Glitch Protocol System', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const ghostState = activateGhostMode(activatedState);
-      
+
       // Requirements 7.6: Prevent collision damage during Ghost Mode
       expect(isInvulnerable(ghostState)).toBe(true);
-      
+
       // Should also be true during Quantum Lock
       expect(isInvulnerable(activatedState)).toBe(true);
-      
+
       // Should be false when inactive
       expect(isInvulnerable(initialState)).toBe(false);
     });
@@ -2685,12 +2697,12 @@ describe('Glitch Protocol System', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const ghostState = activateGhostMode(activatedState);
-      
+
       // Should return approximately 1500ms (with small tolerance for execution time)
       const remaining = getGhostModeRemainingTime(ghostState);
       expect(remaining).toBeGreaterThan(1400);
       expect(remaining).toBeLessThanOrEqual(1500);
-      
+
       // Should return 0 when not in Ghost Mode
       expect(getGhostModeRemainingTime(initialState)).toBe(0);
       expect(getGhostModeRemainingTime(activatedState)).toBe(0);
@@ -2700,12 +2712,12 @@ describe('Glitch Protocol System', () => {
       const initialState = createInitialGlitchModeState();
       const activatedState = activateQuantumLock(initialState, 100);
       const ghostState = activateGhostMode(activatedState);
-      
+
       // Just started, progress should be near 0
       const progress = getGhostModeProgress(ghostState);
       expect(progress).toBeGreaterThanOrEqual(0);
       expect(progress).toBeLessThan(0.1);
-      
+
       // Should return 0 when not in Ghost Mode
       expect(getGhostModeProgress(initialState)).toBe(0);
       expect(getGhostModeProgress(activatedState)).toBe(0);
@@ -2721,48 +2733,48 @@ describe('Glitch Protocol System', () => {
     it('bufferInput SHALL store tap input in buffer', () => {
       // Clear any existing buffer
       clearInputBuffer();
-      
+
       const input: InputState = {
         isPressed: true,
         y: 100,
         isTapFrame: true,
         isReleaseFrame: false,
       };
-      
+
       bufferInput(input);
-      
+
       const buffer = getInputBuffer();
       expect(buffer).not.toBeNull();
       expect(buffer!.pendingTap).toBe(true);
       expect(buffer!.pendingSwap).toBe(false);
-      
+
       // Clean up
       clearInputBuffer();
     });
 
     it('bufferInput SHALL store swap input in buffer', () => {
       clearInputBuffer();
-      
+
       const input: InputState = {
         isPressed: false,
         y: 100,
         isTapFrame: false,
         isReleaseFrame: true,
       };
-      
+
       bufferInput(input);
-      
+
       const buffer = getInputBuffer();
       expect(buffer).not.toBeNull();
       expect(buffer!.pendingSwap).toBe(true);
       expect(buffer!.pendingTap).toBe(false);
-      
+
       clearInputBuffer();
     });
 
     it('bufferInput SHALL merge multiple inputs using OR logic', () => {
       clearInputBuffer();
-      
+
       // First input: tap
       const tapInput: InputState = {
         isPressed: true,
@@ -2771,7 +2783,7 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: false,
       };
       bufferInput(tapInput);
-      
+
       // Second input: swap
       const swapInput: InputState = {
         isPressed: false,
@@ -2780,18 +2792,18 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: true,
       };
       bufferInput(swapInput);
-      
+
       const buffer = getInputBuffer();
       expect(buffer).not.toBeNull();
       expect(buffer!.pendingTap).toBe(true);
       expect(buffer!.pendingSwap).toBe(true);
-      
+
       clearInputBuffer();
     });
 
     it('flushBufferedInput SHALL return InputState and clear buffer', () => {
       clearInputBuffer();
-      
+
       const input: InputState = {
         isPressed: true,
         y: 100,
@@ -2799,27 +2811,27 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: true,
       };
       bufferInput(input);
-      
+
       const flushed = flushBufferedInput();
-      
+
       expect(flushed).not.toBeNull();
       expect(flushed!.isTapFrame).toBe(true);
       expect(flushed!.isReleaseFrame).toBe(true);
-      
+
       // Buffer should be cleared
       expect(getInputBuffer()).toBeNull();
     });
 
     it('flushBufferedInput SHALL return null when buffer is empty', () => {
       clearInputBuffer();
-      
+
       const flushed = flushBufferedInput();
       expect(flushed).toBeNull();
     });
 
     it('flushBufferedInput SHALL return null when no pending inputs', () => {
       clearInputBuffer();
-      
+
       // Buffer an input with no tap or swap
       const input: InputState = {
         isPressed: false,
@@ -2828,16 +2840,16 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: false,
       };
       bufferInput(input);
-      
+
       const flushed = flushBufferedInput();
       expect(flushed).toBeNull();
     });
 
     it('hasBufferedInput SHALL return true when inputs are pending', () => {
       clearInputBuffer();
-      
+
       expect(hasBufferedInput()).toBe(false);
-      
+
       const input: InputState = {
         isPressed: true,
         y: 100,
@@ -2845,15 +2857,15 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: false,
       };
       bufferInput(input);
-      
+
       expect(hasBufferedInput()).toBe(true);
-      
+
       clearInputBuffer();
     });
 
     it('clearInputBuffer SHALL clear all buffered inputs', () => {
       clearInputBuffer();
-      
+
       const input: InputState = {
         isPressed: true,
         y: 100,
@@ -2861,18 +2873,18 @@ describe('Glitch Protocol System', () => {
         isReleaseFrame: true,
       };
       bufferInput(input);
-      
+
       expect(hasBufferedInput()).toBe(true);
-      
+
       clearInputBuffer();
-      
+
       expect(hasBufferedInput()).toBe(false);
       expect(getInputBuffer()).toBeNull();
     });
 
     it('createEmptyInputBuffer SHALL return buffer with all flags false', () => {
       const buffer = createEmptyInputBuffer();
-      
+
       expect(buffer.pendingSwap).toBe(false);
       expect(buffer.pendingTap).toBe(false);
       expect(buffer.timestamp).toBe(0);
@@ -2880,22 +2892,22 @@ describe('Glitch Protocol System', () => {
 
     it('buffer timestamp SHALL be updated on each bufferInput call', () => {
       clearInputBuffer();
-      
+
       const input: InputState = {
         isPressed: true,
         y: 100,
         isTapFrame: true,
         isReleaseFrame: false,
       };
-      
+
       const beforeTime = Date.now();
       bufferInput(input);
       const afterTime = Date.now();
-      
+
       const buffer = getInputBuffer();
       expect(buffer!.timestamp).toBeGreaterThanOrEqual(beforeTime);
       expect(buffer!.timestamp).toBeLessThanOrEqual(afterTime);
-      
+
       clearInputBuffer();
     });
   });

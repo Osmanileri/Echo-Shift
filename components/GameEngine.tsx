@@ -7,6 +7,7 @@ import {
   PHANTOM_CONFIG,
 } from "../constants";
 import { getSkinById } from "../data/skins";
+import { useCharacterStore } from "../store/characterStore";
 import { useGameStore } from "../store/gameStore";
 import { applyTheme, getColor, hasEffect } from "../systems/themeSystem";
 import {
@@ -59,6 +60,7 @@ import {
   updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
+import { calculateCharacterModifiers } from "../utils/statMapper";
 
 // Particle System Integration - Requirements 12.1, 12.2, 12.3
 import * as ParticleSystem from "../systems/particleSystem";
@@ -133,6 +135,8 @@ import * as BlockSystem from "../systems/blockSystem";
 // Quantum Lock bonus mode triggered by collecting Glitch Shards
 import * as GlitchSystem from "../systems/glitchSystem";
 import * as GlitchVFX from "../systems/GlitchVFX";
+// Spirit Character Rendering - Pokemon silhouettes and elemental auras
+import * as SpiritRenderer from "../systems/spiritRenderer";
 import type { GlitchModeState, GlitchShard } from "../types";
 
 
@@ -263,6 +267,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Skin System Integration - Requirements 3.1, 3.2
   const equippedSkin = useGameStore((state) => state.equippedSkin);
 
+  // Spirit Character System Integration - PokeAPI
+  // Active spirit character affects gameplay modifiers (speed, shield, etc.)
+  const activeCharacter = useCharacterStore((state) => state.activeCharacter);
+  const spiritModifiers = calculateCharacterModifiers(activeCharacter);
+
   // Apply theme when equipped theme changes
   useEffect(() => {
     applyTheme(equippedTheme);
@@ -278,6 +287,40 @@ const GameEngine: React.FC<GameEngineProps> = ({
   useEffect(() => {
     setCustomThemeColors(customThemeColors);
   }, [customThemeColors]);
+
+  // Spirit Character: Live update modifiers when active character changes
+  // This allows immediate effect when equipping a character during gameplay
+  useEffect(() => {
+    if (activeCharacter) {
+      // Apply speed modifier live
+      const baseSpeedModifier = campaignMode?.enabled && campaignMode.levelConfig
+        ? campaignMode.levelConfig.modifiers.speedMultiplier
+        : 1;
+      speed.current = INITIAL_CONFIG.baseSpeed * baseSpeedModifier * spiritModifiers.speedMultiplier;
+
+      // Update score multiplier live
+      const upgradeEffects = getActiveUpgradeEffects();
+      scoreMultiplierUpgrade.current = upgradeEffects.scoreMultiplier * spiritModifiers.shardValueMultiplier;
+      magnetRadiusFactorUpgrade.current = upgradeEffects.magnetRadiusFactor * spiritModifiers.magnetRadiusMultiplier;
+    }
+  }, [activeCharacter, spiritModifiers, campaignMode]);
+
+  // Spirit Character: Sprite image loading for orb rendering
+  const spiritSpriteRef = useRef<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (activeCharacter && activeCharacter.spriteUrl) {
+      SpiritRenderer.preloadSpriteImage(activeCharacter.spriteUrl)
+        .then(img => {
+          spiritSpriteRef.current = img;
+        })
+        .catch(err => {
+          console.warn('Failed to load spirit sprite:', err);
+          spiritSpriteRef.current = null;
+        });
+    } else {
+      spiritSpriteRef.current = null;
+    }
+  }, [activeCharacter]);
 
   // Mutable Game State
   const frameId = useRef<number>(0);
@@ -571,17 +614,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
       speedModifier *= dailyChallengeMode.config.modifiers.speedBoost;
     }
 
+    // Spirit Character: Apply speed modifier from active character
+    // Higher Speed stat Pokemon = faster gameplay
+    speedModifier *= spiritModifiers.speedMultiplier;
+
     speed.current = INITIAL_CONFIG.baseSpeed * speedModifier;
 
     // Store score multiplier from upgrades - Requirements 6.2
-    scoreMultiplierUpgrade.current = upgradeEffects.scoreMultiplier;
+    // Spirit Character: Apply shard value multiplier from active character
+    scoreMultiplierUpgrade.current = upgradeEffects.scoreMultiplier * spiritModifiers.shardValueMultiplier;
 
     // Phase 2: Magnet + Shield
-    magnetRadiusFactorUpgrade.current = upgradeEffects.magnetRadiusFactor;
+    // Spirit Character: Apply magnet radius bonus from active character
+    magnetRadiusFactorUpgrade.current = upgradeEffects.magnetRadiusFactor * spiritModifiers.magnetRadiusMultiplier;
     shieldChargesRemaining.current = Math.max(
       0,
       Math.floor(upgradeEffects.shieldCharges)
     );
+    // Spirit Character: Note - shieldTimeBonus will be applied when shield activates
     shieldInvincibleUntil.current = 0;
 
     // Reset slow motion state - Requirements 6.4
@@ -827,6 +877,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     zenMode,
     ghostRacerMode,
     onRestoreStateUpdate,
+    spiritModifiers,
   ]);
 
   // ============================================================================
@@ -3822,7 +3873,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Phase 2: Shield (consume instead of dying)
               if (shieldChargesRemaining.current > 0) {
                 shieldChargesRemaining.current -= 1;
-                shieldInvincibleUntil.current = collisionTime + 2000;
+                shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
 
                 // VFX: shatter burst + popup + mild shake + haptic
                 ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, [
@@ -4037,7 +4088,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Phase 2: Shield (consume instead of dying)
               if (shieldChargesRemaining.current > 0) {
                 shieldChargesRemaining.current -= 1;
-                shieldInvincibleUntil.current = collisionTime + 2000;
+                shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
 
                 ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, [
                   "#00F0FF",
@@ -5341,6 +5392,34 @@ const GameEngine: React.FC<GameEngineProps> = ({
             ctx.shadowBlur = 15;
             ctx.stroke();
             ctx.shadowBlur = 0;
+          }
+
+          // Spirit Character: Draw Pokemon silhouette and elemental aura
+          if (activeCharacter && spiritSpriteRef.current) {
+            const primaryType = activeCharacter.types[0] || 'normal';
+            const now = Date.now();
+
+            // Draw silhouette inside orb (using polarity: white orb = black silhouette)
+            SpiritRenderer.renderSpiritOrb(
+              ctx,
+              orb.x,
+              orb.y,
+              orb.radius,
+              spiritSpriteRef.current,
+              orbFillColor,
+              primaryType,
+              now
+            );
+
+            // Draw elemental particles around orb
+            SpiritRenderer.renderElementalParticles(
+              ctx,
+              orb.x,
+              orb.y,
+              orb.radius,
+              primaryType,
+              now
+            );
           }
         }
       };
