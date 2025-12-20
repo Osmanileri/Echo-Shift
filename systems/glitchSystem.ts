@@ -174,6 +174,7 @@ export function createGlitchShard(
     active: true,
     colorTimer: 0,
     spawnTime: Date.now(),
+    trailPositions: [], // Comet trail positions
   };
 }
 
@@ -229,22 +230,42 @@ export function isSpawnPositionSafe(
 // ============================================================================
 
 /**
- * Updates a Glitch Shard's position based on game speed
- * Requirements 2.4: Move left at current game speed
+ * Glitch Shard pozisyonunu ve kuyruk izini günceller
+ * Shard yavaşça sola hareket eder, arkasında kuyruklu yıldız izi bırakır
  */
 export function updateGlitchShard(
   shard: GlitchShard,
   speed: number,
   deltaTime: number
 ): GlitchShard {
-  // Move left at game speed (speed is pixels per frame at 60fps)
-  // Normalize for actual deltaTime
+  // Normalize for actual deltaTime (speed is pixels per frame at 60fps)
   const normalizedSpeed = speed * (deltaTime / 16.67);
+
+  // Shard escapes forward at a fraction of game speed
+  const cometConfig = GLITCH_CONFIG.cometTrail;
+  const effectiveSpeed = normalizedSpeed * cometConfig.effectiveSpeedRatio;
+
+  // Kuyruk için mevcut pozisyonu kaydet
+  // Alpha yavaş azalır ki kuyruk uzun süre görünsün
+  const trailDecay = 0.92; // Daha yavaş solma (0.85 yerine 0.92)
+  const maxTrailLength = 25; // Daha uzun kuyruk
+
+  // Mevcut pozisyonları güncelle (alpha azalt)
+  const updatedTrail = shard.trailPositions
+    .map(p => ({ ...p, alpha: p.alpha * trailDecay }))
+    .filter(p => p.alpha > 0.02); // Çok soluk olanları sil
+
+  // Yeni pozisyonu başa ekle
+  const newTrailPositions = [
+    { x: shard.x, y: shard.y, alpha: 1.0 },
+    ...updatedTrail.slice(0, maxTrailLength - 1)
+  ];
 
   return {
     ...shard,
-    x: shard.x - normalizedSpeed,
+    x: shard.x - effectiveSpeed,
     colorTimer: shard.colorTimer + deltaTime,
+    trailPositions: newTrailPositions,
   };
 }
 

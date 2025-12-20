@@ -7,6 +7,7 @@
 import {
   Clock,
   Gem,
+  Ghost,
   Magnet,
   Palette,
   Play,
@@ -14,7 +15,7 @@ import {
   Sparkles,
   TrendingUp,
   X,
-  Zap,
+  Zap
 } from "lucide-react";
 import React, { useState } from "react";
 import { BALL_SKINS, BallSkin } from "../../data/skins";
@@ -27,12 +28,13 @@ import {
 import { ItemCategory, useGameStore } from "../../store/gameStore";
 import { purchaseUpgrade } from "../../systems/upgradeSystem";
 import ShopItem from "./ShopItem";
+import SpiritShop from "./SpiritShop";
 // Analytics System - Requirements 5.3
 import { getAnalyticsSystem } from "../../App";
 // Audio System - Phase 4 Launch Polish
 import * as AudioSystem from "../../systems/audioSystem";
 
-type ShopCategory = "skins" | "themes" | "upgrades";
+type ShopCategory = "spirits" | "skins" | "themes" | "upgrades";
 
 interface ShopProps {
   isOpen: boolean;
@@ -40,7 +42,7 @@ interface ShopProps {
 }
 
 const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
-  const [activeCategory, setActiveCategory] = useState<ShopCategory>("skins");
+  const [activeCategory, setActiveCategory] = useState<ShopCategory>("spirits");
 
   const echoShards = useGameStore((state) => state.echoShards);
   const ownedSkins = useGameStore((state) => state.ownedSkins);
@@ -58,14 +60,15 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
     label: string;
     icon: React.ReactNode;
   }[] = [
-    { id: "skins", label: "Skinler", icon: <Sparkles className="w-4 h-4" /> },
-    { id: "themes", label: "Temalar", icon: <Palette className="w-4 h-4" /> },
-    {
-      id: "upgrades",
-      label: "Yükseltmeler",
-      icon: <Zap className="w-4 h-4" />,
-    },
-  ];
+      { id: "spirits", label: "Ruhlar", icon: <Ghost className="w-4 h-4" /> },
+      { id: "skins", label: "Skinler", icon: <Sparkles className="w-4 h-4" /> },
+      { id: "themes", label: "Temalar", icon: <Palette className="w-4 h-4" /> },
+      {
+        id: "upgrades",
+        label: "Yükseltmeler",
+        icon: <Zap className="w-4 h-4" />,
+      },
+    ];
 
   const handlePurchase = (
     itemId: string,
@@ -78,7 +81,7 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
     if (success) {
       // Audio: Purchase success sound - Phase 4
       AudioSystem.playPurchase();
-      
+
       getAnalyticsSystem().logEvent("purchase", {
         item_id: itemId,
         item_category: category,
@@ -201,18 +204,16 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
         return (
           <div
             key={upgrade.id}
-            className={`p-3 rounded-lg border transition-all ${
-              isMaxed
-                ? "bg-green-500/10 border-green-500/30"
-                : "bg-white/5 border-white/10"
-            }`}
+            className={`p-3 rounded-lg border transition-all ${isMaxed
+              ? "bg-green-500/10 border-green-500/30"
+              : "bg-white/5 border-white/10"
+              }`}
           >
             <div className="flex items-start gap-2">
               {/* Icon - Smaller */}
               <div
-                className={`p-2 rounded-lg flex-shrink-0 ${
-                  isMaxed ? "bg-green-500/20" : "bg-white/10"
-                }`}
+                className={`p-2 rounded-lg flex-shrink-0 ${isMaxed ? "bg-green-500/20" : "bg-white/10"
+                  }`}
               >
                 {getUpgradeIcon(upgrade.id)}
               </div>
@@ -249,11 +250,10 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
                   <button
                     onClick={() => handleUpgradePurchase(upgrade.id)}
                     disabled={!canAfford}
-                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg font-bold text-xs transition-all ${
-                      canAfford
-                        ? "bg-cyan-500 text-black active:scale-95"
-                        : "bg-white/10 text-white/30 cursor-not-allowed"
-                    }`}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg font-bold text-xs transition-all ${canAfford
+                      ? "bg-cyan-500 text-black active:scale-95"
+                      : "bg-white/10 text-white/30 cursor-not-allowed"
+                      }`}
                   >
                     <Gem className="w-3 h-3" />
                     {cost.toLocaleString()}
@@ -265,9 +265,8 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
             {/* Level Progress Bar - Thinner */}
             <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all ${
-                  isMaxed ? "bg-green-500" : "bg-cyan-500"
-                }`}
+                className={`h-full transition-all ${isMaxed ? "bg-green-500" : "bg-cyan-500"
+                  }`}
                 style={{ width: `${(currentLevel / upgrade.maxLevel) * 100}%` }}
               />
             </div>
@@ -309,11 +308,10 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${
-                activeCategory === cat.id
-                  ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5"
-                  : "text-white/50 hover:text-white/70 hover:bg-white/5"
-              }`}
+              className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${activeCategory === cat.id
+                ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5"
+                : "text-white/50 hover:text-white/70 hover:bg-white/5"
+                }`}
             >
               {cat.icon}
               <span className="hidden sm:inline">{cat.label}</span>
@@ -323,6 +321,7 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
 
         {/* Content - Scrollable */}
         <div className="p-3 overflow-y-auto flex-1">
+          {activeCategory === "spirits" && <SpiritShop />}
           {activeCategory === "skins" && renderSkins()}
           {activeCategory === "themes" && renderThemes()}
           {activeCategory === "upgrades" && renderUpgrades()}

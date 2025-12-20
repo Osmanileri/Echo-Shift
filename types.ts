@@ -488,6 +488,7 @@ export interface GlitchShard {
   active: boolean;
   colorTimer: number;           // Timer for color flicker effect (50ms cycle)
   spawnTime: number;            // When the shard was spawned
+  trailPositions: Array<{ x: number; y: number; alpha: number }>; // Comet trail positions
 }
 
 /**
