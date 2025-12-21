@@ -212,21 +212,23 @@ export class ParticleSystem {
 
   /**
    * Draw all active particles with neon glow and contrast outline
+   * Identical rendering for both backgrounds - same colors, same glow
    */
   draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter'; // Neon glow effect
 
     this.particles.forEach(p => {
       if (!p.active) return;
 
       const config = getElementalConfig(p.type);
-      const contrastColor = config.contrastColor || '#FFFFFF';
+      const isOnDarkBg = p.isTopOrb;
 
-      ctx.globalAlpha = p.life;
+      // Identical rendering for both backgrounds
+      ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = config.color;
       ctx.shadowColor = config.color;
-      ctx.shadowBlur = 10 * p.life;
+      ctx.globalAlpha = p.life;
+      ctx.shadowBlur = 10 * p.life; // Same for both
 
       ctx.beginPath();
 
@@ -242,28 +244,33 @@ export class ParticleSystem {
         ctx.closePath();
       } else if (config.particleType === 'bubble') {
         // Professional Water Drop Effect
-        // Create gradient for 3D liquid look
         const gradient = ctx.createRadialGradient(
           p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.1,
           p.x, p.y, p.size
         );
 
-        // Use variants if available, otherwise fall back to computed colors
-        const baseColor = config.color;
         const lightColor = config.lightVariant || '#FFFFFF';
         const darkColor = config.darkVariant || config.secondaryColor;
-
-        gradient.addColorStop(0, lightColor);    // Highlight
-        gradient.addColorStop(0.4, baseColor);   // Body
-        gradient.addColorStop(1, darkColor);     // Shadow/Depth
+        gradient.addColorStop(0, lightColor);
+        gradient.addColorStop(0.4, config.color);
+        gradient.addColorStop(1, darkColor);
 
         ctx.fillStyle = gradient;
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
 
-        // Specular highlight (glossy reflection)
+        // Add dark outline for white background visibility
+        if (!isOnDarkBg) {
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Specular highlight
         ctx.beginPath();
         ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.globalAlpha = p.life * 0.8;
         ctx.ellipse(
           p.x - p.size * 0.3,
           p.y - p.size * 0.3,
@@ -273,7 +280,7 @@ export class ParticleSystem {
           0, Math.PI * 2
         );
         ctx.fill();
-        return; // Skip default stroke to maintain liquidity
+        return;
       } else {
         // Circle for most particles
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -281,15 +288,13 @@ export class ParticleSystem {
 
       ctx.fill();
 
-      // Add thin contrast outline for visibility on matching backgrounds
-      ctx.globalCompositeOperation = 'source-over'; // Reset for stroke
-      ctx.strokeStyle = contrastColor;
-      ctx.lineWidth = 0.5;
-      ctx.globalAlpha = p.life * 0.4; // Subtle outline
-      ctx.stroke();
-
-      // Restore blending mode for next particle
-      ctx.globalCompositeOperation = 'lighter';
+      // Add subtle outline for white background visibility only
+      if (!isOnDarkBg) {
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     });
 
     ctx.restore();

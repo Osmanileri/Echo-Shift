@@ -7,6 +7,7 @@ import GameEngine, {
 import GameUI from "./components/GameUI";
 import MissionComplete from "./components/Missions/MissionComplete";
 import MissionPanel from "./components/Missions/MissionPanel";
+import NumbersMissionVictory from "./components/Missions/NumbersMissionVictory";
 import RestorePrompt from "./components/Restore/RestorePrompt";
 import Shop from "./components/Shop/Shop";
 import TutorialOverlay from "./components/Tutorial/TutorialOverlay";
@@ -146,6 +147,19 @@ const App: React.FC = () => {
   const [showDailyRewardClaim, setShowDailyRewardClaim] = useState<boolean>(false);
   const [dailyRewardAmount, setDailyRewardAmount] = useState<number>(0);
   const [showSyncComplete, setShowSyncComplete] = useState<boolean>(false);
+
+  // Numbers Mission state - Dynamic API-driven missions
+  const [numbersMissionMode, setNumbersMissionMode] = useState<{
+    enabled: boolean;
+    targetDistance: number;
+    pokemonId?: string;
+  } | null>(null);
+  const [showNumbersMissionVictory, setShowNumbersMissionVictory] = useState<boolean>(false);
+  const [numbersMissionVictoryData, setNumbersMissionVictoryData] = useState<{
+    number: number;
+    text: string;
+    distanceTraveled: number;
+  } | null>(null);
 
   // Daily Rituals state
   const [showRitualsPanel, setShowRitualsPanel] = useState<boolean>(false);
@@ -930,6 +944,80 @@ const App: React.FC = () => {
     setCompletedMission(null);
   }, []);
 
+  // Numbers Mission handler - Start game with target distance
+  const handleStartNumbersMission = useCallback((targetDistance: number, pokemonId?: string) => {
+    console.log('[App] Starting Numbers Mission:', targetDistance, pokemonId);
+
+    // Set Numbers Mission mode
+    setNumbersMissionMode({ enabled: true, targetDistance, pokemonId });
+
+    // Initialize game
+    AudioSystem.initialize();
+    AudioSystem.playGameStart();
+
+    setGameState(GameState.MENU);
+    setScore(0);
+    setEarnedShards(0);
+    setTargetDistance(targetDistance);
+    setCurrentDistance(0);
+    setProgressPercent(0);
+    setIsNearFinish(false);
+    setIsLevelCompleting(false);
+
+    // Initialize slow motion
+    const effects = getActiveUpgradeEffects();
+    setSlowMotionUsesRemaining(effects.slowMotionUses);
+    setSlowMotionActive(false);
+
+    // Reset restore state
+    setShowRestorePrompt(false);
+    setRestoreHasBeenUsed(false);
+    setRestoreRequested(false);
+    setRestoreCanRestore(true);
+
+    // Clear campaign mode
+    setCampaignLevelConfig(null);
+
+    // Start playing
+    requestAnimationFrame(() => {
+      setGameState(GameState.PLAYING);
+    });
+
+    sessionStartTime.current = Date.now();
+  }, []);
+
+  // Numbers Mission completion handler
+  const handleNumbersMissionComplete = useCallback(() => {
+    if (!numbersMissionMode) return;
+
+    console.log('[App] Numbers Mission completed!');
+
+    // Show victory screen (the hook will handle rewards)
+    setShowNumbersMissionVictory(true);
+    setNumbersMissionVictoryData({
+      number: numbersMissionMode.targetDistance,
+      text: 'Mission target reached!', // This will be replaced by the actual API text from the hook
+      distanceTraveled: currentDistance,
+    });
+
+    // Clear mission mode
+    setNumbersMissionMode(null);
+    setGameState(GameState.MENU);
+  }, [numbersMissionMode, currentDistance]);
+
+  // Check if Numbers Mission target reached during gameplay
+  useEffect(() => {
+    if (
+      numbersMissionMode?.enabled &&
+      gameState === GameState.PLAYING &&
+      currentDistance >= numbersMissionMode.targetDistance &&
+      !isLevelCompleting
+    ) {
+      setIsLevelCompleting(true);
+      handleNumbersMissionComplete();
+    }
+  }, [currentDistance, numbersMissionMode, gameState, isLevelCompleting, handleNumbersMissionComplete]);
+
   // Mission event handler from GameEngine - Requirements 7.1-7.5
   const handleMissionEvent = useCallback((event: MissionEvent) => {
     processMissionEvent(event);
@@ -1173,13 +1261,39 @@ const App: React.FC = () => {
           onDismiss={handleRateDismiss}
         />
       )}
-      {/* Mission Panel - Requirements 1.1, 2.1 */}
+      {/* Mission Panel - Numbers Mission Only */}
       {showMissionPanel && (
         <MissionPanel
           missionState={missions}
           soundCheckComplete={soundCheckComplete}
           onClaimMission={handleClaimMission}
           onClose={handleCloseMissionPanel}
+          onStartNumbersMission={handleStartNumbersMission}
+        />
+      )}
+      {/* Numbers Mission Victory Screen */}
+      {showNumbersMissionVictory && numbersMissionVictoryData && (
+        <NumbersMissionVictory
+          mission={{
+            number: numbersMissionVictoryData.number,
+            text: numbersMissionVictoryData.text,
+            fetchedAt: Date.now(),
+          }}
+          distanceTraveled={numbersMissionVictoryData.distanceTraveled}
+          onClaim={() => {
+            setShowNumbersMissionVictory(false);
+            setNumbersMissionVictoryData(null);
+            // Rewards are handled by the hook
+          }}
+          onPlayAgain={() => {
+            setShowNumbersMissionVictory(false);
+            setNumbersMissionVictoryData(null);
+            setShowMissionPanel(true); // Open mission panel to start new mission
+          }}
+          onMainMenu={() => {
+            setShowNumbersMissionVictory(false);
+            setNumbersMissionVictoryData(null);
+          }}
         />
       )}
       {/* Mission Complete Modal - Requirements 2.5, 3.3 */}

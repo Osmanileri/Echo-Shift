@@ -321,7 +321,8 @@ export const renderElementalConnector = (
         y1,
         x2,
         y2,
-        elementalIntensity
+        elementalIntensity,
+        time
       );
   }
 
@@ -529,7 +530,8 @@ const renderMonochromeBoltConnector = (
 };
 
 /**
- * MONOCHROME PLASMA CONNECTOR - Fire type thick line in white
+ * MONOCHROME PLASMA CONNECTOR - Fire type with animated flame bursts
+ * Matches Electric bolt intensity with rising flame particles
  */
 const renderMonochromePlasmaConnector = (
   ctx: CanvasRenderingContext2D,
@@ -540,30 +542,68 @@ const renderMonochromePlasmaConnector = (
   elementalIntensity: number,
   time: number
 ): void => {
-  const pulseWidth = 3 + Math.sin(time / 100) * 2 * elementalIntensity;
-  const intensity = 0.6 + elementalIntensity * 0.4;
+  const intensity = 0.7 + elementalIntensity * 0.3;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const segments = 6;
 
-  // Outer glow
-  ctx.lineWidth = pulseWidth + 3;
-  ctx.strokeStyle = `rgba(255, 255, 255, ${intensity * 0.5})`;
-  ctx.shadowColor = `rgba(255, 255, 255, ${intensity})`;
-  ctx.shadowBlur = 15 * elementalIntensity;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  // Core line
-  ctx.lineWidth = pulseWidth;
+  // Main flame core with flickering effect
+  ctx.lineWidth = 3 + Math.sin(time / 80) * 1.5;
   ctx.strokeStyle = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowColor = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowBlur = 20 * elementalIntensity;
+  ctx.lineCap = 'round';
+
+  // Wavy flame path (like Electric but with different pattern)
   ctx.beginPath();
   ctx.moveTo(x1, y1);
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const flameWave = Math.sin(time / 60 + i * 2) * 8 * elementalIntensity;
+    const riseEffect = Math.sin(time / 100 + i) * 4;
+    ctx.lineTo(
+      x1 + dx * t + flameWave * 0.3,
+      y1 + dy * t + riseEffect + (Math.random() - 0.5) * 3
+    );
+  }
   ctx.lineTo(x2, y2);
   ctx.stroke();
+
+  // Secondary flame trail (offset)
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const flameWave = Math.sin(time / 70 + i * 2.5 + 1) * 10 * elementalIntensity;
+    ctx.lineTo(
+      x1 + dx * t + flameWave * 0.4,
+      y1 + dy * t + (Math.random() - 0.5) * 5
+    );
+  }
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Rising ember particles along connector
+  for (let i = 0; i < 4; i++) {
+    const particleT = ((time / 300 + i * 0.25) % 1);
+    const px = x1 + dx * particleT;
+    const py = y1 + dy * particleT - Math.sin(time / 80 + i) * 12;
+    const particleSize = 2 + Math.sin(time / 100 + i) * 1;
+    const particleAlpha = (1 - particleT) * 0.7 * elementalIntensity;
+
+    ctx.beginPath();
+    ctx.arc(px + (Math.random() - 0.5) * 6, py, particleSize, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${particleAlpha})`;
+    ctx.fill();
+  }
 };
 
 /**
- * MONOCHROME TUBE CONNECTOR - Water type flowing tube in white
+ * MONOCHROME TUBE CONNECTOR - Water type with flowing wave motion
+ * Dynamic like Electric but with smooth sinusoidal flow
  */
 const renderMonochromeTubeConnector = (
   ctx: CanvasRenderingContext2D,
@@ -574,41 +614,77 @@ const renderMonochromeTubeConnector = (
   elementalIntensity: number,
   time: number
 ): void => {
-  const flowOffset = (time / 50) % 20;
-  const intensity = 0.5 + elementalIntensity * 0.5;
+  const intensity = 0.6 + elementalIntensity * 0.4;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const segments = 16;
+  const waveFreq = 4;
+  const waveAmp = 8 * elementalIntensity;
 
-  // Create gradient along connector
-  const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
-  gradient.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.8})`);
-  gradient.addColorStop(0.5, `rgba(255, 255, 255, ${intensity})`);
-  gradient.addColorStop(1, `rgba(255, 255, 255, ${intensity * 0.8})`);
+  // Calculate perpendicular direction for waves
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const perpX = -dy / length;
+  const perpY = dx / length;
 
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Main flowing wave
   ctx.lineWidth = 4;
-  ctx.strokeStyle = gradient;
-  ctx.lineCap = "round";
-  ctx.shadowColor = `rgba(255, 255, 255, ${intensity * 0.6})`;
-  ctx.shadowBlur = 12 * elementalIntensity;
+  ctx.strokeStyle = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowColor = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowBlur = 15 * elementalIntensity;
+
   ctx.beginPath();
   ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * waveFreq + time / 150) * waveAmp;
+    const flowWave = Math.sin(t * Math.PI * 2 + time / 200) * 3;
+    ctx.lineTo(
+      x1 + dx * t + perpX * (wave + flowWave),
+      y1 + dy * t + perpY * (wave + flowWave)
+    );
+  }
   ctx.stroke();
 
-  // Inner flow line
+  // Secondary wave (offset phase)
+  ctx.globalAlpha = 0.4;
   ctx.lineWidth = 2;
-  ctx.strokeStyle = `rgba(255, 255, 255, ${intensity * 0.4})`;
-  ctx.globalAlpha = 0.6;
-  ctx.setLineDash([5, 10]);
-  ctx.lineDashOffset = -flowOffset;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * waveFreq + time / 150 + Math.PI) * waveAmp * 0.6;
+    ctx.lineTo(
+      x1 + dx * t + perpX * wave,
+      y1 + dy * t + perpY * wave
+    );
+  }
   ctx.stroke();
-  ctx.setLineDash([]);
   ctx.globalAlpha = 1;
+
+  // Water droplet particles flowing along
+  for (let i = 0; i < 5; i++) {
+    const particleT = ((time / 400 + i * 0.2) % 1);
+    const waveOffset = Math.sin(particleT * Math.PI * waveFreq + time / 150) * waveAmp * 0.5;
+    const px = x1 + dx * particleT + perpX * waveOffset;
+    const py = y1 + dy * particleT + perpY * waveOffset;
+    const particleSize = 2.5 + Math.sin(time / 80 + i) * 0.5;
+    const particleAlpha = Math.sin(particleT * Math.PI) * 0.6 * elementalIntensity;
+
+    if (particleAlpha > 0.1) {
+      ctx.beginPath();
+      ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${particleAlpha})`;
+      ctx.fill();
+    }
+  }
 };
 
 /**
- * MONOCHROME WAVE CONNECTOR - Ghost/Psychic type sinusoidal wave in white
+ * MONOCHROME WAVE CONNECTOR - Ghost/Psychic type ethereal energy
+ * Multi-layered waves with floating spirit orbs
  */
 const renderMonochromeWaveConnector = (
   ctx: CanvasRenderingContext2D,
@@ -619,39 +695,96 @@ const renderMonochromeWaveConnector = (
   elementalIntensity: number,
   time: number
 ): void => {
-  const segments = 20;
-  const dx = (x2 - x1) / segments;
-  const dy = (y2 - y1) / segments;
-  const waveAmplitude = 6 * elementalIntensity;
-  const waveOffset = time / 200;
+  const segments = 24;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const perpX = -dy / length;
+  const perpY = dx / length;
+  const intensity = 0.5 + elementalIntensity * 0.5;
 
-  // Calculate perpendicular direction for wave
-  const length = Math.sqrt(dx * dx + dy * dy) * segments;
-  const perpX = -dy / (length / segments);
-  const perpY = dx / (length / segments);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  const intensity = 0.4 + elementalIntensity * 0.6;
-  ctx.lineWidth = 2;
+  // Layer 1: Primary ethereal wave
+  const wave1Amp = 10 * elementalIntensity;
+  ctx.lineWidth = 3;
   ctx.strokeStyle = `rgba(255, 255, 255, ${intensity})`;
-  ctx.shadowColor = `rgba(255, 255, 255, ${intensity * 0.8})`;
-  ctx.shadowBlur = 8 * elementalIntensity;
+  ctx.shadowColor = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowBlur = 15 * elementalIntensity;
 
   ctx.beginPath();
   ctx.moveTo(x1, y1);
-
   for (let i = 1; i <= segments; i++) {
-    const progress = i / segments;
-    const wave = Math.sin(progress * Math.PI * 4 + waveOffset) * waveAmplitude;
-    const wx = x1 + dx * i + perpX * wave * (length / segments);
-    const wy = y1 + dy * i + perpY * wave * (length / segments);
-    ctx.lineTo(wx, wy);
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * 5 + time / 180) * wave1Amp;
+    const pulse = Math.sin(time / 300 + t * Math.PI * 2) * 3;
+    ctx.lineTo(
+      x1 + dx * t + perpX * (wave + pulse),
+      y1 + dy * t + perpY * (wave + pulse)
+    );
   }
-
   ctx.stroke();
+
+  // Layer 2: Ghost trail (offset wave)
+  ctx.globalAlpha = 0.4;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * 5 + time / 180 + Math.PI * 0.5) * wave1Amp * 0.7;
+    ctx.lineTo(
+      x1 + dx * t + perpX * wave,
+      y1 + dy * t + perpY * wave
+    );
+  }
+  ctx.stroke();
+
+  // Layer 3: Third ghost trail
+  ctx.globalAlpha = 0.2;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * 5 + time / 180 + Math.PI) * wave1Amp * 0.5;
+    ctx.lineTo(
+      x1 + dx * t + perpX * wave,
+      y1 + dy * t + perpY * wave
+    );
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Floating spirit orbs along the path
+  for (let i = 0; i < 4; i++) {
+    const orbT = ((time / 500 + i * 0.25) % 1);
+    const waveOffset = Math.sin(orbT * Math.PI * 5 + time / 180) * wave1Amp * 0.6;
+    const px = x1 + dx * orbT + perpX * waveOffset;
+    const py = y1 + dy * orbT + perpY * waveOffset;
+    const orbSize = 3 + Math.sin(time / 150 + i * 2) * 1;
+    const orbAlpha = Math.sin(orbT * Math.PI) * 0.7 * elementalIntensity;
+
+    if (orbAlpha > 0.15) {
+      // Outer glow
+      ctx.beginPath();
+      ctx.arc(px, py, orbSize + 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${orbAlpha * 0.3})`;
+      ctx.fill();
+
+      // Core orb
+      ctx.beginPath();
+      ctx.arc(px, py, orbSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${orbAlpha})`;
+      ctx.fill();
+    }
+  }
 };
 
 /**
- * MONOCHROME STANDARD CONNECTOR - Simple white line with intensity
+ * MONOCHROME STANDARD CONNECTOR - Energy pulse line with particles
+ * Used for Grass, Rock, Ground, and other types
  */
 const renderMonochromeStandardConnector = (
   ctx: CanvasRenderingContext2D,
@@ -659,17 +792,55 @@ const renderMonochromeStandardConnector = (
   y1: number,
   x2: number,
   y2: number,
-  elementalIntensity: number
+  elementalIntensity: number,
+  time: number = Date.now()
 ): void => {
-  const intensity = 0.3 + elementalIntensity * 0.7;
-  ctx.lineWidth = 3;
+  const intensity = 0.4 + elementalIntensity * 0.6;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const perpX = -dy / length;
+  const perpY = dx / length;
+
+  ctx.lineCap = 'round';
+
+  // Main connector with subtle pulse
+  const pulseWidth = 2.5 + Math.sin(time / 120) * 0.8;
+  ctx.lineWidth = pulseWidth;
   ctx.strokeStyle = `rgba(255, 255, 255, ${intensity})`;
-  ctx.shadowColor = `rgba(255, 255, 255, ${intensity * 0.5})`;
-  ctx.shadowBlur = 10 * elementalIntensity;
+  ctx.shadowColor = `rgba(255, 255, 255, ${intensity})`;
+  ctx.shadowBlur = 12 * elementalIntensity;
+
+  // Slight wave motion for organic feel
+  const segments = 8;
   ctx.beginPath();
   ctx.moveTo(x1, y1);
+  for (let i = 1; i < segments; i++) {
+    const t = i / segments;
+    const wave = Math.sin(t * Math.PI * 2 + time / 200) * 4 * elementalIntensity;
+    ctx.lineTo(
+      x1 + dx * t + perpX * wave * 0.3,
+      y1 + dy * t + perpY * wave * 0.3
+    );
+  }
   ctx.lineTo(x2, y2);
   ctx.stroke();
+
+  // Energy pulse particles
+  for (let i = 0; i < 3; i++) {
+    const particleT = ((time / 350 + i * 0.33) % 1);
+    const px = x1 + dx * particleT;
+    const py = y1 + dy * particleT;
+    const particleSize = 2 + Math.sin(time / 100 + i) * 0.5;
+    const particleAlpha = Math.sin(particleT * Math.PI) * 0.5 * elementalIntensity;
+
+    if (particleAlpha > 0.1) {
+      ctx.beginPath();
+      ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${particleAlpha})`;
+      ctx.fill();
+    }
+  }
 };
 
 /**
@@ -737,8 +908,296 @@ export const renderElementalParticles = (
   ctx.restore();
 };
 
+/**
+ * Render elemental counter-attack projectile from orb to enemy
+ * Used when Pokemon defends player against Glitch Dart attacks
+ */
+export const renderElementalProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  pokemonType: string,
+  time: number = Date.now()
+): void => {
+  const style = getElementalStyle(pokemonType);
+  const connectorStyle = style.connectorStyle;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Neon glow effect (more aggressive than connector)
+  ctx.shadowBlur = 35;
+  ctx.shadowColor = style.color;
+  ctx.strokeStyle = style.color;
+
+  switch (connectorStyle) {
+    case 'bolt':
+      // ⚡ ELECTRIC: Zigzag lightning strike
+      renderLightningProjectile(ctx, startX, startY, endX, endY, style, time);
+      break;
+    case 'plasma':
+      // 🔥 FIRE: Flaming huzma with gradient
+      renderFlameProjectile(ctx, startX, startY, endX, endY, style, time);
+      break;
+    case 'tube':
+      // 💧 WATER: High-pressure water jet
+      renderWaterJetProjectile(ctx, startX, startY, endX, endY, style, time);
+      break;
+    case 'wave':
+      // 👻 GHOST/PSYCHIC: Ethereal energy blast
+      renderEtherealProjectile(ctx, startX, startY, endX, endY, style, time);
+      break;
+    default:
+      // 🌿 STANDARD: Energy arrow
+      renderEnergyArrowProjectile(ctx, startX, startY, endX, endY, style, time);
+  }
+
+  ctx.restore();
+};
+
+/**
+ * Lightning bolt projectile for Electric types
+ */
+const renderLightningProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number, startY: number,
+  endX: number, endY: number,
+  style: ElementalStyle,
+  time: number
+): void => {
+  const segments = 6;
+  const dx = (endX - startX) / segments;
+  const dy = (endY - startY) / segments;
+
+  // Main lightning bolt (thick, jagged)
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.shadowColor = style.color;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+
+  for (let i = 1; i < segments; i++) {
+    const jitterX = (Math.random() - 0.5) * 40;
+    const jitterY = (Math.random() - 0.5) * 40;
+    ctx.lineTo(startX + dx * i + jitterX, startY + dy * i + jitterY);
+  }
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Secondary bolt (thinner, offset)
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = style.color;
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  for (let i = 1; i < segments; i++) {
+    const jitterX = (Math.random() - 0.5) * 60;
+    const jitterY = (Math.random() - 0.5) * 60;
+    ctx.lineTo(startX + dx * i + jitterX, startY + dy * i + jitterY);
+  }
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Impact flash at target
+  ctx.beginPath();
+  ctx.arc(endX, endY, 20, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+};
+
+/**
+ * Flame huzma projectile for Fire types
+ */
+const renderFlameProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number, startY: number,
+  endX: number, endY: number,
+  style: ElementalStyle,
+  time: number
+): void => {
+  // Gradient from orange to yellow/white
+  const gradient = ctx.createLinearGradient(startX, startY, endX, endY);
+  gradient.addColorStop(0, style.color);
+  gradient.addColorStop(0.6, style.secondaryColor);
+  gradient.addColorStop(1, '#FFFFFF');
+
+  // Main flame beam (curved)
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+
+  // Slight curve to make it feel more dynamic
+  const midX = (startX + endX) / 2 + (Math.random() - 0.5) * 30;
+  const midY = (startY + endY) / 2 + (Math.random() - 0.5) * 30;
+  ctx.quadraticCurveTo(midX, midY, endX, endY);
+  ctx.stroke();
+
+  // Inner core (white hot)
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.quadraticCurveTo(midX, midY, endX, endY);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Impact explosion
+  ctx.beginPath();
+  ctx.arc(endX, endY, 25, 0, Math.PI * 2);
+  ctx.fillStyle = style.secondaryColor;
+  ctx.globalAlpha = 0.7;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+};
+
+/**
+ * Water jet projectile for Water types
+ */
+const renderWaterJetProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number, startY: number,
+  endX: number, endY: number,
+  style: ElementalStyle,
+  time: number
+): void => {
+  // Main water stream
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = style.color;
+  ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Inner flow lines (dashed for motion)
+  ctx.setLineDash([15, 10]);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.globalAlpha = 1;
+  ctx.lineDashOffset = -time / 20;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Droplet particles along path
+  const dx = endX - startX;
+  const dy = endY - startY;
+  for (let i = 0; i < 6; i++) {
+    const t = i / 6;
+    const px = startX + dx * t + (Math.random() - 0.5) * 10;
+    const py = startY + dy * t + (Math.random() - 0.5) * 10;
+    ctx.beginPath();
+    ctx.arc(px, py, 3 + Math.random() * 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.fill();
+  }
+
+  // Splash at impact
+  ctx.beginPath();
+  ctx.arc(endX, endY, 18, 0, Math.PI * 2);
+  ctx.fillStyle = style.color;
+  ctx.globalAlpha = 0.5;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+};
+
+/**
+ * Ethereal energy projectile for Ghost/Psychic types
+ */
+const renderEtherealProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number, startY: number,
+  endX: number, endY: number,
+  style: ElementalStyle,
+  time: number
+): void => {
+  const segments = 20;
+  const dx = (endX - startX) / segments;
+  const dy = (endY - startY) / segments;
+  const length = Math.sqrt(dx * dx + dy * dy) * segments;
+  const perpX = -dy / (length / segments);
+  const perpY = dx / (length / segments);
+
+  // Wave pattern beam
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = style.color;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+
+  for (let i = 1; i <= segments; i++) {
+    const wave = Math.sin(i / 2 + time / 50) * 15;
+    ctx.lineTo(
+      startX + dx * i + perpX * wave,
+      startY + dy * i + perpY * wave
+    );
+  }
+  ctx.stroke();
+
+  // Ghost orbs along path
+  for (let i = 0; i < 4; i++) {
+    const t = (i + 0.5) / 4;
+    const px = startX + (endX - startX) * t;
+    const py = startY + (endY - startY) * t;
+    ctx.beginPath();
+    ctx.arc(px, py, 6 + Math.sin(time / 100 + i) * 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + Math.sin(time / 150 + i) * 0.2})`;
+    ctx.fill();
+  }
+
+  // Impact glow
+  ctx.beginPath();
+  ctx.arc(endX, endY, 15, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.globalAlpha = 0.6;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+};
+
+/**
+ * Energy arrow projectile for standard types
+ */
+const renderEnergyArrowProjectile = (
+  ctx: CanvasRenderingContext2D,
+  startX: number, startY: number,
+  endX: number, endY: number,
+  style: ElementalStyle,
+  time: number
+): void => {
+  // Main beam
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = style.color;
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Inner white core
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // Impact flash
+  ctx.beginPath();
+  ctx.arc(endX, endY, 12, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+};
+
 // Particle rendering helper functions
 
+/**
+ * FIRE PARTICLES - Rising embers with flickering trails
+ */
 const renderFireParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -747,22 +1206,52 @@ const renderFireParticles = (
   style: ElementalStyle,
   time: number
 ) => {
-  for (let i = 0; i < 3; i++) {
-    const angle = (time / 500 + i * 2) % (Math.PI * 2);
-    const dist = radius + 5 + Math.sin(time / 200 + i) * 5;
-    const px = x + Math.cos(angle) * dist;
-    const py = y + Math.sin(angle) * dist - Math.sin(time / 300 + i) * 10;
+  // Multiple rising ember particles
+  for (let i = 0; i < 5; i++) {
+    const baseAngle = (time / 400 + i * 1.3) % (Math.PI * 2);
+    const riseOffset = Math.sin(time / 150 + i * 2) * 8;
+    const dist = radius + 6 + Math.sin(time / 200 + i) * 4;
+    const px = x + Math.cos(baseAngle) * dist + (Math.random() - 0.5) * 3;
+    const py = y + Math.sin(baseAngle) * dist - riseOffset - Math.abs(Math.sin(time / 100 + i)) * 6;
+    const size = 2 + Math.sin(time / 80 + i) * 1;
 
+    // Outer glow
     ctx.beginPath();
-    ctx.arc(px, py, 2, 0, Math.PI * 2);
+    ctx.arc(px, py, size + 2, 0, Math.PI * 2);
+    ctx.fillStyle = style.glowColor;
+    ctx.globalAlpha = 0.3 + Math.sin(time / 60 + i) * 0.15;
+    ctx.fill();
+
+    // Core ember
+    ctx.beginPath();
+    ctx.arc(px, py, size, 0, Math.PI * 2);
     ctx.fillStyle = i % 2 === 0 ? style.color : style.secondaryColor;
-    ctx.globalAlpha = 0.6 + Math.sin(time / 100 + i) * 0.3;
+    ctx.globalAlpha = 0.7 + Math.sin(time / 80 + i) * 0.2;
     ctx.shadowColor = style.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 12;
+    ctx.fill();
+  }
+
+  // Flickering sparks
+  if (Math.random() > 0.6) {
+    const sparkAngle = Math.random() * Math.PI * 2;
+    const sparkDist = radius + 10 + Math.random() * 8;
+    ctx.beginPath();
+    ctx.arc(
+      x + Math.cos(sparkAngle) * sparkDist,
+      y + Math.sin(sparkAngle) * sparkDist - Math.random() * 10,
+      1 + Math.random(),
+      0, Math.PI * 2
+    );
+    ctx.fillStyle = style.secondaryColor;
+    ctx.globalAlpha = 0.8;
     ctx.fill();
   }
 };
 
+/**
+ * ELECTRIC PARTICLES - Zigzag lightning sparks (Reference - already good)
+ */
 const renderElectricParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -772,25 +1261,50 @@ const renderElectricParticles = (
   time: number
 ) => {
   ctx.strokeStyle = style.color;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.5 + Math.random() * 0.3;
+  ctx.lineWidth = 1.5;
   ctx.shadowColor = style.color;
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 12;
 
-  if (Math.random() > 0.7) {
-    const startAngle = Math.random() * Math.PI * 2;
-    const sx = x + Math.cos(startAngle) * radius;
-    const sy = y + Math.sin(startAngle) * radius;
-    const ex = sx + (Math.random() - 0.5) * 20;
-    const ey = sy + (Math.random() - 0.5) * 20;
+  // Multiple lightning arcs
+  for (let j = 0; j < 2; j++) {
+    if (Math.random() > 0.5) {
+      const startAngle = Math.random() * Math.PI * 2;
+      const sx = x + Math.cos(startAngle) * radius;
+      const sy = y + Math.sin(startAngle) * radius;
+
+      ctx.globalAlpha = 0.6 + Math.random() * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+
+      // Create zigzag path
+      let cx = sx, cy = sy;
+      for (let i = 0; i < 3; i++) {
+        cx += (Math.random() - 0.5) * 18;
+        cy += (Math.random() - 0.5) * 18;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Orbiting spark particles
+  for (let i = 0; i < 3; i++) {
+    const angle = (time / 150 + i * 2.1) % (Math.PI * 2);
+    const dist = radius + 5 + Math.sin(time / 100 + i * 3) * 4;
+    const px = x + Math.cos(angle) * dist;
+    const py = y + Math.sin(angle) * dist;
 
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
+    ctx.rect(px - 1.5, py - 1.5, 3, 3);
+    ctx.fillStyle = style.color;
+    ctx.globalAlpha = 0.7 + Math.sin(time / 50 + i) * 0.3;
+    ctx.fill();
   }
 };
 
+/**
+ * ETHEREAL PARTICLES - Ghost/Psychic floating wisps
+ */
 const renderEtherealParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -799,22 +1313,52 @@ const renderEtherealParticles = (
   style: ElementalStyle,
   time: number
 ) => {
-  for (let i = 0; i < 4; i++) {
-    const angle = (time / 800 + i * 1.5) % (Math.PI * 2);
-    const dist = radius + 8 + Math.sin(time / 400 + i) * 3;
+  // Orbiting spirit wisps
+  for (let i = 0; i < 5; i++) {
+    const angle = (time / 800 + i * 1.25) % (Math.PI * 2);
+    const pulseOffset = Math.sin(time / 300 + i * 2) * 5;
+    const dist = radius + 8 + pulseOffset;
     const px = x + Math.cos(angle) * dist;
     const py = y + Math.sin(angle) * dist;
+    const size = 3.5 - i * 0.4;
 
+    // Ethereal trail
+    const trailAngle = angle - 0.3;
+    const trailDist = dist - 3;
     ctx.beginPath();
-    ctx.arc(px, py, 3 - i * 0.5, 0, Math.PI * 2);
+    ctx.moveTo(px, py);
+    ctx.lineTo(
+      x + Math.cos(trailAngle) * trailDist,
+      y + Math.sin(trailAngle) * trailDist
+    );
+    ctx.strokeStyle = style.glowColor;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.2;
+    ctx.stroke();
+
+    // Core wisp
+    ctx.beginPath();
+    ctx.arc(px, py, size, 0, Math.PI * 2);
     ctx.fillStyle = style.color;
-    ctx.globalAlpha = 0.4 - i * 0.1;
+    ctx.globalAlpha = 0.5 - i * 0.08;
     ctx.shadowColor = style.color;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 15;
     ctx.fill();
   }
+
+  // Central pulsing aura
+  const auraSize = radius + 5 + Math.sin(time / 200) * 3;
+  ctx.beginPath();
+  ctx.arc(x, y, auraSize, 0, Math.PI * 2);
+  ctx.strokeStyle = style.glowColor;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.15 + Math.sin(time / 300) * 0.1;
+  ctx.stroke();
 };
 
+/**
+ * WATER PARTICLES - Orbiting droplets with ripple effect
+ */
 const renderWaterParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -824,22 +1368,64 @@ const renderWaterParticles = (
   type: string,
   time: number
 ) => {
-  for (let i = 0; i < 3; i++) {
-    const angle = (time / 600 + i * 2.1) % (Math.PI * 2);
-    const dist = radius + 6;
+  const isIce = type === "ice";
+
+  // Orbiting water droplets
+  for (let i = 0; i < 4; i++) {
+    const angle = (time / 500 + i * 1.6) % (Math.PI * 2);
+    const waveOffset = Math.sin(time / 200 + i * 2) * 4;
+    const dist = radius + 7 + waveOffset;
     const px = x + Math.cos(angle) * dist;
     const py = y + Math.sin(angle) * dist;
+    const size = isIce ? 2.5 : 3;
+
+    // Droplet gradient effect
+    const gradient = ctx.createRadialGradient(px - 1, py - 1, 0, px, py, size);
+    gradient.addColorStop(0, '#FFFFFF');
+    gradient.addColorStop(0.5, style.color);
+    gradient.addColorStop(1, isIce ? style.secondaryColor : style.color);
 
     ctx.beginPath();
-    ctx.arc(px, py, 2, 0, Math.PI * 2);
-    ctx.fillStyle = type === "ice" ? style.secondaryColor : style.color;
-    ctx.globalAlpha = 0.6;
+    ctx.arc(px, py, size, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.globalAlpha = 0.7;
     ctx.shadowColor = style.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+  }
+
+  // Ripple rings
+  const ripplePhase = (time / 300) % 1;
+  const rippleRadius = radius + 5 + ripplePhase * 15;
+  ctx.beginPath();
+  ctx.arc(x, y, rippleRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = (1 - ripplePhase) * 0.3;
+  ctx.stroke();
+
+  // Ice crystals for ice type
+  if (isIce && Math.random() > 0.85) {
+    const crystalAngle = Math.random() * Math.PI * 2;
+    const crystalDist = radius + 12 + Math.random() * 5;
+    const cx = x + Math.cos(crystalAngle) * crystalDist;
+    const cy = y + Math.sin(crystalAngle) * crystalDist;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 3);
+    ctx.lineTo(cx + 2, cy);
+    ctx.lineTo(cx, cy + 3);
+    ctx.lineTo(cx - 2, cy);
+    ctx.closePath();
+    ctx.fillStyle = style.secondaryColor;
+    ctx.globalAlpha = 0.6;
     ctx.fill();
   }
 };
 
+/**
+ * GRASS PARTICLES - Floating leaves with wind swirl
+ */
 const renderGrassParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -848,23 +1434,54 @@ const renderGrassParticles = (
   style: ElementalStyle,
   time: number
 ) => {
-  for (let i = 0; i < 3; i++) {
-    const baseAngle = (time / 700 + i * 2.5) % (Math.PI * 2);
-    const floatOffset = Math.sin(time / 300 + i * 1.5) * 5;
-    const dist = radius + 8 + floatOffset;
-    const px = x + Math.cos(baseAngle) * dist;
-    const py = y + Math.sin(baseAngle) * dist;
+  // Swirling leaf particles
+  for (let i = 0; i < 4; i++) {
+    const baseAngle = (time / 600 + i * 1.5) % (Math.PI * 2);
+    const floatY = Math.sin(time / 250 + i * 2) * 6;
+    const floatX = Math.cos(time / 300 + i * 1.5) * 3;
+    const dist = radius + 8 + Math.sin(time / 400 + i) * 3;
+    const px = x + Math.cos(baseAngle) * dist + floatX;
+    const py = y + Math.sin(baseAngle) * dist + floatY;
+    const rotation = baseAngle + time / 200;
 
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(rotation);
+
+    // Leaf shape
     ctx.beginPath();
-    ctx.ellipse(px, py, 3, 1.5, baseAngle, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 4, 2, 0, 0, Math.PI * 2);
     ctx.fillStyle = i % 2 === 0 ? style.color : style.secondaryColor;
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.6 + Math.sin(time / 150 + i) * 0.2;
     ctx.shadowColor = style.color;
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 8;
     ctx.fill();
+
+    // Leaf vein
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(3, 0);
+    ctx.strokeStyle = style.secondaryColor;
+    ctx.lineWidth = 0.5;
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+
+    ctx.restore();
   }
+
+  // Nature energy ring
+  const ringPulse = Math.sin(time / 400) * 0.15;
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 4 + ringPulse * radius, 0, Math.PI * 2);
+  ctx.strokeStyle = style.glowColor;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.2;
+  ctx.stroke();
 };
 
+/**
+ * DRAGON PARTICLES - Dual spiraling mystical flames
+ */
 const renderDragonParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -873,22 +1490,56 @@ const renderDragonParticles = (
   style: ElementalStyle,
   time: number
 ) => {
-  for (let i = 0; i < 4; i++) {
-    const angle = (time / 400 + i * 1.5) % (Math.PI * 2);
-    const dist = radius + 10 + Math.sin(time / 200 + i) * 5;
-    const px = x + Math.cos(angle) * dist;
-    const py = y + Math.sin(angle) * dist;
+  // Dual spiral flames
+  for (let spiral = 0; spiral < 2; spiral++) {
+    const spiralOffset = spiral * Math.PI;
 
+    for (let i = 0; i < 4; i++) {
+      const angle = (time / 300 + i * 0.6 + spiralOffset) % (Math.PI * 2);
+      const dist = radius + 6 + i * 2 + Math.sin(time / 150 + i) * 3;
+      const px = x + Math.cos(angle) * dist;
+      const py = y + Math.sin(angle) * dist;
+      const size = 3 - i * 0.4;
+
+      // Flame glow
+      ctx.beginPath();
+      ctx.arc(px, py, size + 2, 0, Math.PI * 2);
+      ctx.fillStyle = style.glowColor;
+      ctx.globalAlpha = 0.25 - i * 0.05;
+      ctx.fill();
+
+      // Flame core
+      ctx.beginPath();
+      ctx.arc(px, py, size, 0, Math.PI * 2);
+      ctx.fillStyle = (i + spiral) % 2 === 0 ? style.color : style.secondaryColor;
+      ctx.globalAlpha = 0.8 - i * 0.15;
+      ctx.shadowColor = style.color;
+      ctx.shadowBlur = 18;
+      ctx.fill();
+    }
+  }
+
+  // Dragon energy burst
+  if (Math.random() > 0.92) {
+    const burstAngle = Math.random() * Math.PI * 2;
+    const burstDist = radius + 15 + Math.random() * 10;
     ctx.beginPath();
-    ctx.arc(px, py, 2.5 - i * 0.3, 0, Math.PI * 2);
-    ctx.fillStyle = i % 2 === 0 ? style.color : style.secondaryColor;
-    ctx.globalAlpha = 0.7 - i * 0.1;
-    ctx.shadowColor = style.color;
-    ctx.shadowBlur = 15;
+    ctx.arc(
+      x + Math.cos(burstAngle) * burstDist,
+      y + Math.sin(burstAngle) * burstDist,
+      2,
+      0, Math.PI * 2
+    );
+    ctx.fillStyle = style.color;
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 20;
     ctx.fill();
   }
 };
 
+/**
+ * DEFAULT PARTICLES - Energy sparks for other types
+ */
 const renderDefaultParticles = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -897,13 +1548,29 @@ const renderDefaultParticles = (
   style: ElementalStyle,
   time: number
 ) => {
+  // Orbiting energy particles
+  for (let i = 0; i < 3; i++) {
+    const angle = (time / 500 + i * 2.1) % (Math.PI * 2);
+    const dist = radius + 6 + Math.sin(time / 300 + i) * 3;
+    const px = x + Math.cos(angle) * dist;
+    const py = y + Math.sin(angle) * dist;
+
+    ctx.beginPath();
+    ctx.arc(px, py, 2, 0, Math.PI * 2);
+    ctx.fillStyle = style.color;
+    ctx.globalAlpha = 0.5 + Math.sin(time / 150 + i) * 0.2;
+    ctx.shadowColor = style.color;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+
+  // Pulsing aura ring
+  const auraPulse = Math.sin(time / 350);
   ctx.beginPath();
-  ctx.arc(x, y, radius + 3 + Math.sin(time / 400) * 2, 0, Math.PI * 2);
+  ctx.arc(x, y, radius + 4 + auraPulse * 2, 0, Math.PI * 2);
   ctx.strokeStyle = style.color;
-  ctx.globalAlpha = 0.3;
-  ctx.lineWidth = 1;
-  ctx.shadowColor = style.color;
-  ctx.shadowBlur = 8;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.25 + auraPulse * 0.1;
   ctx.stroke();
 };
 

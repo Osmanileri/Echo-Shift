@@ -528,3 +528,37 @@ export interface GlitchConfig {
   spawnClearance: number;        // 150px
   colors: string[];              // Flicker colors
 }
+
+// ============================================================================
+// Numbers Mission Types - Dynamic API-driven missions
+// ============================================================================
+
+/**
+ * Numbers Mission data from API
+ */
+export interface NumbersMissionData {
+  number: number;                 // Target distance (200-5000)
+  text: string;                   // Trivia text about the number
+  fetchedAt: number;              // Timestamp when fetched
+}
+
+/**
+ * Numbers Mission state tracking
+ */
+export interface NumbersMissionState {
+  isActive: boolean;              // Currently playing a numbers mission
+  isAvailable: boolean;           // Can start a new mission (no cooldown)
+  currentMission: NumbersMissionData | null;
+  currentDistance: number;        // Progress toward target
+  cooldownUntil: number | null;   // Timestamp when cooldown ends
+  isCompleted: boolean;           // Just completed, showing victory
+  selectedTrialPokemon: string | null; // ID of selected trial pokemon
+}
+
+/**
+ * Numbers Mission rewards
+ */
+export interface NumbersMissionRewards {
+  xp: number;
+  gems: number;
+}

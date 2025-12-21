@@ -141,6 +141,8 @@ import * as SpiritRenderer from "../systems/spiritRenderer";
 import { SpriteManager } from "../systems/spriteManager";
 import * as TrailingSoul from "../systems/trailingSoul";
 import type { GlitchModeState, GlitchShard } from "../types";
+// Enemy Manager System - Glitch Dart attacks
+import * as EnemyManager from "../systems/EnemyManager";
 
 
 // Campaign mode configuration for mechanics enable/disable
@@ -610,6 +612,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
     GlitchVFX.createBurnEffectState()
   );
 
+  // Enemy Manager State - Glitch Dart attacks
+  const enemyManagerState = useRef<EnemyManager.EnemyManagerState | null>(null);
+  // Track if counter-attack was rendered this frame (to prevent double-rendering)
+  const counterAttackActive = useRef<boolean>(false);
+
 
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
@@ -879,6 +886,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
     lastDiamondCollectTime.current = 0;
     diamondStreak.current = 0;
     GlitchSystem.clearInputBuffer();
+
+    // Reset Enemy Manager State - Glitch Dart attacks
+    enemyManagerState.current = EnemyManager.createEnemyManagerState(
+      window.innerWidth,
+      window.innerHeight
+    );
+    counterAttackActive.current = false;
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -1120,11 +1134,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
   // Swap Effect - Requirements 12.2: Emit burst of particles at swap location
   const createSwapEffect = (x: number, y: number) => {
-    // Use new ParticleSystem for burst effect
-    const accentColor = getColor("accent");
-    ParticleSystem.emitBurst(x, y, activeCharacter?.types[0] || 'normal', 12);
+    // Only emit spirit particles if a character is equipped
+    if (activeCharacter) {
+      // Use new ParticleSystem for burst effect with character's type
+      ParticleSystem.emitBurst(x, y, activeCharacter.types[0] || 'normal', 12);
+    }
 
-    // Also add to legacy particles for backward compatibility
+    // Legacy cyan particles for backward compatibility (always shown)
+    const accentColor = getColor("accent");
     for (let i = 0; i < 8; i++) {
       particles.current.push({
         x: x + (Math.random() - 0.5) * 20,
@@ -2091,6 +2108,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Store tension intensity for visual effects
       tensionIntensityRef.current = tensionIntensity;
 
+      // NOTE: Enemy Manager update is done after orb definitions (see line ~2800)
+
       // --- CLAMP PLAYER POSITION - Requirements 4.5 ---
       const halfLen = currentConnectorLength.current / 2;
       const radius = INITIAL_CONFIG.orbRadius;
@@ -2586,14 +2605,169 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Trail Particles - Requirements 12.1: Emit trail particles based on movement speed
       // Emit converging trail particles: top orb particles go down, bottom orb particles go up
       // This creates a V-shaped trail that meets at the connector level
-      const isWhiteTop = whiteOrbY < blackOrbY;
-      const activeType = activeCharacter?.types[0] || 'normal';
+      // ONLY emit particles when a Spirit character is equipped (not in default state)
+      if (activeCharacter) {
+        const isWhiteTop = whiteOrbY < blackOrbY;
+        const activeType = activeCharacter.types[0] || 'normal';
 
-      // White Orb emission
-      ParticleSystem.emit(whiteOrbX - 5, whiteOrbY, activeType, isWhiteTop);
+        // White Orb emission
+        ParticleSystem.emit(whiteOrbX - 5, whiteOrbY, activeType, isWhiteTop);
 
-      // Black Orb emission (opposite direction)
-      ParticleSystem.emit(blackOrbX - 5, blackOrbY, activeType, !isWhiteTop);
+        // Black Orb emission (opposite direction)
+        ParticleSystem.emit(blackOrbX - 5, blackOrbY, activeType, !isWhiteTop);
+      }
+
+      // --- ENEMY MANAGER UPDATE - Glitch Dart System ---
+      // Update enemy state: tracking → locked → firing → cooldown
+      if (enemyManagerState.current) {
+        // Get current distance for spawn threshold check
+        const currentDistance = distanceStateRef.current.currentDistance || 0;
+
+        // Player Y in screen coordinates (center of connector)
+        const playerYScreen = playerY.current * height;
+
+        // Calculate deltaTime for enemy update (ms since last frame)
+        const enemyDeltaTime = 16; // Approximate 60fps
+
+        // Update enemy state machine
+        enemyManagerState.current = EnemyManager.updateEnemy(
+          enemyManagerState.current,
+          enemyDeltaTime,
+          playerYScreen,
+          width,
+          height,
+          currentDistance,
+          score.current
+        );
+
+        // Reset counter-attack flag for new frame
+        counterAttackActive.current = false;
+
+        // Check for counter-attack if Pokemon is equipped and dart is firing
+        const dartPos = EnemyManager.getDartPosition(enemyManagerState.current);
+        if (dartPos && activeCharacter) {
+          // Check if dart is within counter-attack range of either orb
+          const whiteOrbClose = EnemyManager.isDartInCounterRange(
+            enemyManagerState.current,
+            whiteOrb.x,
+            whiteOrb.y
+          );
+          const blackOrbClose = EnemyManager.isDartInCounterRange(
+            enemyManagerState.current,
+            blackOrb.x,
+            blackOrb.y
+          );
+
+          if (whiteOrbClose || blackOrbClose) {
+            // COUNTER-ATTACK! Pokemon defends the player
+            counterAttackActive.current = true;
+
+            // Store counter positions BEFORE destroying dart
+            const counterRenderData = {
+              startX: whiteOrbClose ? whiteOrb.x : blackOrb.x,
+              startY: whiteOrbClose ? whiteOrb.y : blackOrb.y,
+              endX: dartPos.x,
+              endY: dartPos.y,
+              type: activeCharacter.types[0] || 'normal',
+            };
+
+            // Destroy the dart
+            enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+            (enemyManagerState.current as any).counterAttackRender = counterRenderData;
+
+            // Visual feedback
+            ParticleSystem.emitBurst(dartPos.x, dartPos.y, activeCharacter.types[0] || 'normal', 15);
+
+            // Screen shake and haptic
+            ScreenShake.triggerNearMiss();
+            getHapticSystem().trigger('medium');
+
+            // Audio feedback
+            AudioSystem.playShieldBlock();
+
+            // Score popup
+            scorePopups.current.push({
+              x: dartPos.x,
+              y: dartPos.y - 20,
+              text: '⚡ COUNTER!',
+              color: '#FFD700',
+              life: 1.5,
+              vy: -2,
+            });
+          }
+        }
+
+        // Check for collision (if no Pokemon or dart missed counter window)
+        if (!counterAttackActive.current && enemyManagerState.current.dart.state === 'firing') {
+          const whiteHit = EnemyManager.checkDartCollision(
+            enemyManagerState.current,
+            whiteOrb.x,
+            whiteOrb.y,
+            whiteOrb.radius
+          );
+          const blackHit = EnemyManager.checkDartCollision(
+            enemyManagerState.current,
+            blackOrb.x,
+            blackOrb.y,
+            blackOrb.radius
+          );
+
+          if (whiteHit || blackHit) {
+            // Check for shield first
+            if (shieldChargesRemaining.current > 0) {
+              shieldChargesRemaining.current -= 1;
+              shieldInvincibleUntil.current = Date.now() + 2000 + spiritModifiers.shieldTimeBonus;
+
+              // Reset dart
+              enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+
+              // Visual feedback
+              const hitOrb = whiteHit ? whiteOrb : blackOrb;
+              ParticleSystem.emitBurst(hitOrb.x, hitOrb.y, 'electric', 10);
+              ScreenShake.triggerNearMiss();
+              getHapticSystem().trigger('medium');
+              AudioSystem.playShieldBlock();
+
+              scorePopups.current.push({
+                x: hitOrb.x,
+                y: hitOrb.y - 20,
+                text: '🛡️ SHIELD',
+                color: '#00F0FF',
+                life: 1.0,
+                vy: -2,
+              });
+            } else if (!activeCharacter) {
+              // No shield, no Pokemon = take damage (reset streak, not game over)
+              const hitOrb = whiteHit ? whiteOrb : blackOrb;
+              createExplosion(hitOrb.x, hitOrb.y, '#FF0000');
+
+              // Reset dart
+              enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+
+              // Reset streaks
+              nearMissState.current = createInitialNearMissState();
+              onNearMissStateUpdate?.(0);
+              rhythmState.current = createInitialRhythmState();
+              onRhythmStateUpdate?.(1, 0);
+
+              // Visual/audio feedback
+              ScreenShake.triggerCollision();
+              getHapticSystem().trigger('heavy');
+              AudioSystem.playGlitchDamage();
+
+              scorePopups.current.push({
+                x: hitOrb.x,
+                y: hitOrb.y - 20,
+                text: '💥 HIT!',
+                color: '#FF0000',
+                life: 1.0,
+                vy: -2,
+              });
+            }
+          }
+        }
+        // NOTE: Enemy drawing moved to DRAW section (after orbs) to prevent being covered by background
+      }
 
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
       // Get dash speed multiplier for glitch tokens
@@ -4622,7 +4796,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       ctx.save();
       ctx.globalAlpha = visualIntensity;
-      ParticleSystem.render(ctx);
+      // Only render spirit particles if a character is equipped
+      if (activeCharacter) {
+        ParticleSystem.render(ctx);
+      }
       ctx.globalAlpha = 1.0;
 
       // Render legacy particles with Zen Mode intensity
@@ -5353,6 +5530,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
         orb: { x: number; y: number; radius: number; color: string },
         isWhite: boolean
       ) => {
+        // Save canvas state to prevent shadow bleeding from other rendering
+        ctx.save();
+
+        // CRITICAL: Reset ALL shadow effects at the very start
+        // This ensures no glow bleeds from previous rendering operations
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.globalCompositeOperation = 'source-over';
+
         const skin = getSkinById(equippedSkin);
 
         // Use isWhite to determine color identity (topOrb vs bottomOrb)
@@ -5423,6 +5611,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Her zaman içi dolu çiz (orb rengiyle), border SADECE gerektiğinde
           if (skin.id === "default") {
+            // Reset shadow effects for clean default orb rendering
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+
             ctx.beginPath();
             ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
             ctx.fillStyle = orbFillColor;
@@ -5524,6 +5716,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Those emissions correctly use isTopOrb for V-shaped convergence
           }
         }
+
+        // Restore canvas state
+        ctx.restore();
       };
 
       // Ghost Racer Rendering - Requirements 15.1, 15.2, 15.3
@@ -5614,6 +5809,28 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.shadowBlur = 15;
           ctx.fillText('FINISH', finishLineX.current, height / 2 - 180);
           ctx.restore();
+        }
+      }
+
+      // --- ENEMY RENDERING - Glitch Dart System ---
+      // Draw enemy AFTER other game elements so it's visible on top
+      if (enemyManagerState.current && enemyManagerState.current.isActive) {
+        EnemyManager.drawEnemy(ctx, enemyManagerState.current, width);
+
+        // Draw counter-attack projectile if active
+        const counterRender = (enemyManagerState.current as any).counterAttackRender;
+        if (counterRender && counterAttackActive.current) {
+          SpiritRenderer.renderElementalProjectile(
+            ctx,
+            counterRender.startX,
+            counterRender.startY,
+            counterRender.endX,
+            counterRender.endY,
+            counterRender.type,
+            Date.now()
+          );
+          // Clear after rendering
+          (enemyManagerState.current as any).counterAttackRender = null;
         }
       }
 
