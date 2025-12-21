@@ -21,9 +21,9 @@ platform :ios do
       lock_when_sleeps: false
     )
 
-    # Keychain yolunu context'ten al (Mutlaka absolute path olmali)
-    # create_keychain bunu kendisi context'e yazar.
-    current_keychain_path = Actions.lane_context[SharedValues::KEYCHAIN_PATH]
+    # Keychain yolunu MUTLAKA genislet (~ karakterini /Users/runner'a cevirir)
+    raw_keychain_path = Actions.lane_context[SharedValues::KEYCHAIN_PATH]
+    current_keychain_path = File.expand_path(raw_keychain_path)
 
     # 1. API Key Auth
     api_key = app_store_connect_api_key(
@@ -46,7 +46,7 @@ platform :ios do
       api_key: api_key, 
       development: false,
       force: false,
-      keychain_path: current_keychain_path, # Artik tam yolu veriyoruz
+      keychain_path: current_keychain_path,
       keychain_password: keychain_password
     )
 
@@ -72,7 +72,6 @@ platform :ios do
         }
       },
       export_team_id: team_id,
-      # OTHER_CODE_SIGN_FLAGS icin de tam yolu kullaniyoruz ve tirnak icine aliyoruz
       xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' OTHER_CODE_SIGN_FLAGS='--keychain \"#{current_keychain_path}\"'"
     )
 
