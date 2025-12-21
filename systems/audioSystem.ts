@@ -1044,6 +1044,201 @@ export function playGlitchDamage() {
   setTimeout(() => playNoise(0.08, 6000, 'highpass', 0.1), 50);
 }
 
+// ============ ENEMY SOUNDS - Glitch Dart System ============
+
+/**
+ * Enemy tracking alarm - menacing dual-tone siren that builds tension
+ * @param intensity 0-1 (higher = more urgent)
+ */
+export function playEnemyTracking(intensity: number = 0.5) {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Dual-tone alarm (like a threat warning)
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  // Low ominous tone + high warning tone
+  osc1.type = 'sine';
+  osc2.type = 'triangle';
+
+  const basePitch = 220 + (intensity * 110); // 220-330Hz (menacing bass)
+  const alertPitch = 660 + (intensity * 220); // 660-880Hz (alert)
+
+  osc1.frequency.setValueAtTime(basePitch, ctx.currentTime);
+  osc2.frequency.setValueAtTime(alertPitch, ctx.currentTime);
+  // Slight pitch bend up for urgency
+  osc2.frequency.linearRampToValueAtTime(alertPitch * 1.1, ctx.currentTime + 0.12);
+
+  gain.gain.setValueAtTime(0.08 + intensity * 0.04, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.1 + intensity * 0.05, ctx.currentTime + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.15);
+  osc2.stop(ctx.currentTime + 0.15);
+}
+
+/**
+ * Lock-on confirmation - aggressive "TARGET ACQUIRED" sound
+ * Sharp, unmistakable danger signal
+ */
+export function playLockOn() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Sharp staccato tones (military lock-on feel)
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const osc3 = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const distortion = ctx.createWaveShaper();
+
+  osc1.type = 'square';
+  osc2.type = 'sawtooth';
+  osc3.type = 'square';
+
+  // Three rapid descending tones (target lock sequence)
+  osc1.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc1.frequency.setValueAtTime(900, ctx.currentTime + 0.08);
+  osc1.frequency.setValueAtTime(1200, ctx.currentTime + 0.16);
+
+  osc2.frequency.setValueAtTime(600, ctx.currentTime);
+  osc3.frequency.setValueAtTime(300, ctx.currentTime + 0.1);
+
+  // Create harsh distortion for aggression
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 128) - 1;
+    curve[i] = Math.tanh(x * 2);
+  }
+  distortion.curve = curve;
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.setValueAtTime(0.2, ctx.currentTime + 0.08);
+  gain.gain.setValueAtTime(0.25, ctx.currentTime + 0.16);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  osc1.connect(distortion);
+  osc2.connect(distortion);
+  osc3.connect(distortion);
+  distortion.connect(gain);
+  gain.connect(master);
+
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc3.start(ctx.currentTime + 0.1);
+  osc1.stop(ctx.currentTime + 0.3);
+  osc2.stop(ctx.currentTime + 0.15);
+  osc3.stop(ctx.currentTime + 0.3);
+
+  // Digital noise burst for "lock" feel
+  playNoise(0.08, 6000, 'bandpass', 0.12);
+}
+
+/**
+ * Dart fire - aggressive projectile launch with bass impact
+ * Sounds like a cyber-missile being fired
+ */
+export function playDartFire() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Bass thud (launch impact)
+  const bassOsc = ctx.createOscillator();
+  const bassGain = ctx.createGain();
+
+  bassOsc.type = 'sine';
+  bassOsc.frequency.setValueAtTime(120, ctx.currentTime);
+  bassOsc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.15);
+
+  bassGain.gain.setValueAtTime(0.25, ctx.currentTime);
+  bassGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+
+  bassOsc.connect(bassGain);
+  bassGain.connect(master);
+  bassOsc.start(ctx.currentTime);
+  bassOsc.stop(ctx.currentTime + 0.2);
+
+  // High-speed whoosh (projectile in motion)
+  const whooshOsc = ctx.createOscillator();
+  const whooshOsc2 = ctx.createOscillator();
+  const whooshGain = ctx.createGain();
+
+  whooshOsc.type = 'sawtooth';
+  whooshOsc2.type = 'sine';
+
+  // Fast descending sweep indicates speed
+  whooshOsc.frequency.setValueAtTime(1500, ctx.currentTime);
+  whooshOsc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.25);
+
+  whooshOsc2.frequency.setValueAtTime(800, ctx.currentTime);
+  whooshOsc2.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.2);
+
+  whooshGain.gain.setValueAtTime(0.12, ctx.currentTime);
+  whooshGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  whooshOsc.connect(whooshGain);
+  whooshOsc2.connect(whooshGain);
+  whooshGain.connect(master);
+
+  whooshOsc.start(ctx.currentTime);
+  whooshOsc2.start(ctx.currentTime);
+  whooshOsc.stop(ctx.currentTime + 0.3);
+  whooshOsc2.stop(ctx.currentTime + 0.3);
+
+  // Air rush noise
+  playNoise(0.2, 2000, 'bandpass', 0.15);
+}
+
+/**
+ * Counter attack success - elemental burst based on Pokemon type
+ */
+export function playCounterAttack(pokemonType: string) {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  switch (pokemonType.toLowerCase()) {
+    case 'electric':
+      // Lightning crackle
+      playTone(1500, 0.05, 'square', 0.2, 0.002, 0.01);
+      setTimeout(() => playTone(2000, 0.03, 'square', 0.15, 0.002, 0.01), 30);
+      setTimeout(() => playTone(1200, 0.08, 'sawtooth', 0.12, 0.002, 0.02), 60);
+      playNoise(0.1, 8000, 'highpass', 0.15);
+      break;
+
+    case 'fire':
+      // Fire burst
+      playTone(200, 0.15, 'sawtooth', 0.15, 0.01, 0.04);
+      playNoise(0.2, 1500, 'bandpass', 0.2);
+      setTimeout(() => playNoise(0.15, 3000, 'highpass', 0.1), 50);
+      break;
+
+    case 'water':
+      // Water splash
+      playTone(300, 0.1, 'sine', 0.12, 0.01, 0.03);
+      playTone(600, 0.08, 'sine', 0.1, 0.02, 0.02);
+      playNoise(0.15, 2000, 'lowpass', 0.15);
+      break;
+
+    default:
+      // Generic energy burst
+      playTone(800, 0.1, 'triangle', 0.15, 0.01, 0.03);
+      playTone(1200, 0.08, 'triangle', 0.12, 0.01, 0.02);
+      playNoise(0.12, 4000, 'bandpass', 0.12);
+  }
+}
+
 // ============ SETTINGS CONTROL ============
 
 /**
@@ -1159,6 +1354,12 @@ export const AudioSystem = {
   applyGlitchMusicFilter,
   removeGlitchMusicFilter,
   isGlitchMusicFilterActive,
+
+  // Enemy Sounds - Glitch Dart System
+  playEnemyTracking,
+  playLockOn,
+  playDartFire,
+  playCounterAttack,
 };
 
 export default AudioSystem;
