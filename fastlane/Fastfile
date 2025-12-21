@@ -28,28 +28,31 @@ platform :ios do
       development: false
     )
 
-    sigh(
+    # force: true -> Profili zorla yeniler
+    # Profilm adini degiskene atiyoruz
+    profile = sigh(
       api_key: api_key,
       app_identifier: bundle_id,
       force: true,
       team_id: team_id,
-      provisioning_name: "AppStore_#{bundle_id}"
+      provisioning_name: "AppStore_#{bundle_id}" 
     )
-
-    # 5. Build (api_key parametresi kaldirildi)
+    
+    # 5. Build
+    # Artik 'Lane Context' kullanarak profilin gercek yolunu ve ID'sini aliyoruz.
+    # Bu sayede isim degisse bile (sonuna sayi gelse bile) Xcode dogru profili bulur.
     build_app(
       scheme: "App",
       project: "ios/App/App.xcodeproj",
       export_method: "app-store",
-      # api_key: api_key  <-- BU SATIR HATALIYDI, SILINDI.
       include_bitcode: false,
       clean: true,
       export_options: {
         provisioningProfiles: { 
-          bundle_id => "AppStore_#{bundle_id}" 
+          bundle_id => Actions.lane_context[SharedValues::SIGH_NAME] # Olusturulan profilin GERCEK adi
         }
       },
-      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='AppStore_#{bundle_id}' CODE_SIGN_STYLE=Manual"
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual"
     )
 
     # 6. Upload
