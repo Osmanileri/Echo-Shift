@@ -5,6 +5,8 @@ default_platform(:ios)
 platform :ios do
   desc "Push a new build to TestFlight"
   lane :deploy do
+    bundle_id = "com.osmanileri.echoshift"
+
     # 1. API Key Auth
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
@@ -15,7 +17,6 @@ platform :ios do
     )
 
     # 2. Üretim Ekibini (Team ID) Projeye Zorla Yaz
-    # Bu adım "requires a development team" hatasını çözer
     update_project_team(
       path: "ios/App/App.xcodeproj",
       teamid: ENV["APPLE_TEAM_ID"]
@@ -28,10 +29,17 @@ platform :ios do
     )
 
     # 4. Sertifikaları Al ve Temizle
-    cert(api_key: api_key)
-    sigh(api_key: api_key, force: true)
+    cert(
+      api_key: api_key,
+      app_identifier: bundle_id
+    )
+    sigh(
+      api_key: api_key,
+      app_identifier: bundle_id,
+      force: true
+    )
 
-    # 5. Uygulamayı Paketle (Team ID ve Provisioning zorlamasıyla)
+    # 5. Uygulamayı Paketle
     build_app(
       scheme: "App",
       project: "ios/App/App.xcodeproj",
@@ -41,15 +49,16 @@ platform :ios do
       clean: true,
       export_options: {
         provisioningProfiles: {
-          "com.osmanileri.echoshift" => "com.osmanileri.echoshift AppStore"
+          bundle_id => "#{bundle_id} AppStore"
         }
       },
-      xcargs: "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']} PROVISIONING_PROFILE_SPECIFIER='com.osmanileri.echoshift AppStore' CODE_SIGN_STYLE=Manual"
+      xcargs: "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']} PROVISIONING_PROFILE_SPECIFIER='#{bundle_id} AppStore' CODE_SIGN_STYLE=Manual"
     )
 
     # 6. TestFlight'a Gönder
     upload_to_testflight(
       api_key: api_key,
+      app_identifier: bundle_id,
       skip_waiting_for_build_processing: true
     )
   end
