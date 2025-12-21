@@ -148,3 +148,79 @@ data/
 4. ✅ **echo-shift-engagement** - Resonance, Restore, Rituals, Haptics
 5. ✅ **echo-shift-v2-mechanics** - S.H.I.F.T. Protocol
 6. ✅ **advanced-game-mechanics** - Near Miss, Rhythm, Gravity, Phantom
+7. ✅ **ios-cloud-deployment** - GitHub Actions, Fastlane, TestFlight
+
+---
+
+## 📱 iOS Cloud Deployment (Memory Bank)
+
+> **Son Güncelleme:** 22 Aralık 2025 | **Build:** 22 (1.0) | **Durum:** ✅ TestFlight'ta
+
+### Kritik Dosyalar
+
+| Dosya | Açıklama |
+|-------|----------|
+| `.github/workflows/deploy-ios.yml` | GitHub Actions workflow |
+| `fastlane/Fastfile` | Derleme ve yükleme mantığı |
+| `Gemfile` | Fastlane sürüm kilidi (>= 2.226.1) |
+| `ios/App/App.xcodeproj` | Xcode proje dosyası |
+| `capacitor.config.ts` | Capacitor ayarları |
+
+### GitHub Secrets
+
+| Secret | Nereden Alınır |
+|--------|----------------|
+| `ASC_KEY_ID` | App Store Connect > Users > Keys |
+| `ASC_ISSUER_ID` | App Store Connect > Users > Keys |
+| `ASC_KEY_CONTENT` | İndirilen `.p8` dosyası içeriği |
+| `APPLE_TEAM_ID` | Developer Portal > Membership |
+
+### CI/CD Akışı
+
+```
+git push main → GitHub Actions → npm build → cap sync → Fastlane
+    ↓
+[Fastfile]
+1. create_keychain (ci_keychain-db)
+2. app_store_connect_api_key
+3. update_code_signing_settings (Manual, Apple Distribution)
+4. cert (sertifika indir/oluştur)
+5. sigh (profil indir/oluştur)
+6. build_app (.ipa oluştur)
+7. upload_to_testflight
+    ↓
+✅ TestFlight'ta Hazır!
+```
+
+### Sık Karşılaşılan Hatalar
+
+| Hata | Çözüm |
+|------|-------|
+| "Max Distribution certificates" | Developer Portal > Certificates > Tümünü sil |
+| "Keychain not found" | Yol sonuna `-db` ekle: `ci_keychain-db` |
+| "iOS Development not found" | `CODE_SIGN_IDENTITY='Apple Distribution'` zorla |
+| "Profile not matching" | `SIGH_NAME` dinamik kullan |
+| Build takılıyor | `create_keychain(unlock: true)` kullan |
+| "Missing Compliance" | "None of the algorithms" seç |
+
+### TestFlight Tester Ekleme
+
+1. App Store Connect > TestFlight
+2. "INTERNAL TESTING" yanındaki ➕ tıkla
+3. Grup oluştur, email ekle
+4. iPhone'da TestFlight'tan indir
+
+### Gelecekte Yapılacaklar
+
+- [ ] Uygulama ikonu ekle (1024x1024)
+- [ ] Launch screen tasarla
+- [ ] App Store açıklaması hazırla
+- [ ] Ekran görüntüleri oluştur
+- [ ] Public release için App Store Review'a gönder
+
+### Acil Durum Checklist
+
+1. ✅ GitHub Secrets doğru mu?
+2. ✅ Sertifika limiti doldu mu? (Portal'dan sil)
+3. ✅ Bundle ID: `com.osmanileri.echoshift`
+4. ✅ Node.js v22, Fastlane >= 2.226.1
