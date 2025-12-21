@@ -35,7 +35,10 @@ jobs:
           bundler-cache: true
 
       - name: Install Fastlane & Dependencies
-        run: bundle install
+        run: |
+          gem install bundler
+          bundle update fastlane
+          bundle install
 
       - name: Deploy to TestFlight
         run: bundle exec fastlane deploy
@@ -44,3 +47,5 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           FASTLANE_APPLE_ID: ${{ secrets.APPLE_ID }}
+          # Capacitor için bazı Apple araçlarının yolu
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
