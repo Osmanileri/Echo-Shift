@@ -8,8 +8,7 @@ platform :ios do
     bundle_id = "com.osmanileri.echoshift"
     team_id = ENV["APPLE_TEAM_ID"]
 
-    # 0. Gecici Keychain Olustur (CI ortaminda takilmayi onler)
-    # Bu adim, codesign aracinin sifre sormadan sertifikaya erismesini saglar.
+    # 0. Gecici Keychain Olustur
     keychain_name = "ci_keychain"
     keychain_password = "ci_password"
     
@@ -21,6 +20,10 @@ platform :ios do
       timeout: 3600,
       lock_when_sleeps: false
     )
+
+    # Keychain yolunu context'ten al (Mutlaka absolute path olmali)
+    # create_keychain bunu kendisi context'e yazar.
+    current_keychain_path = Actions.lane_context[SharedValues::KEYCHAIN_PATH]
 
     # 1. API Key Auth
     api_key = app_store_connect_api_key(
@@ -39,16 +42,15 @@ platform :ios do
     increment_build_number(build_number: ENV["GITHUB_RUN_NUMBER"], xcodeproj: "ios/App/App.xcodeproj")
 
     # 3. Sertifika ve Profil
-    # Sertifikayi gecici keychain'e indirip yukler
     cert(
       api_key: api_key, 
       development: false,
       force: false,
-      keychain_path: keychain_name,
+      keychain_path: current_keychain_path, # Artik tam yolu veriyoruz
       keychain_password: keychain_password
     )
 
-    profile = sigh(
+    sigh(
       api_key: api_key,
       app_identifier: bundle_id,
       force: true,
@@ -69,9 +71,9 @@ platform :ios do
           bundle_id => Actions.lane_context[SharedValues::SIGH_NAME]
         }
       },
-      # export_team_id parametresi ekleyerek export asamasini da guvenceye aliyoruz
       export_team_id: team_id,
-      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' OTHER_CODE_SIGN_FLAGS='--keychain #{keychain_name}'"
+      # OTHER_CODE_SIGN_FLAGS icin de tam yolu kullaniyoruz ve tirnak icine aliyoruz
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' OTHER_CODE_SIGN_FLAGS='--keychain \"#{current_keychain_path}\"'"
     )
 
     # 5. Upload
