@@ -34,14 +34,13 @@ jobs:
           ruby-version: "3.2"
           bundler-cache: true
 
-      - name: Install Fastlane
-        run: gem install fastlane
+      - name: Install Fastlane & Dependencies
+        run: bundle install
 
       - name: Deploy to TestFlight
-        run: fastlane deploy
+        run: bundle exec fastlane deploy
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
-          # if you have specific team IDs
           FASTLANE_APPLE_ID: ${{ secrets.APPLE_ID }}
