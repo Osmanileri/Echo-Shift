@@ -8,6 +8,7 @@ platform :ios do
     bundle_id = "com.osmanileri.echoshift"
     team_id = ENV["APPLE_TEAM_ID"]
 
+    # 1. API Key Auth
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
       issuer_id: ENV["ASC_ISSUER_ID"],
@@ -16,12 +17,16 @@ platform :ios do
       in_house: false
     )
 
+    # 2. Proje Ayarlari
+    # Otomatik imzalamayi kapatiyoruz ki manuel olarak bizim profilimizi kullansin
+    disable_automatic_code_signing(path: "ios/App/App.xcodeproj")
+    
     update_project_team(path: "ios/App/App.xcodeproj", teamid: team_id)
     update_app_identifier(xcodeproj: "ios/App/App.xcodeproj", plist_path: "App/Info.plist", app_identifier: bundle_id)
     increment_build_number(build_number: ENV["GITHUB_RUN_NUMBER"], xcodeproj: "ios/App/App.xcodeproj")
 
-    # Force: false yaptık. Yani "Varsa onu kullan, yoksa oluştur."
-    # Bu sayede her denemede yeni sertifika oluşturup limiti doldurmaz.
+    # 3. Sertifika ve Profil (Match mantigiyla)
+    # force: false -> Varsa kullan, yoksa olustur
     cert(
       api_key: api_key, 
       development: false,
@@ -31,14 +36,17 @@ platform :ios do
     profile = sigh(
       api_key: api_key,
       app_identifier: bundle_id,
-      force: true, # Profil her zaman taze olsun (sertifika ID'si degisebilecegi icin)
+      force: true,
       team_id: team_id,
       provisioning_name: "AppStore_#{bundle_id}" 
     )
     
+    # 4. Build
+    # CODE_SIGN_IDENTITY='Apple Distribution' ekleyerek Xcode'un Development sertifikasi aramasini engelliyoruz.
     build_app(
       scheme: "App",
       project: "ios/App/App.xcodeproj",
+      configuration: "Release",
       export_method: "app-store",
       include_bitcode: false,
       clean: true,
@@ -47,9 +55,10 @@ platform :ios do
           bundle_id => Actions.lane_context[SharedValues::SIGH_NAME]
         }
       },
-      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual"
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution'"
     )
 
+    # 5. Upload
     upload_to_testflight(api_key: api_key, app_identifier: bundle_id, skip_waiting_for_build_processing: true)
   end
 end
