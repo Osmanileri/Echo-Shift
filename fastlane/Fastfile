@@ -21,7 +21,7 @@ platform :ios do
     # Sync certificates...
     build_app(
       scheme: "App",
-      workspace: "ios/App/App.xcworkspace",
+      project: "ios/App/App.xcodeproj",
       include_bitcode: false,
       export_method: "app-store",
       api_key: api_key
