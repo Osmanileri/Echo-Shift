@@ -137,6 +137,10 @@ import * as GlitchSystem from "../systems/glitchSystem";
 import * as GlitchVFX from "../systems/GlitchVFX";
 // Spirit Character Rendering - Pokemon silhouettes and elemental auras
 import * as SpiritRenderer from "../systems/spiritRenderer";
+// Spirit VFX Systems - Trailing Soul, Elemental Styles, Enhanced Particles
+import * as ElementalParticles from "../systems/elementalParticles";
+import { SpriteManager } from "../systems/spriteManager";
+import * as TrailingSoul from "../systems/trailingSoul";
 import type { GlitchModeState, GlitchShard } from "../types";
 
 
@@ -305,11 +309,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
     }
   }, [activeCharacter, spiritModifiers, campaignMode]);
 
-  // Spirit Character: Sprite image loading for orb rendering
+  // Spirit Character: Sprite image loading via SpriteManager (LRU Cache)
   const spiritSpriteRef = useRef<HTMLImageElement | null>(null);
   useEffect(() => {
     if (activeCharacter && activeCharacter.spriteUrl) {
-      SpiritRenderer.preloadSpriteImage(activeCharacter.spriteUrl)
+      SpriteManager.getSprite(activeCharacter.spriteUrl)
         .then(img => {
           spiritSpriteRef.current = img;
         })
@@ -334,8 +338,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
     INITIAL_CONFIG.minConnectorLength
   );
 
+  // Spirit VFX: Velocity tracking for dynamic lean and trailing soul
+  const prevPlayerY = useRef<number>(0.5); // Previous frame playerY for velocity calculation
+  const playerVelocityY = useRef<number>(0); // Vertical velocity in screen space
+  const whiteOrbTrail = useRef<TrailingSoul.TrailState>(TrailingSoul.createTrailState());
+  const blackOrbTrail = useRef<TrailingSoul.TrailState>(TrailingSoul.createTrailState());
+
   // Track if game was previously playing (to detect resume vs new game)
   const wasPlayingRef = useRef<boolean>(false);
+
 
   // Swap Mechanics
   const isSwapped = useRef<boolean>(false); // false = White Top, true = Black Top
@@ -1999,6 +2010,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
       );
 
       playerY.current += (targetPlayerY.current - playerY.current) * 0.15;
+
+      // Spirit VFX: Calculate velocity for dynamic lean and trailing soul
+      // Velocity is in screen space (pixels per frame)
+      playerVelocityY.current = (playerY.current - prevPlayerY.current) * height;
+      prevPlayerY.current = playerY.current;
 
       // Dynamic Connector Growth
       const targetLen = Math.min(
@@ -5239,43 +5255,60 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const glitchConnectorOptions = GlitchVFX.getConnectorRenderOptions(glitchModeState.current);
 
       if (normalOpacity > 0) {
-        ctx.save();
-        ctx.globalAlpha = normalOpacity * glitchConnectorOptions.opacity;
-
-        // Apply pulse scale during Quantum Lock - Requirements 4.6
-        const pulseScale = glitchConnectorOptions.pulseScale;
-
-        const gradient = ctx.createLinearGradient(
-          visualWhiteOrb.x,
-          visualWhiteOrb.y,
-          visualBlackOrb.x,
-          visualBlackOrb.y
-        );
-
-        // Apply green tint during Quantum Lock - Requirements 4.5
-        if (glitchConnectorOptions.greenTint) {
-          gradient.addColorStop(0, "#00FF00");
-          gradient.addColorStop(0.5, "#00FF88");
-          gradient.addColorStop(1, "#00FF00");
-
-          // Add glow effect
-          ctx.shadowColor = "#00FF00";
-          ctx.shadowBlur = 15;
+        // Spirit VFX: Elemental Connector
+        // Override standard connector if character is active AND not in Quantum Lock mode
+        if (activeCharacter && !glitchConnectorOptions.greenTint) {
+          ctx.save();
+          ctx.globalAlpha = normalOpacity;
+          SpiritRenderer.renderElementalConnector(
+            ctx,
+            visualWhiteOrb.x,
+            visualWhiteOrb.y,
+            visualBlackOrb.x,
+            visualBlackOrb.y,
+            activeCharacter.types,
+            Date.now()
+          );
+          ctx.restore();
         } else {
-          gradient.addColorStop(0, getColor("topOrb"));
-          gradient.addColorStop(0.5, getColor("connector"));
-          gradient.addColorStop(1, getColor("bottomOrb"));
+          ctx.save();
+          ctx.globalAlpha = normalOpacity * glitchConnectorOptions.opacity;
+
+          // Apply pulse scale during Quantum Lock - Requirements 4.6
+          const pulseScale = glitchConnectorOptions.pulseScale;
+
+          const gradient = ctx.createLinearGradient(
+            visualWhiteOrb.x,
+            visualWhiteOrb.y,
+            visualBlackOrb.x,
+            visualBlackOrb.y
+          );
+
+          // Apply green tint during Quantum Lock - Requirements 4.5
+          if (glitchConnectorOptions.greenTint) {
+            gradient.addColorStop(0, "#00FF00");
+            gradient.addColorStop(0.5, "#00FF88");
+            gradient.addColorStop(1, "#00FF00");
+
+            // Add glow effect
+            ctx.shadowColor = "#00FF00";
+            ctx.shadowBlur = 15;
+          } else {
+            gradient.addColorStop(0, getColor("topOrb"));
+            gradient.addColorStop(0.5, getColor("connector"));
+            gradient.addColorStop(1, getColor("bottomOrb"));
+          }
+
+          ctx.beginPath();
+          ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
+          ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
+          ctx.lineWidth = INITIAL_CONFIG.connectorWidth * pulseScale;
+          ctx.strokeStyle = gradient;
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          ctx.restore();
         }
-
-        ctx.beginPath();
-        ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
-        ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
-        ctx.lineWidth = INITIAL_CONFIG.connectorWidth * pulseScale;
-        ctx.strokeStyle = gradient;
-        ctx.stroke();
-
-        ctx.shadowBlur = 0;
-        ctx.restore();
       }
 
       // Helper to draw an orb - Skin System Integration - Requirements 3.1, 3.2, 3.3, 3.4
@@ -5396,11 +5429,42 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Spirit Character: Draw Pokemon silhouette and elemental aura
           if (activeCharacter && spiritSpriteRef.current) {
-            const primaryType = activeCharacter.types[0] || 'normal';
+            const types = activeCharacter.types;
+            const primaryType = types[0] || 'normal';
             const now = Date.now();
 
-            // Draw silhouette inside orb (using polarity: white orb = black silhouette)
-            SpiritRenderer.renderSpiritOrb(
+            // Update trails - Requirements 9.2: Trailing Soul
+            // Use velocity-based emission and LOD optimization
+            const trailRef = isWhite ? whiteOrbTrail : blackOrbTrail;
+
+            // Calculate total particles for LOD
+            const totalParticles = particles.current.length;
+            const lodConfig = TrailingSoul.getAdjustedTrailConfig(
+              totalParticles,
+              TrailingSoul.DEFAULT_TRAIL_CONFIG
+            );
+
+            trailRef.current = TrailingSoul.updateTrail(
+              trailRef.current,
+              orb.x,
+              orb.y,
+              playerVelocityY.current,
+              lodConfig,
+              now
+            );
+
+            // Render Trailing Soul (Behind Orb)
+            TrailingSoul.renderTrailingSoul(
+              ctx,
+              trailRef.current,
+              spiritSpriteRef.current,
+              orb.radius,
+              primaryType,
+              orbFillColor
+            );
+
+            // Draw professional orb with silhouette and lean - Spirit VFX System
+            SpiritRenderer.renderProfessionalOrb(
               ctx,
               orb.x,
               orb.y,
@@ -5408,10 +5472,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
               spiritSpriteRef.current,
               orbFillColor,
               primaryType,
+              playerVelocityY.current,
               now
             );
 
-            // Draw elemental particles around orb
+            // Draw elemental aura particles (passive)
             SpiritRenderer.renderElementalParticles(
               ctx,
               orb.x,
@@ -5420,6 +5485,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
               primaryType,
               now
             );
+
+            // Emit active elemental particles (sparks, leaves, etc.) based on motion
+            // Probability increases with velocity
+            if (activeCharacter.types && Math.random() < 0.3 + Math.abs(playerVelocityY.current) * 0.05) {
+              ElementalParticles.emitElementalParticles(
+                orb.x,
+                orb.y,
+                activeCharacter.types,
+                1 + Math.abs(playerVelocityY.current) * 0.1
+              );
+            }
           }
         }
       };
