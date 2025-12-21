@@ -8,6 +8,20 @@ platform :ios do
     bundle_id = "com.osmanileri.echoshift"
     team_id = ENV["APPLE_TEAM_ID"]
 
+    # 0. Gecici Keychain Olustur (CI ortaminda takilmayi onler)
+    # Bu adim, codesign aracinin sifre sormadan sertifikaya erismesini saglar.
+    keychain_name = "ci_keychain"
+    keychain_password = "ci_password"
+    
+    create_keychain(
+      name: keychain_name,
+      password: keychain_password,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false
+    )
+
     # 1. API Key Auth
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
@@ -18,19 +32,20 @@ platform :ios do
     )
 
     # 2. Proje Ayarlari
-    # Otomatik imzalamayi kapatiyoruz ki manuel olarak bizim profilimizi kullansin
     disable_automatic_code_signing(path: "ios/App/App.xcodeproj")
     
     update_project_team(path: "ios/App/App.xcodeproj", teamid: team_id)
     update_app_identifier(xcodeproj: "ios/App/App.xcodeproj", plist_path: "App/Info.plist", app_identifier: bundle_id)
     increment_build_number(build_number: ENV["GITHUB_RUN_NUMBER"], xcodeproj: "ios/App/App.xcodeproj")
 
-    # 3. Sertifika ve Profil (Match mantigiyla)
-    # force: false -> Varsa kullan, yoksa olustur
+    # 3. Sertifika ve Profil
+    # Sertifikayi gecici keychain'e indirip yukler
     cert(
       api_key: api_key, 
       development: false,
-      force: false 
+      force: false,
+      keychain_path: keychain_name,
+      keychain_password: keychain_password
     )
 
     profile = sigh(
@@ -42,7 +57,6 @@ platform :ios do
     )
     
     # 4. Build
-    # CODE_SIGN_IDENTITY='Apple Distribution' ekleyerek Xcode'un Development sertifikasi aramasini engelliyoruz.
     build_app(
       scheme: "App",
       project: "ios/App/App.xcodeproj",
@@ -55,7 +69,9 @@ platform :ios do
           bundle_id => Actions.lane_context[SharedValues::SIGH_NAME]
         }
       },
-      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution'"
+      # export_team_id parametresi ekleyerek export asamasini da guvenceye aliyoruz
+      export_team_id: team_id,
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='#{Actions.lane_context[SharedValues::SIGH_NAME]}' CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' OTHER_CODE_SIGN_FLAGS='--keychain #{keychain_name}'"
     )
 
     # 5. Upload
