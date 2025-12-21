@@ -12,10 +12,13 @@ platform :ios do
       in_house: false
     )
 
-    # Sync certificates (match would be better, but we'll try to use existing/managed signing)
-    # If the user has 'Automatically manage signing' in Xcode, 'gym' can sometimes handle it
-    # with the API key.
-    
+    # Otomatik build numarasını artır (Her seferinde farklı numara olması için)
+    increment_build_number(
+      build_number: ENV["GITHUB_RUN_NUMBER"], # GitHub'daki her işlem numarası bir build numarası olur
+      xcodeproj: "ios/App/App.xcodeproj"
+    )
+
+    # Sync certificates...
     build_app(
       scheme: "App",
       workspace: "ios/App/App.xcworkspace",
