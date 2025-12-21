@@ -12,9 +12,8 @@
  * - Restore visual effects (VHS static, rewind)
  */
 
-import { Collectible, ShiftProtocolState } from '../types';
-import { COLORS } from '../constants';
 import * as ParticleSystem from '../systems/particleSystem';
+import { Collectible, ShiftProtocolState } from '../types';
 
 // ============================================================================
 // Constants
@@ -81,7 +80,7 @@ export function renderCollectible(
   ctx.strokeStyle = NEON_CYAN;
   ctx.lineWidth = 2;
   ctx.globalAlpha = 0.8;
-  
+
   // Draw hexagonal wireframe
   ctx.beginPath();
   for (let i = 0; i < 6; i++) {
@@ -128,7 +127,7 @@ export function renderCollectible(
  */
 export function emitCollectionBurst(x: number, y: number): void {
   // Use ParticleSystem for burst effect
-  ParticleSystem.emitBurst(x, y, [NEON_CYAN, '#FFFFFF', '#00CCFF']);
+  ParticleSystem.emitBurst(x, y, 'electric');
 }
 
 // ============================================================================
@@ -205,7 +204,7 @@ export function renderOverdriveCore(
   time: number
 ): void {
   const radius = 15;
-  
+
   // Calculate pulsing glow intensity - Requirements 10.1
   const pulsePhase = time * OVERDRIVE_PULSE_FREQUENCY * Math.PI * 2;
   const pulseIntensity = 0.5 + 0.5 * Math.sin(pulsePhase);
@@ -220,7 +219,7 @@ export function renderOverdriveCore(
   gradient.addColorStop(0, `rgba(0, 240, 255, ${0.8 * pulseIntensity})`);
   gradient.addColorStop(0.5, `rgba(0, 240, 255, ${0.4 * pulseIntensity})`);
   gradient.addColorStop(1, 'rgba(0, 240, 255, 0)');
-  
+
   ctx.beginPath();
   ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
   ctx.fillStyle = gradient;
@@ -270,17 +269,9 @@ export function renderOverdriveCore(
  */
 export function emitShatterEffect(x: number, y: number, color: string): void {
   // Emit 20 particles - Requirements 10.2
-  const config: ParticleSystem.ParticleConfig = {
-    count: OVERDRIVE_SHATTER_PARTICLE_COUNT,
-    speed: { min: 5, max: 15 },
-    size: { min: 3, max: 8 },
-    life: { min: 0.5, max: 1.0 },
-    colors: [color, NEON_CYAN, '#FFFFFF'],
-    spread: Math.PI * 2,
-    gravity: 0.2,
-  };
-  
-  ParticleSystem.emit(x, y, config, 'burst');
+  // Use element-based particle system
+  ParticleSystem.emitBurst(x, y, 'fire');
+  ParticleSystem.emitBurst(x, y, 'electric');
 }
 
 /**
@@ -301,7 +292,7 @@ export function renderOverdriveTimer(
   time: number
 ): void {
   const seconds = Math.ceil(remainingTime / 1000);
-  
+
   ctx.save();
   ctx.font = 'bold 24px Arial';
   ctx.textAlign = 'center';
@@ -352,23 +343,23 @@ export function calculatePowerDownTransition(timeSinceDeactivation: number): num
  */
 export function invertColor(color: string): string {
   let hex = color.replace('#', '');
-  
+
   if (hex.length === 3) {
     hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
   }
-  
+
   if (hex.length !== 6) return color;
-  
+
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
-  
+
   if (isNaN(r) || isNaN(g) || isNaN(b)) return color;
-  
+
   const invertedR = 255 - r;
   const invertedG = 255 - g;
   const invertedB = 255 - b;
-  
+
   return `#${invertedR.toString(16).padStart(2, '0')}${invertedG.toString(16).padStart(2, '0')}${invertedB.toString(16).padStart(2, '0')}`;
 }
 
@@ -383,25 +374,25 @@ export function invertColor(color: string): string {
  */
 export function interpolateColor(color1: string, color2: string, factor: number): string {
   const t = Math.max(0, Math.min(1, factor));
-  
+
   const hex1 = color1.replace('#', '');
   const hex2 = color2.replace('#', '');
-  
+
   const h1 = hex1.length === 3 ? hex1[0] + hex1[0] + hex1[1] + hex1[1] + hex1[2] + hex1[2] : hex1;
   const h2 = hex2.length === 3 ? hex2[0] + hex2[0] + hex2[1] + hex2[1] + hex2[2] + hex2[2] : hex2;
-  
+
   const r1 = parseInt(h1.substring(0, 2), 16);
   const g1 = parseInt(h1.substring(2, 4), 16);
   const b1 = parseInt(h1.substring(4, 6), 16);
-  
+
   const r2 = parseInt(h2.substring(0, 2), 16);
   const g2 = parseInt(h2.substring(2, 4), 16);
   const b2 = parseInt(h2.substring(4, 6), 16);
-  
+
   const r = Math.round(r1 + (r2 - r1) * t);
   const g = Math.round(g1 + (g2 - g1) * t);
   const b = Math.round(b1 + (b2 - b1) * t);
-  
+
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
@@ -419,16 +410,16 @@ export function getResonanceColorScheme(
   baseColors: { topBg: string; bottomBg: string; topOrb: string; bottomOrb: string }
 ): { topBg: string; bottomBg: string; topOrb: string; bottomOrb: string } {
   if (transitionFactor === 0) return baseColors;
-  
+
   const invertedColors = {
     topBg: invertColor(baseColors.topBg),
     bottomBg: invertColor(baseColors.bottomBg),
     topOrb: invertColor(baseColors.topOrb),
     bottomOrb: invertColor(baseColors.bottomOrb),
   };
-  
+
   if (transitionFactor === 1) return invertedColors;
-  
+
   // Interpolate for smooth transition - Requirements 6.5
   return {
     topBg: interpolateColor(baseColors.topBg, invertedColors.topBg, transitionFactor),
@@ -484,35 +475,35 @@ export function renderVHSStatic(
   intensity: number = VHS_STATIC_INTENSITY
 ): void {
   ctx.save();
-  
+
   // Create static noise
   const imageData = ctx.createImageData(width, height);
   const data = imageData.data;
-  
+
   for (let i = 0; i < data.length; i += 4) {
     const noise = Math.random() * 255;
     const alpha = Math.random() * intensity * 255;
-    
+
     data[i] = noise;     // R
     data[i + 1] = noise; // G
     data[i + 2] = noise; // B
     data[i + 3] = alpha; // A
   }
-  
+
   ctx.putImageData(imageData, 0, 0);
-  
+
   // Add scanlines
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
   ctx.lineWidth = 1;
   const scanlineSpacing = height / VHS_SCANLINE_COUNT;
-  
+
   for (let y = 0; y < height; y += scanlineSpacing) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
     ctx.stroke();
   }
-  
+
   ctx.restore();
 }
 
@@ -532,44 +523,44 @@ export function renderVHSRewind(
   progress: number
 ): void {
   ctx.save();
-  
+
   // Horizontal distortion bands
   const bandCount = 5;
   const bandHeight = height / bandCount;
-  
+
   for (let i = 0; i < bandCount; i++) {
     const y = i * bandHeight;
     const offset = Math.sin(progress * Math.PI * 4 + i) * 20;
-    
+
     // Draw distorted band
     ctx.fillStyle = `rgba(0, 240, 255, ${0.1 + Math.random() * 0.1})`;
     ctx.fillRect(offset, y, width, 2);
   }
-  
+
   // Color separation effect (RGB shift)
   ctx.globalCompositeOperation = 'screen';
   ctx.globalAlpha = 0.3;
-  
+
   // Red channel shift
   ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
   ctx.fillRect(-5 * progress, 0, width, height);
-  
+
   // Blue channel shift
   ctx.fillStyle = 'rgba(0, 0, 255, 0.2)';
   ctx.fillRect(5 * progress, 0, width, height);
-  
+
   // Tracking lines
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 0.5;
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 2;
-  
+
   const trackingY = (progress * height * 3) % height;
   ctx.beginPath();
   ctx.moveTo(0, trackingY);
   ctx.lineTo(width, trackingY);
   ctx.stroke();
-  
+
   // "REWIND" text
   ctx.globalAlpha = 0.8 + Math.sin(progress * Math.PI * 8) * 0.2;
   ctx.font = 'bold 16px monospace';
@@ -577,7 +568,7 @@ export function renderVHSRewind(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText('◀◀ REWIND', 10, 10);
-  
+
   ctx.restore();
 }
 
@@ -601,14 +592,14 @@ export function renderRestorePromptOverlay(
   canRestore: boolean
 ): void {
   ctx.save();
-  
+
   // Dark overlay
   ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
   ctx.fillRect(0, 0, width, height);
-  
+
   // VHS static effect - Requirements 8.9
   renderVHSStatic(ctx, width, height, 0.15);
-  
+
   // "SYSTEM CRASH" text
   ctx.font = 'bold 32px monospace';
   ctx.fillStyle = '#FF2A2A';
@@ -617,22 +608,22 @@ export function renderRestorePromptOverlay(
   ctx.shadowColor = '#FF2A2A';
   ctx.shadowBlur = 20;
   ctx.fillText('SYSTEM CRASH', width / 2, height / 2 - 60);
-  
+
   // Cost display
   ctx.shadowBlur = 0;
   ctx.font = '18px monospace';
   ctx.fillStyle = canRestore ? NEON_CYAN : '#666666';
   ctx.fillText(`RESTORE COST: ${cost} SHARDS`, width / 2, height / 2);
-  
+
   // Balance display
   ctx.fillStyle = balance >= cost ? '#00FF00' : '#FF2A2A';
   ctx.fillText(`YOUR BALANCE: ${balance} SHARDS`, width / 2, height / 2 + 30);
-  
+
   // Status message
   if (!canRestore) {
     ctx.fillStyle = '#FF2A2A';
     ctx.fillText('INSUFFICIENT SHARDS', width / 2, height / 2 + 70);
   }
-  
+
   ctx.restore();
 }

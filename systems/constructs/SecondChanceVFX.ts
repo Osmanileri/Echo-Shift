@@ -99,42 +99,18 @@ export function triggerExplosion(
     decay: true,
   });
 
-  // Emit explosion particles - multiple waves
+  // Emit explosion particles - multiple waves using element-based system
   // Wave 1: Fast outward burst
-  ParticleSystem.emit(x, y, {
-    count: config.explosionParticleCount,
-    speed: { min: 8, max: 20 },
-    size: { min: 4, max: 10 },
-    life: { min: 0.4, max: 0.8 },
-    colors: config.explosionColors,
-    spread: Math.PI * 2,
-    gravity: 0.1,
-  }, 'burst');
+  ParticleSystem.emitBurst(x, y, 'fire');
 
   // Wave 2: Slower debris
   setTimeout(() => {
-    ParticleSystem.emit(x, y, {
-      count: Math.floor(config.explosionParticleCount / 2),
-      speed: { min: 3, max: 8 },
-      size: { min: 2, max: 6 },
-      life: { min: 0.6, max: 1.0 },
-      colors: config.explosionColors,
-      spread: Math.PI * 2,
-      gravity: 0.2,
-    }, 'burst');
+    ParticleSystem.emitBurst(x, y, 'fire');
   }, 50);
 
   // Wave 3: Sparks
   setTimeout(() => {
-    ParticleSystem.emit(x, y, {
-      count: Math.floor(config.explosionParticleCount / 3),
-      speed: { min: 10, max: 25 },
-      size: { min: 1, max: 3 },
-      life: { min: 0.2, max: 0.4 },
-      colors: ['#FFFFFF', '#FFFF00'],
-      spread: Math.PI * 2,
-      gravity: 0.05,
-    }, 'spark');
+    ParticleSystem.emitBurst(x, y, 'electric');
   }, 100);
 
   return {

@@ -207,15 +207,23 @@ const GameUI: React.FC<GameUIProps> = ({
       <>
         <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">
           {/* Campaign Update v2.5 - Distance Mode HUD - Requirements 6.1, 6.2, 6.3, 6.4 */}
+          {/* Visual Legibility: Enhanced shadows for guaranteed visibility on any background */}
           {distanceMode ? (
             <div className="flex flex-col items-start">
               {/* Distance Counter - Requirements 6.1 */}
               {/* During dash, show bonus effect with cyan-to-purple gradient and x4 indicator */}
               <div className="relative">
-                <span className={`text-3xl md:text-4xl font-black tracking-widest drop-shadow-lg transition-all duration-300 ${dashActive
-                    ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(0,240,255,0.8)] animate-pulse'
-                    : 'text-white mix-blend-difference'
-                  }`}>
+                <span
+                  className={`text-3xl md:text-4xl font-black tracking-widest transition-all duration-300 ${dashActive
+                    ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent animate-pulse'
+                    : 'text-white'
+                    }`}
+                  style={{
+                    textShadow: dashActive
+                      ? '0 0 20px rgba(0,240,255,0.8)'
+                      : '0 0 8px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1), 0 0 16px rgba(0,0,0,0.6)'
+                  }}
+                >
                   {Math.floor(currentDistance)}m
                 </span>
                 {/* Bonus multiplier badge during dash */}
@@ -225,17 +233,25 @@ const GameUI: React.FC<GameUIProps> = ({
                   </span>
                 )}
               </div>
-              <span className={`text-[10px] md:text-xs font-bold mt-1 uppercase tracking-widest transition-all duration-300 ${dashActive ? 'text-cyan-400' : 'text-gray-400'
-                }`}>
+              <span
+                className={`text-[10px] md:text-xs font-bold mt-1 uppercase tracking-widest transition-all duration-300 ${dashActive ? 'text-cyan-400' : 'text-gray-300'}`}
+                style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.7)' }}
+              >
                 {dashActive ? 'WARP!' : 'Mesafe'}
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-start">
-              <span className="text-3xl md:text-4xl font-black text-white mix-blend-difference tracking-widest drop-shadow-lg">
+              <span
+                className="text-3xl md:text-4xl font-black text-white tracking-widest"
+                style={{ textShadow: '0 0 8px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1), 0 0 16px rgba(0,0,0,0.6)' }}
+              >
                 {score.toString().padStart(5, "0")}
               </span>
-              <span className="text-[10px] md:text-xs text-gray-400 font-bold mt-1 uppercase tracking-widest">
+              <span
+                className="text-[10px] md:text-xs text-gray-300 font-bold mt-1 uppercase tracking-widest"
+                style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}
+              >
                 Skor
               </span>
             </div>
@@ -250,7 +266,10 @@ const GameUI: React.FC<GameUIProps> = ({
             <Pause className="w-5 h-5 md:w-6 md:h-6 text-white" />
           </button>
           <div className="flex flex-col items-end">
-            <span className="text-lg md:text-xl font-bold text-white mix-blend-difference opacity-50">
+            <span
+              className="text-lg md:text-xl font-bold text-white/70"
+              style={{ textShadow: '0 0 6px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.7)' }}
+            >
               {Math.floor(speed * 10)} km/h
             </span>
           </div>
@@ -462,10 +481,10 @@ const GameUI: React.FC<GameUIProps> = ({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   className={`w-7 h-7 transition-all duration-300 ${dashActive
-                      ? 'text-yellow-300 drop-shadow-[0_0_15px_rgba(250,204,21,1)] animate-pulse'
-                      : dashEnergy >= 100
-                        ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse'
-                        : 'text-cyan-400/50'
+                    ? 'text-yellow-300 drop-shadow-[0_0_15px_rgba(250,204,21,1)] animate-pulse'
+                    : dashEnergy >= 100
+                      ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)] animate-pulse'
+                      : 'text-cyan-400/50'
                     }`}
                 >
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -475,10 +494,10 @@ const GameUI: React.FC<GameUIProps> = ({
 
             {/* Label - Shows remaining time during dash */}
             <span className={`text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${dashActive
-                ? 'text-yellow-300 animate-pulse'
-                : dashEnergy >= 100
-                  ? 'text-yellow-400 animate-pulse'
-                  : 'text-cyan-400/60'
+              ? 'text-yellow-300 animate-pulse'
+              : dashEnergy >= 100
+                ? 'text-yellow-400 animate-pulse'
+                : 'text-cyan-400/60'
               }`}>
               {dashActive ? `${Math.floor(dashRemainingPercent)}%` : dashEnergy >= 100 ? 'HAZIR' : `${Math.floor(dashEnergy)}%`}
             </span>

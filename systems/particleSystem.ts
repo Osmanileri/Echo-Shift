@@ -1,348 +1,364 @@
 /**
- * Particle System - Requirements 12.1, 12.2, 12.3, 12.4, 12.5
+ * Particle System - Spirit of the Resonance
  * 
- * Manages particle effects for trail, burst, and spark effects.
- * Uses object pooling for performance optimization.
+ * Professional particle system with:
+ * - Object pooling for performance
+ * - Elemental-specific motion behaviors
+ * - Directional flow (always left/backward)
+ * - Convergence: Particles from top orb go down, from bottom orb go up, meeting in middle
  */
 
-// Particle interface - Requirements 12.4
-export interface Particle {
-  id: string;
+import { ElementalConfig, getElementalConfig } from './elementalStyles';
+
+// Particle interface
+interface Particle {
+  active: boolean;
   x: number;
   y: number;
   vx: number;
   vy: number;
   life: number;
-  maxLife: number;
   size: number;
-  color: string;
-  alpha: number;
-  type: 'trail' | 'burst' | 'spark';
-}
-
-// Particle configuration - Requirements 12.4
-export interface ParticleConfig {
-  count: number;
-  speed: { min: number; max: number };
-  size: { min: number; max: number };
-  life: { min: number; max: number };
-  colors: string[];
-  spread: number;
-  gravity: number;
-  baseAngle?: number; // Optional base direction for particles (radians)
-}
-
-// Default configurations for different particle types
-export const PARTICLE_CONFIGS: Record<string, ParticleConfig> = {
-  trail: {
-    count: 1,
-    speed: { min: 0.5, max: 1.5 },
-    size: { min: 2, max: 4 },
-    life: { min: 0.3, max: 0.6 },
-    colors: ['#00F0FF', '#00CCFF'],
-    spread: 0.4,
-    gravity: 0,
-    baseAngle: Math.PI, // Trail particles go backward (left, behind the orb)
-  },
-  burst: {
-    count: 12,
-    speed: { min: 3, max: 8 },
-    size: { min: 3, max: 6 },
-    life: { min: 0.4, max: 0.8 },
-    colors: ['#00F0FF', '#FF00FF', '#FFFFFF'],
-    spread: Math.PI * 2,
-    gravity: 0.1,
-  },
-  spark: {
-    count: 6,
-    speed: { min: 4, max: 10 },
-    size: { min: 2, max: 4 },
-    life: { min: 0.3, max: 0.5 },
-    colors: ['#FFD700', '#FFA500', '#FF6600'],
-    spread: Math.PI * 0.5,
-    gravity: 0.2,
-  },
-};
-
-// Maximum particles in pool - Requirements 12.5
-const MAX_PARTICLES = 200;
-
-// Particle pool for object reuse
-let particlePool: Particle[] = [];
-let activeParticles: Particle[] = [];
-let particleIdCounter = 0;
-
-/**
- * Generates a unique particle ID
- */
-function generateParticleId(): string {
-  return `p_${++particleIdCounter}`;
+  type: string;
+  offsetVal: number;
+  isTopOrb: boolean; // Which orb this particle came from
 }
 
 /**
- * Random number in range utility
+ * ParticleSystem class with object pooling
  */
-function randomRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
-}
+export class ParticleSystem {
+  particles: Particle[];
+  maxParticles: number;
 
-/**
- * Gets a particle from pool or creates new one
- * Requirements 12.5: Particle pool management
- */
-function getParticleFromPool(): Particle | null {
-  // Check if we've hit the max limit
-  if (activeParticles.length >= MAX_PARTICLES) {
-    // Remove oldest particle to make room
-    const oldest = activeParticles.shift();
-    if (oldest) {
-      particlePool.push(oldest);
+  constructor(maxParticles = 200) {
+    this.maxParticles = maxParticles;
+    this.particles = new Array(maxParticles).fill(null).map(() => ({
+      active: false,
+      x: 0, y: 0,
+      vx: 0, vy: 0,
+      life: 0, size: 0,
+      type: 'normal',
+      offsetVal: 0,
+      isTopOrb: true
+    }));
+  }
+
+  /**
+   * Emit a particle from an orb
+   * @param x - X position of the orb
+   * @param y - Y position of the orb 
+   * @param type - Elemental type (fire, water, etc.)
+   * @param isTopOrb - Whether this is the top orb (for convergence direction)
+   */
+  emit(x: number, y: number, type: string, isTopOrb: boolean = true) {
+    const config = getElementalConfig(type);
+
+    // Find an inactive particle from the pool
+    const p = this.particles.find(p => !p.active);
+    if (!p) return;
+
+    p.active = true;
+    p.type = type;
+    p.isTopOrb = isTopOrb;
+
+    // Start slightly behind the orb for visual effect
+    p.x = x - 5;
+    p.y = y;
+    p.life = 1.0;
+    p.offsetVal = Math.random() * 100;
+
+    // --- CONVERGENCE MATHEMATICS ---
+    // Particles flow backward (negative X) and converge toward the center
+    const spreadRandom = (Math.random() - 0.5) * config.physics.spread;
+
+    // Horizontal velocity: always backward (left)
+    p.vx = config.physics.speedX + (Math.random() * -1.5);
+
+    // Vertical velocity: based on which orb and convergence force
+    // Top orb particles go DOWN (positive vy)
+    // Bottom orb particles go UP (negative vy)
+    // This creates a V-shape that meets at the connector level
+    const convergenceForce = config.physics.convergence || 0.4;
+    const verticalDirection = isTopOrb ? 1 : -1;
+
+    p.vy = (verticalDirection * convergenceForce * 2) + spreadRandom;
+
+    // Size from config
+    const [minSize, maxSize] = config.physics.sizeRange;
+    p.size = Math.random() * (maxSize - minSize) + minSize;
+  }
+
+  /**
+   * Emit a burst of particles (for explosions, etc.)
+   */
+  emitBurst(x: number, y: number, type: string, count: number = 8) {
+    for (let i = 0; i < count; i++) {
+      // Alternate between simulating top and bottom for visual variety
+      this.emit(x, y, type, i % 2 === 0);
     }
   }
-  
-  // Try to reuse from pool
-  if (particlePool.length > 0) {
-    return particlePool.pop()!;
+
+  /**
+   * Update all active particles
+   */
+  update() {
+    this.particles.forEach(p => {
+      if (!p.active) return;
+
+      const config = getElementalConfig(p.type);
+
+      // Apply velocity
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // Apply gravity (affects convergence over time)
+      p.vy += config.physics.gravity;
+
+      // Decay life
+      p.life -= config.physics.lifeSpan;
+
+      // Elemental-specific motion behaviors
+      this.applyElementalMotion(p, config);
+
+      // Deactivate dead particles
+      if (p.life <= 0) {
+        p.active = false;
+      }
+    });
   }
-  
-  // Create new particle
-  return {
-    id: generateParticleId(),
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
-    life: 1,
-    maxLife: 1,
-    size: 3,
-    color: '#FFFFFF',
-    alpha: 1,
-    type: 'trail',
-  };
-}
 
-/**
- * Returns a particle to the pool
- * Requirements 12.5: Remove particle when lifetime expires
- */
-function returnToPool(particle: Particle): void {
-  particlePool.push(particle);
-}
+  /**
+   * Apply elemental-specific motion effects
+   */
+  private applyElementalMotion(p: Particle, config: ElementalConfig) {
+    switch (config.particleType) {
+      case 'spark':
+        // Electric: Zigzag motion
+        p.x += (Math.random() - 0.5) * 8;
+        p.y += (Math.random() - 0.5) * 4;
+        break;
 
-/**
- * Creates a single particle with given configuration
- * Requirements 12.4: Assign velocity, lifetime, color, and size based on config
- */
-function createParticle(
-  x: number,
-  y: number,
-  type: 'trail' | 'burst' | 'spark',
-  config: ParticleConfig,
-  angle?: number
-): Particle | null {
-  const particle = getParticleFromPool();
-  if (!particle) return null;
-  
-  // Calculate velocity based on spread and optional angle
-  // If config has baseAngle, use it as center direction with spread around it
-  const configBaseAngle = config.baseAngle ?? 0;
-  const spreadAngle = randomRange(-config.spread / 2, config.spread / 2);
-  const finalAngle = angle ?? (configBaseAngle + spreadAngle);
-  const speed = randomRange(config.speed.min, config.speed.max);
-  
-  particle.id = generateParticleId();
-  particle.x = x;
-  particle.y = y;
-  particle.vx = Math.cos(finalAngle) * speed;
-  particle.vy = Math.sin(finalAngle) * speed;
-  particle.life = randomRange(config.life.min, config.life.max);
-  particle.maxLife = particle.life;
-  particle.size = randomRange(config.size.min, config.size.max);
-  particle.color = config.colors[Math.floor(Math.random() * config.colors.length)];
-  particle.alpha = 1;
-  particle.type = type;
-  
-  return particle;
-}
+      case 'bubble':
+        // Water: Slow down over time, slight wobble
+        p.vx *= 0.98;
+        p.x += Math.sin(p.offsetVal + p.life * 10) * 0.5;
+        break;
 
-/**
- * Emits particles at a position with given configuration
- * Requirements 12.1, 12.2, 12.3
- */
-export function emit(x: number, y: number, config: ParticleConfig, type: 'trail' | 'burst' | 'spark'): void {
-  for (let i = 0; i < config.count; i++) {
-    // For burst, distribute angles evenly
-    let angle: number | undefined;
-    if (type === 'burst') {
-      angle = (i / config.count) * Math.PI * 2;
-    }
-    
-    const particle = createParticle(x, y, type, config, angle);
-    if (particle) {
-      activeParticles.push(particle);
-    }
-  }
-}
+      case 'leaf':
+        // Grass: Sinusoidal drift
+        p.x += Math.sin(p.offsetVal + p.life * 5) * 0.3;
+        p.y += Math.cos(p.offsetVal + p.life * 3) * 0.2;
+        break;
 
-/**
- * Emits trail particles behind the orb based on movement speed
- * Requirements 12.1: Emit trail particles based on movement speed
- */
-export function emitTrail(x: number, y: number, speed: number, colors?: string[]): void {
-  // Emission rate based on speed - faster = more particles
-  const emissionChance = Math.min(speed / 10, 1);
-  
-  if (Math.random() < emissionChance) {
-    const config = { 
-      ...PARTICLE_CONFIGS.trail,
-      colors: colors ?? PARTICLE_CONFIGS.trail.colors,
-    };
-    // Adjust particle count based on speed
-    config.count = Math.ceil(speed / 3);
-    
-    emit(x, y, config, 'trail');
-  }
-}
+      case 'ember':
+        // Fire: Slight flicker
+        p.x += (Math.random() - 0.5) * 1;
+        p.y += (Math.random() - 0.5) * 0.5;
+        break;
 
-/**
- * Emits burst particles at swap location
- * Requirements 12.2: Emit burst of particles at swap location
- */
-export function emitBurst(x: number, y: number, colors?: string[]): void {
-  const config = {
-    ...PARTICLE_CONFIGS.burst,
-    colors: colors ?? PARTICLE_CONFIGS.burst.colors,
-  };
-  emit(x, y, config, 'burst');
-}
+      case 'void':
+        // Ghost: Slow, ethereal drift
+        p.vx *= 0.99;
+        p.vy *= 0.99;
+        break;
 
-/**
- * Emits spark particles at near miss point
- * Requirements 12.3: Emit spark particles at near miss point
- */
-export function emitSpark(x: number, y: number, colors?: string[]): void {
-  const config = {
-    ...PARTICLE_CONFIGS.spark,
-    colors: colors ?? PARTICLE_CONFIGS.spark.colors,
-  };
-  emit(x, y, config, 'spark');
-}
+      case 'crystal':
+        // Ice: Gentle spinning descent
+        p.x += Math.sin(p.offsetVal + p.life * 8) * 0.3;
+        break;
 
-/**
- * Updates all active particles
- * Requirements 12.4, 12.5: Update particles and remove expired ones
- */
-export function update(deltaTime: number): void {
-  const dt = deltaTime / 16.67; // Normalize to ~60fps
-  
-  for (let i = activeParticles.length - 1; i >= 0; i--) {
-    const particle = activeParticles[i];
-    
-    // Update position
-    particle.x += particle.vx * dt;
-    particle.y += particle.vy * dt;
-    
-    // Apply gravity based on type
-    const config = PARTICLE_CONFIGS[particle.type];
-    if (config) {
-      particle.vy += config.gravity * dt;
-    }
-    
-    // Update lifetime
-    particle.life -= deltaTime / 1000;
-    
-    // Update alpha based on remaining life
-    particle.alpha = Math.max(0, particle.life / particle.maxLife);
-    
-    // Requirements 12.5: Remove particle when lifetime expires
-    if (particle.life <= 0) {
-      activeParticles.splice(i, 1);
-      returnToPool(particle);
+      case 'psychic':
+        // Psychic: Orbital motion
+        p.x += Math.sin(p.offsetVal + p.life * 6) * 0.8;
+        p.y += Math.cos(p.offsetVal + p.life * 6) * 0.5;
+        break;
+
+      case 'fairy':
+        // Fairy: Sparkle and float
+        p.x += Math.sin(p.offsetVal * 2 + p.life * 8) * 0.6;
+        p.y += Math.cos(p.offsetVal * 2 + p.life * 6) * 0.4;
+        break;
+
+      case 'wind':
+        // Flying: Fast horizontal with vertical waves
+        p.y += Math.sin(p.offsetVal + p.life * 10) * 0.8;
+        break;
+
+      case 'shadow':
+        // Dark: Slow undulating
+        p.x += Math.sin(p.offsetVal + p.life * 3) * 0.4;
+        p.vx *= 0.98;
+        break;
+
+      case 'venom':
+        // Poison: Bubbling rise
+        p.x += (Math.random() - 0.5) * 0.5;
+        break;
+
+      case 'rock':
+      case 'steel':
+        // Solid types: Slight tumble
+        p.x += Math.sin(p.offsetVal + p.life * 4) * 0.2;
+        break;
+
+      case 'dust':
+      default:
+        // Normal: Basic drift
+        p.x += Math.sin(p.offsetVal + p.life * 3) * 0.2;
+        break;
     }
   }
-}
 
-/**
- * Renders all active particles to canvas
- */
-export function render(ctx: CanvasRenderingContext2D): void {
-  for (const particle of activeParticles) {
+  /**
+   * Draw all active particles with neon glow and contrast outline
+   */
+  draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    ctx.globalAlpha = particle.alpha;
-    ctx.fillStyle = particle.color;
-    
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Add glow effect for burst and spark particles
-    if (particle.type === 'burst' || particle.type === 'spark') {
-      ctx.shadowColor = particle.color;
-      ctx.shadowBlur = particle.size * 2;
+    ctx.globalCompositeOperation = 'lighter'; // Neon glow effect
+
+    this.particles.forEach(p => {
+      if (!p.active) return;
+
+      const config = getElementalConfig(p.type);
+      const contrastColor = config.contrastColor || '#FFFFFF';
+
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = config.color;
+      ctx.shadowColor = config.color;
+      ctx.shadowBlur = 10 * p.life;
+
+      ctx.beginPath();
+
+      // Different shapes based on particle type
+      if (config.particleType === 'spark') {
+        ctx.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      } else if (config.particleType === 'crystal' || config.particleType === 'steel') {
+        // Diamond shape
+        ctx.moveTo(p.x, p.y - p.size);
+        ctx.lineTo(p.x + p.size, p.y);
+        ctx.lineTo(p.x, p.y + p.size);
+        ctx.lineTo(p.x - p.size, p.y);
+        ctx.closePath();
+      } else if (config.particleType === 'bubble') {
+        // Professional Water Drop Effect
+        // Create gradient for 3D liquid look
+        const gradient = ctx.createRadialGradient(
+          p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.1,
+          p.x, p.y, p.size
+        );
+
+        // Use variants if available, otherwise fall back to computed colors
+        const baseColor = config.color;
+        const lightColor = config.lightVariant || '#FFFFFF';
+        const darkColor = config.darkVariant || config.secondaryColor;
+
+        gradient.addColorStop(0, lightColor);    // Highlight
+        gradient.addColorStop(0.4, baseColor);   // Body
+        gradient.addColorStop(1, darkColor);     // Shadow/Depth
+
+        ctx.fillStyle = gradient;
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Specular highlight (glossy reflection)
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.ellipse(
+          p.x - p.size * 0.3,
+          p.y - p.size * 0.3,
+          p.size * 0.2,
+          p.size * 0.1,
+          Math.PI / 4,
+          0, Math.PI * 2
+        );
+        ctx.fill();
+        return; // Skip default stroke to maintain liquidity
+      } else {
+        // Circle for most particles
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      }
+
       ctx.fill();
-    }
-    
+
+      // Add thin contrast outline for visibility on matching backgrounds
+      ctx.globalCompositeOperation = 'source-over'; // Reset for stroke
+      ctx.strokeStyle = contrastColor;
+      ctx.lineWidth = 0.5;
+      ctx.globalAlpha = p.life * 0.4; // Subtle outline
+      ctx.stroke();
+
+      // Restore blending mode for next particle
+      ctx.globalCompositeOperation = 'lighter';
+    });
+
     ctx.restore();
   }
-}
 
-/**
- * Gets all active particles (for testing/debugging)
- */
-export function getActiveParticles(): Particle[] {
-  return [...activeParticles];
-}
+  /**
+   * Reset all particles
+   */
+  reset() {
+    this.particles.forEach(p => {
+      p.active = false;
+    });
+  }
 
-/**
- * Gets particle count
- */
-export function getParticleCount(): number {
-  return activeParticles.length;
-}
+  /**
+   * Get count of active particles
+   */
+  getActiveParticles(): Particle[] {
+    return this.particles.filter(p => p.active);
+  }
 
-/**
- * Clears all particles and resets the system
- */
-export function reset(): void {
-  // Return all active particles to pool
-  while (activeParticles.length > 0) {
-    const particle = activeParticles.pop();
-    if (particle) {
-      particlePool.push(particle);
-    }
+  getParticleCount(): number {
+    return this.getActiveParticles().length;
   }
 }
 
-/**
- * Creates the particle system interface
- */
-export interface ParticleSystem {
-  particles: Particle[];
-  emit: (x: number, y: number, config: ParticleConfig, type: 'trail' | 'burst' | 'spark') => void;
-  emitTrail: (x: number, y: number, speed: number, colors?: string[]) => void;
-  emitBurst: (x: number, y: number, colors?: string[]) => void;
-  emitSpark: (x: number, y: number, colors?: string[]) => void;
-  update: (deltaTime: number) => void;
-  render: (ctx: CanvasRenderingContext2D) => void;
-  reset: () => void;
-  getParticleCount: () => number;
+// ============================================================================
+// SINGLETON INSTANCE AND LEGACY COMPATIBILITY EXPORTS
+// ============================================================================
+
+// Create a singleton instance for backwards compatibility
+const particleSystemInstance = new ParticleSystem(200);
+
+// Legacy module-style exports that delegate to the singleton
+export function emit(x: number, y: number, type: string, isTopOrb?: boolean): void {
+  particleSystemInstance.emit(x, y, type, isTopOrb ?? true);
 }
 
-/**
- * Creates a new particle system instance
- */
-export function createParticleSystem(): ParticleSystem {
-  return {
-    get particles() {
-      return getActiveParticles();
-    },
-    emit,
-    emitTrail,
-    emitBurst,
-    emitSpark,
-    update,
-    render,
-    reset,
-    getParticleCount,
-  };
+export function emitBurst(x: number, y: number, type: string, count?: number): void {
+  particleSystemInstance.emitBurst(x, y, type, count);
 }
+
+export function emitSpark(x: number, y: number, type: string = 'electric'): void {
+  particleSystemInstance.emit(x, y, type, true);
+}
+
+export function emitTrail(x: number, y: number, type: string = 'normal'): void {
+  particleSystemInstance.emit(x, y, type, true);
+}
+
+export function update(): void {
+  particleSystemInstance.update();
+}
+
+export function render(ctx: CanvasRenderingContext2D): void {
+  particleSystemInstance.draw(ctx);
+}
+
+export function reset(): void {
+  particleSystemInstance.reset();
+}
+
+export function getParticleCount(): number {
+  return particleSystemInstance.getParticleCount();
+}
+
+export function getActiveParticles(): Particle[] {
+  return particleSystemInstance.getActiveParticles();
+}
+
+// Export the instance for direct access
+export const particles = particleSystemInstance.particles;

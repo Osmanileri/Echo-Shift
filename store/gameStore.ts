@@ -24,6 +24,7 @@ import {
   updateMissionProgress
 } from "../systems/missionSystem";
 import { initializeShiftState } from "../systems/shiftProtocol";
+import * as ThemeSystem from "../systems/themeSystem";
 import type {
   ConstructType,
   EnhancedResonanceState,
@@ -437,17 +438,17 @@ export const useGameStore = create<GameStore>()(
       if (amount <= 0) {
         return { levelUp: false, newLevel: get().syncRate };
       }
-      
+
       const state = get();
       const oldXP = state.totalXP;
       const newXP = oldXP + amount;
       const levelResult = checkLevelUp(oldXP, newXP);
-      
+
       set({
         totalXP: newXP,
         syncRate: levelResult.newLevel,
       });
-      
+
       get().saveToStorage();
       return levelResult;
     },
@@ -459,7 +460,7 @@ export const useGameStore = create<GameStore>()(
     completeMission: (missionId: string) => {
       const state = get();
       const missions = state.missions;
-      
+
       // Find the mission
       let mission = missions.soundCheck.missions.find(m => m.id === missionId);
       if (!mission) {
@@ -468,30 +469,30 @@ export const useGameStore = create<GameStore>()(
       if (!mission && missions.marathon.mission?.id === missionId) {
         mission = missions.marathon.mission;
       }
-      
+
       if (!mission || !mission.completed) {
         return { xp: 0, shards: 0 };
       }
-      
+
       const rewards = { ...mission.rewards };
-      
+
       // Add XP
       if (rewards.xp > 0) {
         get().addXP(rewards.xp);
       }
-      
+
       // Add Shards
       if (rewards.shards > 0) {
         get().addEchoShards(rewards.shards);
       }
-      
+
       // Update soundCheckComplete if all Sound Check missions are done
       const allSoundCheckComplete = missions.soundCheck.missions.every(m => m.completed);
       if (allSoundCheckComplete && !state.soundCheckComplete) {
         set({ soundCheckComplete: true });
         get().saveToStorage();
       }
-      
+
       return rewards;
     },
 
@@ -502,15 +503,15 @@ export const useGameStore = create<GameStore>()(
     processMissionEvent: (event: MissionEvent) => {
       const state = get();
       const newMissions = updateMissionProgress(state.missions, event);
-      
+
       // Check if soundCheck completion changed
       const soundCheckComplete = newMissions.soundCheck.completed;
-      
-      set({ 
+
+      set({
         missions: newMissions,
         soundCheckComplete: soundCheckComplete || state.soundCheckComplete,
       });
-      
+
       // Save mission state
       saveMissionState(newMissions);
     },
@@ -523,21 +524,21 @@ export const useGameStore = create<GameStore>()(
     claimDailyReward: () => {
       const state = get();
       const today = new Date().toISOString().split('T')[0];
-      
+
       // Check if already claimed today
       if (state.lastLoginDate === today) {
         return { claimed: false, amount: 0 };
       }
-      
+
       // Calculate reward based on current level
       const rewardAmount = calculateDailyReward(state.syncRate);
-      
+
       // Grant reward
       set({
         lastLoginDate: today,
         echoShards: state.echoShards + rewardAmount,
       });
-      
+
       get().saveToStorage();
       return { claimed: true, amount: rewardAmount };
     },
@@ -549,16 +550,16 @@ export const useGameStore = create<GameStore>()(
     initializeMissions: () => {
       // Load mission state from storage
       let missions = loadMissionState();
-      
+
       // Check for daily/weekly resets
       missions = checkMissionReset(missions, new Date());
-      
+
       // Update state
-      set({ 
+      set({
         missions,
         soundCheckComplete: missions.soundCheck.completed,
       });
-      
+
       // Save if resets occurred
       saveMissionState(missions);
     },
@@ -665,7 +666,7 @@ export const useGameStore = create<GameStore>()(
           chapterProgress: newChapterProgress,
         };
       });
-      
+
       // Persist chapter progress separately
       saveChapterProgress(get().chapterProgress);
       get().saveToStorage();
@@ -684,12 +685,12 @@ export const useGameStore = create<GameStore>()(
      */
     completeLevelWithResult: (levelId: number, result: LevelResult) => {
       const state = get();
-      
+
       // Calculate star rating using new criteria
       const starRating = calculateStarRating(result);
       const previousStars = state.levelStars[levelId] || 0;
       const isFirstClear = !state.completedLevels.includes(levelId);
-      
+
       // Calculate reward
       const rewardResult = calculateLevelReward(
         levelId,
@@ -697,7 +698,7 @@ export const useGameStore = create<GameStore>()(
         isFirstClear,
         previousStars
       );
-      
+
       // Get existing level stats or create new
       const existingStats = state.levelStats[levelId] || {
         bestDistance: 0,
@@ -706,10 +707,10 @@ export const useGameStore = create<GameStore>()(
         timesPlayed: 0,
         firstClearBonus: false,
       };
-      
+
       // Check if this is a new best
       const isNewBest = starRating.stars > existingStats.bestStars;
-      
+
       // Update level stats
       const newLevelStats: LevelStats = {
         bestDistance: Math.max(existingStats.bestDistance, result.distanceTraveled),
@@ -718,20 +719,20 @@ export const useGameStore = create<GameStore>()(
         timesPlayed: existingStats.timesPlayed + 1,
         firstClearBonus: existingStats.firstClearBonus || isFirstClear,
       };
-      
+
       // Update state
       set((s) => {
         const newCompletedLevels = s.completedLevels.includes(levelId)
           ? s.completedLevels
           : [...s.completedLevels, levelId];
-        
+
         const newLevelStars = {
           ...s.levelStars,
           [levelId]: Math.max(s.levelStars[levelId] || 0, starRating.stars),
         };
-        
+
         const newCurrentLevel = Math.max(s.currentLevel, levelId + 1);
-        
+
         return {
           completedLevels: newCompletedLevels,
           levelStars: newLevelStars,
@@ -743,9 +744,9 @@ export const useGameStore = create<GameStore>()(
           echoShards: s.echoShards + rewardResult.totalReward,
         };
       });
-      
+
       get().saveToStorage();
-      
+
       return {
         stars: starRating.stars,
         reward: rewardResult.totalReward,
@@ -780,11 +781,11 @@ export const useGameStore = create<GameStore>()(
         shardsCollected: 0,
         totalShardsSpawned: 0,
         damageTaken: 0,
-        currentHealth: 3, // Default starting health
+        currentHealth: 1, // Reduced starting health for difficulty
         isComplete: false,
         isGameOver: false,
       };
-      set({ 
+      set({
         levelSession: session,
         lastPlayedLevel: levelId,
       });
@@ -839,16 +840,16 @@ export const useGameStore = create<GameStore>()(
      */
     completeChapter: (chapterId: number) => {
       const state = get();
-      
+
       // Use unlockNextChapter to update chapter progress state
       const newChapterProgress = unlockNextChapter(chapterId, state.chapterProgress);
-      
+
       // Update state
       set({ chapterProgress: newChapterProgress });
-      
+
       // Persist chapter progress to localStorage
       saveChapterProgress(newChapterProgress);
-      
+
       // Also save main game state
       get().saveToStorage();
     },
@@ -860,13 +861,13 @@ export const useGameStore = create<GameStore>()(
      */
     resetChapterProgress: () => {
       const defaultProgress = createDefaultChapterProgress();
-      
+
       // Update state
       set({ chapterProgress: defaultProgress });
-      
+
       // Persist reset state
       saveChapterProgress(defaultProgress);
-      
+
       // Also save main game state
       get().saveToStorage();
     },
@@ -971,6 +972,9 @@ export const useGameStore = create<GameStore>()(
     },
 
     setCustomThemeColors: (colors: ThemeColors | null) => {
+      // CRITICAL: Sync to themeSystem singleton SYNCHRONOUSLY so getColor() returns current values
+      ThemeSystem.setCustomThemeColors(colors);
+
       set((state) => {
         const nextOwnedThemes =
           colors && !state.ownedThemes.includes("custom")
@@ -1054,6 +1058,12 @@ export const useGameStore = create<GameStore>()(
       // Load ghost data separately (can be large)
       const ghostData = safeLoad<GhostFrame[]>(STORAGE_KEYS.GHOST_DATA, []);
       set({ ghostTimeline: ghostData });
+
+      // CRITICAL: Sync custom theme colors to themeSystem singleton SYNCHRONOUSLY on load
+      const loadedCustomColors = savedState.customThemeColors ?? DEFAULT_STATE.customThemeColors;
+      if (loadedCustomColors) {
+        ThemeSystem.setCustomThemeColors(loadedCustomColors);
+      }
 
       // Initialize missions (loads from separate storage key)
       get().initializeMissions();
