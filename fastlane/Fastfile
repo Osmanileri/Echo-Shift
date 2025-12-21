@@ -6,8 +6,10 @@ platform :ios do
   desc "Push a new build to TestFlight"
   lane :deploy do
     bundle_id = "com.osmanileri.echoshift"
+    team_id = ENV["APPLE_TEAM_ID"]
 
     # 1. API Key Auth
+    # Bu adim Apple sunuculari ile kimlik dogrulamasi yapar.
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
       issuer_id: ENV["ASC_ISSUER_ID"],
@@ -16,30 +18,41 @@ platform :ios do
       in_house: false
     )
 
-    # 2. Üretim Ekibini (Team ID) Projeye Zorla Yaz
+    # 2. XCode Projesini Hazirla
+    # Proje ayarlarini (Team ID ve Bundle ID) zorla gunceller.
     update_project_team(
       path: "ios/App/App.xcodeproj",
-      teamid: ENV["APPLE_TEAM_ID"]
+      teamid: team_id
+    )
+    
+    update_app_identifier(
+      xcodeproj: "ios/App/App.xcodeproj",
+      plist_path: "App/Info.plist", # Info.plist yolu goreceli olarak App klasoru icinde olabilir
+      app_identifier: bundle_id
     )
 
-    # 3. Build Numarasını Artır
+    # 3. Build Numarasini Artir
     increment_build_number(
       build_number: ENV["GITHUB_RUN_NUMBER"],
       xcodeproj: "ios/App/App.xcodeproj"
     )
 
-    # 4. Sertifikaları Al ve Temizle
+    # 4. Sertifika Yonetimi (Code Signing)
+    # 'cert' sadece sertifikayi (kimlik) alir, app_identifier parametresi ALMAZ.
     cert(
       api_key: api_key,
-      app_identifier: bundle_id
+      development: false
     )
+
+    # 'sigh' provisioning profile (yetki dosyasi) olusturur, bu uygulamaya ozeldir.
     sigh(
       api_key: api_key,
       app_identifier: bundle_id,
-      force: true
+      force: true,
+      team_id: team_id
     )
 
-    # 5. Uygulamayı Paketle
+    # 5. Uygulamayi Derle ve Paketle (Build)
     build_app(
       scheme: "App",
       project: "ios/App/App.xcodeproj",
@@ -49,13 +62,14 @@ platform :ios do
       clean: true,
       export_options: {
         provisioningProfiles: {
-          bundle_id => "#{bundle_id} AppStore"
+          bundle_id => "AppStore_#{bundle_id}" # sigh varsayilan olarak bu ismi kullanir
         }
       },
-      xcargs: "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']} PROVISIONING_PROFILE_SPECIFIER='#{bundle_id} AppStore' CODE_SIGN_STYLE=Manual"
+      # Kod imzalama stilini Manual yapip, bizim indirdigimiz profili kullanmasini soyluyoruz
+      xcargs: "DEVELOPMENT_TEAM=#{team_id} PROVISIONING_PROFILE_SPECIFIER='AppStore_#{bundle_id}' CODE_SIGN_STYLE=Manual"
     )
 
-    # 6. TestFlight'a Gönder
+    # 6. TestFlight'a Yukle
     upload_to_testflight(
       api_key: api_key,
       app_identifier: bundle_id,
