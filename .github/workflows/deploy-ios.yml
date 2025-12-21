@@ -39,7 +39,6 @@ jobs:
 
       - name: Deploy to TestFlight
         run: bundle exec fastlane deploy
-        cwd: .
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
