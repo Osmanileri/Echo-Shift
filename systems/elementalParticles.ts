@@ -9,7 +9,7 @@
  * - Ghost: Ethereal wisps with slow fade
  */
 
-import { getDualTypeParticleColors } from './elementalStyles';
+import { getElementalConfig } from './elementalStyles';
 import * as ParticleSystem from './particleSystem';
 
 /**
@@ -220,6 +220,21 @@ export const getElementalParticleConfig = (type: string): ElementalParticleConfi
 };
 
 /**
+ * Get dual-type particle colors
+ */
+export const getDualTypeParticleColors = (types: string[]): string[] => {
+    const primaryConfig = getElementalConfig(types[0] || 'normal');
+    const colors = [primaryConfig.color, primaryConfig.secondaryColor];
+
+    if (types[1]) {
+        const secondaryConfig = getElementalConfig(types[1]);
+        colors.push(secondaryConfig.color);
+    }
+
+    return colors;
+};
+
+/**
  * Emit elemental particles from orb position
  * Supports dual-type with mixed particle colors
  */
@@ -231,21 +246,11 @@ export const emitElementalParticles = (
 ): void => {
     const primaryType = types[0] || 'normal';
     const config = getElementalParticleConfig(primaryType);
-    const colors = getDualTypeParticleColors(types);
 
-    // Convert to base particle system config
-    const particleConfig: ParticleSystem.ParticleConfig = {
-        count: config.count,
-        speed: { min: config.speed * 0.5, max: config.speed * velocityMultiplier },
-        size: config.size,
-        life: config.life,
-        colors: colors,
-        spread: Math.PI, // Emit backward (behind orb movement)
-        gravity: config.gravity,
-        baseAngle: Math.PI, // Emit in direction of movement trail
-    };
-
-    ParticleSystem.emit(x, y, particleConfig, 'trail');
+    // Use the new element-based particle system
+    for (let i = 0; i < config.count; i++) {
+        ParticleSystem.emit(x, y, primaryType);
+    }
 };
 
 /**

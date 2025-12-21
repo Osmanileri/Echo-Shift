@@ -1,276 +1,257 @@
 /**
- * Elemental Styles System - Spirit of the Resonance
+ * Elemental Styles Configuration - "Spirit of the Resonance"
  * 
- * Defines visual styles for each Pokemon type including:
- * - Primary and glow colors
- * - Connector styles (plasma, bolt, tube, wave)
- * - Dual-type synergy support
+ * This file defines the visual and physics behavior for each Pokemon element type.
+ * Every element has unique particle motion, colors, and connector styles.
  */
 
-// Connector style types
-export type ConnectorStyle = 'plasma' | 'bolt' | 'tube' | 'wave' | 'standard';
+// Particle type determines motion behavior
+export type ParticleType = 'ember' | 'spark' | 'bubble' | 'leaf' | 'void' | 'dust' | 'crystal' | 'shadow' | 'wind' | 'rock' | 'psychic' | 'fairy' | 'venom' | 'steel';
 
-// Elemental style configuration
-export interface ElementalStyle {
-    color: string;           // Primary element color
-    glowColor: string;       // Glow/aura color (with alpha)
-    secondaryColor: string;  // Secondary accent color
+// Connector style determines how the line between orbs is drawn
+export type ConnectorStyle = 'plasma' | 'bolt' | 'tube' | 'wave' | 'solid' | 'ice' | 'shadow' | 'glow';
+
+export interface ElementalConfig {
+    color: string;           // Primary Neon Color
+    glowColor: string;       // Aura Color (rgba)
+    secondaryColor: string;  // Secondary accent
+    contrastColor: string;   // Guaranteed visible outline color (white or black)
+    darkVariant?: string;    // Darker shade for gradient effects
+    lightVariant?: string;   // Lighter shade for highlights
+    particleType: ParticleType;
     connectorStyle: ConnectorStyle;
-    particleSpeed: number;   // Base particle speed multiplier
-    particleGravity: number; // Particle gravity (-1 to 1, negative = upward)
+    physics: {
+        gravity: number;       // Vertical pull (Negative = floats up)
+        speedX: number;        // HORIZONTAL SPEED (Always negative for left flow!)
+        spread: number;        // Spread angle
+        lifeSpan: number;      // Life decay rate
+        sizeRange: [number, number]; // Particle size [min, max]
+        convergence: number;   // Merge force toward center (0 = straight, 1 = strong merge)
+    };
 }
 
-/**
- * Complete elemental styles for all Pokemon types
- * Each type has unique visual characteristics
- */
-export const ELEMENTAL_STYLES: Record<string, ElementalStyle> = {
-    // Fire - Orange/red plasma with rising embers
+export const ELEMENTAL_STYLES: Record<string, ElementalConfig> = {
+    // 🔥 FIRE: Rising embers flowing left and up
     fire: {
         color: '#FF4500',
         glowColor: 'rgba(255, 69, 0, 0.6)',
-        secondaryColor: '#FFD700',
+        secondaryColor: '#FF8C00',
+        contrastColor: '#FFFFFF',  // White outline on orange/red
+        particleType: 'ember',
         connectorStyle: 'plasma',
-        particleSpeed: 2.0,
-        particleGravity: -0.05, // Embers rise
+        physics: { gravity: -0.02, speedX: -4.5, spread: 0.5, lifeSpan: 0.03, sizeRange: [2, 5], convergence: 0.5 }
     },
 
-    // Electric - Yellow lightning bolts
+    // ⚡ ELECTRIC: Fast zigzag sparks
     electric: {
         color: '#FFD700',
         glowColor: 'rgba(255, 215, 0, 0.8)',
-        secondaryColor: '#FFFFFF',
+        secondaryColor: '#FFFF00',
+        contrastColor: '#000000',  // Black outline on yellow (light color)
+        particleType: 'spark',
         connectorStyle: 'bolt',
-        particleSpeed: 5.0,
-        particleGravity: 0, // Sparks fly in all directions
+        physics: { gravity: 0, speedX: -10.0, spread: 3.0, lifeSpan: 0.08, sizeRange: [1, 3], convergence: 0.2 }
     },
 
-    // Water - Blue flowing tube
+    // 💧 WATER: Fluid bubbles
     water: {
         color: '#00BFFF',
-        glowColor: 'rgba(0, 191, 255, 0.5)',
-        secondaryColor: '#87CEEB',
-        connectorStyle: 'tube',
-        particleSpeed: 1.5,
-        particleGravity: 0.03, // Droplets fall slightly
+        glowColor: 'rgba(0, 191, 255, 0.6)',
+        secondaryColor: '#1E90FF',
+        contrastColor: '#FFFFFF',  // White outline on blue
+        darkVariant: '#005f99',    // Darker blue
+        lightVariant: '#4dc3ff',   // Lighter blue
+        particleType: 'bubble',
+        connectorStyle: 'tube',    // Reverted to 'tube' (valid type)
+        physics: { gravity: -0.015, speedX: -4.0, spread: 0.5, lifeSpan: 0.02, sizeRange: [3, 8], convergence: 0.1 }
     },
 
-    // Grass - Green with leaf particles
-    grass: {
-        color: '#32CD32',
-        glowColor: 'rgba(50, 205, 50, 0.5)',
-        secondaryColor: '#90EE90',
-        connectorStyle: 'wave',
-        particleSpeed: 1.5,
-        particleGravity: 0.02, // Leaves float down gently
-    },
-
-    // Ghost - Purple ethereal wave
+    // 🔮 GHOST: Slow lingering void particles
     ghost: {
         color: '#9932CC',
         glowColor: 'rgba(153, 50, 204, 0.7)',
-        secondaryColor: '#BA55D3',
+        secondaryColor: '#8B008B',
+        contrastColor: '#FFFFFF',  // White outline on purple
+        particleType: 'void',
         connectorStyle: 'wave',
-        particleSpeed: 0.8,
-        particleGravity: -0.02, // Wisps rise slowly
+        physics: { gravity: -0.005, speedX: -1.5, spread: 0.1, lifeSpan: 0.01, sizeRange: [4, 8], convergence: 0.6 }
     },
 
-    // Psychic - Pink pulsing energy
-    psychic: {
-        color: '#F85888',
-        glowColor: 'rgba(248, 88, 136, 0.6)',
-        secondaryColor: '#FF69B4',
-        connectorStyle: 'wave',
-        particleSpeed: 1.2,
-        particleGravity: 0, // Particles orbit
+    // 🌿 GRASS: Wind-drifting leaves
+    grass: {
+        color: '#32CD32',
+        glowColor: 'rgba(50, 205, 50, 0.5)',
+        secondaryColor: '#228B22',
+        contrastColor: '#FFFFFF',  // White outline on green
+        particleType: 'leaf',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.02, speedX: -3.0, spread: 1.0, lifeSpan: 0.02, sizeRange: [3, 5], convergence: 0.4 }
     },
 
-    // Ice - Cyan crystalline
+    // ❄️ ICE: Crystalline shards
     ice: {
-        color: '#87CEEB',
-        glowColor: 'rgba(135, 206, 235, 0.6)',
-        secondaryColor: '#E0FFFF',
-        connectorStyle: 'tube',
-        particleSpeed: 1.0,
-        particleGravity: 0.04, // Ice crystals fall
+        color: '#00FFFF',
+        glowColor: 'rgba(0, 255, 255, 0.6)',
+        secondaryColor: '#ADD8E6',
+        contrastColor: '#000000',  // Black outline on cyan (light color)
+        particleType: 'crystal',
+        connectorStyle: 'ice',
+        physics: { gravity: 0.01, speedX: -3.5, spread: 0.4, lifeSpan: 0.025, sizeRange: [2, 4], convergence: 0.35 }
     },
 
-    // Dragon - Purple/indigo energy
+    // 🌙 DARK: Shadow wisps
+    dark: {
+        color: '#4B0082',
+        glowColor: 'rgba(75, 0, 130, 0.6)',
+        secondaryColor: '#2F004F',
+        contrastColor: '#FFFFFF',  // White outline on dark purple
+        particleType: 'shadow',
+        connectorStyle: 'shadow',
+        physics: { gravity: -0.02, speedX: -2.0, spread: 0.3, lifeSpan: 0.018, sizeRange: [3, 6], convergence: 0.5 }
+    },
+
+    // 🧠 PSYCHIC: Floating orbs
+    psychic: {
+        color: '#FF1493',
+        glowColor: 'rgba(255, 20, 147, 0.6)',
+        secondaryColor: '#DA70D6',
+        contrastColor: '#FFFFFF',  // White outline on pink
+        particleType: 'psychic',
+        connectorStyle: 'wave',
+        physics: { gravity: -0.015, speedX: -2.5, spread: 0.5, lifeSpan: 0.02, sizeRange: [2, 5], convergence: 0.45 }
+    },
+
+    // 🪨 ROCK: Falling debris
+    rock: {
+        color: '#A0522D',
+        glowColor: 'rgba(160, 82, 45, 0.4)',
+        secondaryColor: '#8B4513',
+        contrastColor: '#FFFFFF',  // White outline on brown
+        particleType: 'rock',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.08, speedX: -3.0, spread: 0.6, lifeSpan: 0.035, sizeRange: [3, 6], convergence: 0.3 }
+    },
+
+    // 🌪️ FLYING: Wind currents
+    flying: {
+        color: '#87CEEB',
+        glowColor: 'rgba(135, 206, 235, 0.4)',
+        secondaryColor: '#B0E0E6',
+        contrastColor: '#000000',  // Black outline on light blue
+        particleType: 'wind',
+        connectorStyle: 'wave',
+        physics: { gravity: -0.03, speedX: -5.0, spread: 1.2, lifeSpan: 0.04, sizeRange: [2, 4], convergence: 0.25 }
+    },
+
+    // ☠️ POISON: Toxic bubbles
+    poison: {
+        color: '#9400D3',
+        glowColor: 'rgba(148, 0, 211, 0.5)',
+        secondaryColor: '#8B008B',
+        contrastColor: '#FFFFFF',  // White outline on purple
+        particleType: 'venom',
+        connectorStyle: 'tube',
+        physics: { gravity: -0.02, speedX: -2.5, spread: 0.4, lifeSpan: 0.02, sizeRange: [3, 5], convergence: 0.4 }
+    },
+
+    // 🌍 GROUND: Dust clouds
+    ground: {
+        color: '#DEB887',
+        glowColor: 'rgba(222, 184, 135, 0.4)',
+        secondaryColor: '#D2691E',
+        contrastColor: '#000000',  // Black outline on beige (light color)
+        particleType: 'dust',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.04, speedX: -2.0, spread: 0.8, lifeSpan: 0.025, sizeRange: [2, 5], convergence: 0.35 }
+    },
+
+    // 🐲 DRAGON: Mystical flames
     dragon: {
         color: '#7038F8',
-        glowColor: 'rgba(112, 56, 248, 0.7)',
-        secondaryColor: '#9370DB',
+        glowColor: 'rgba(112, 56, 248, 0.6)',
+        secondaryColor: '#4C0099',
+        contrastColor: '#FFFFFF',  // White outline on purple
+        particleType: 'ember',
         connectorStyle: 'plasma',
-        particleSpeed: 3.0,
-        particleGravity: -0.03,
+        physics: { gravity: -0.04, speedX: -4.5, spread: 0.6, lifeSpan: 0.03, sizeRange: [3, 6], convergence: 0.5 }
     },
 
-    // Flying - Light blue/white
-    flying: {
-        color: '#A890F0',
-        glowColor: 'rgba(168, 144, 240, 0.5)',
-        secondaryColor: '#FFFFFF',
-        connectorStyle: 'wave',
-        particleSpeed: 2.5,
-        particleGravity: -0.04, // Feathers float up
-    },
-
-    // Fighting - Red/orange power
+    // ⚔️ FIGHTING: Impact bursts
     fighting: {
-        color: '#C03028',
-        glowColor: 'rgba(192, 48, 40, 0.6)',
-        secondaryColor: '#FF6347',
-        connectorStyle: 'plasma',
-        particleSpeed: 3.5,
-        particleGravity: 0,
+        color: '#C22E28',
+        glowColor: 'rgba(194, 46, 40, 0.5)',
+        secondaryColor: '#7D1F18',
+        contrastColor: '#FFFFFF',  // White outline on red
+        particleType: 'ember',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.02, speedX: -5.0, spread: 0.8, lifeSpan: 0.04, sizeRange: [2, 4], convergence: 0.3 }
     },
 
-    // Poison - Purple toxic
-    poison: {
-        color: '#A040A0',
-        glowColor: 'rgba(160, 64, 160, 0.6)',
-        secondaryColor: '#DA70D6',
-        connectorStyle: 'tube',
-        particleSpeed: 1.0,
-        particleGravity: -0.01, // Toxins rise
-    },
-
-    // Ground - Brown earth
-    ground: {
-        color: '#E0C068',
-        glowColor: 'rgba(224, 192, 104, 0.5)',
-        secondaryColor: '#DEB887',
-        connectorStyle: 'standard',
-        particleSpeed: 2.0,
-        particleGravity: 0.06, // Dust falls
-    },
-
-    // Rock - Gray stone
-    rock: {
-        color: '#B8A038',
-        glowColor: 'rgba(184, 160, 56, 0.5)',
-        secondaryColor: '#A0A0A0',
-        connectorStyle: 'standard',
-        particleSpeed: 1.5,
-        particleGravity: 0.08, // Rocks fall fast
-    },
-
-    // Bug - Green/yellow
+    // 🦗 BUG: Glittering particles
     bug: {
         color: '#A8B820',
-        glowColor: 'rgba(168, 184, 32, 0.5)',
-        secondaryColor: '#C6D16E',
-        connectorStyle: 'wave',
-        particleSpeed: 2.0,
-        particleGravity: 0,
+        glowColor: 'rgba(168, 184, 32, 0.4)',
+        secondaryColor: '#6D7815',
+        contrastColor: '#000000',  // Black outline on yellow-green
+        particleType: 'leaf',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.01, speedX: -3.5, spread: 0.7, lifeSpan: 0.028, sizeRange: [1, 3], convergence: 0.35 }
     },
 
-    // Dark - Black/purple
-    dark: {
-        color: '#705848',
-        glowColor: 'rgba(112, 88, 72, 0.6)',
-        secondaryColor: '#2F4F4F',
-        connectorStyle: 'wave',
-        particleSpeed: 1.5,
-        particleGravity: 0.01,
-    },
-
-    // Steel - Silver metallic
-    steel: {
-        color: '#B8B8D0',
-        glowColor: 'rgba(184, 184, 208, 0.5)',
-        secondaryColor: '#C0C0C0',
-        connectorStyle: 'standard',
-        particleSpeed: 2.0,
-        particleGravity: 0.05,
-    },
-
-    // Fairy - Pink magical
+    // 🧚 FAIRY: Sparkle dust
     fairy: {
         color: '#EE99AC',
         glowColor: 'rgba(238, 153, 172, 0.6)',
         secondaryColor: '#FFB6C1',
-        connectorStyle: 'wave',
-        particleSpeed: 1.2,
-        particleGravity: -0.02, // Sparkles float up
+        contrastColor: '#000000',  // Black outline on pink (light color)
+        particleType: 'fairy',
+        connectorStyle: 'glow',
+        physics: { gravity: -0.015, speedX: -2.5, spread: 0.6, lifeSpan: 0.02, sizeRange: [2, 4], convergence: 0.45 }
     },
 
-    // Normal - White/gray
+    // 🔩 STEEL: Metallic shards
+    steel: {
+        color: '#B8B8D0',
+        glowColor: 'rgba(184, 184, 208, 0.4)',
+        secondaryColor: '#7A7A9E',
+        contrastColor: '#000000',  // Black outline on light gray
+        particleType: 'steel',
+        connectorStyle: 'solid',
+        physics: { gravity: 0.03, speedX: -4.0, spread: 0.3, lifeSpan: 0.035, sizeRange: [2, 4], convergence: 0.3 }
+    },
+
+    // 🔮 Default/Normal
     normal: {
         color: '#A8A878',
-        glowColor: 'rgba(168, 168, 120, 0.4)',
-        secondaryColor: '#D3D3D3',
-        connectorStyle: 'standard',
-        particleSpeed: 1.0,
-        particleGravity: 0.02,
-    },
+        glowColor: 'rgba(168, 168, 120, 0.3)',
+        secondaryColor: '#C6C6A7',
+        contrastColor: '#000000',  // Black outline on tan (light color)
+        particleType: 'dust',
+        connectorStyle: 'solid',
+        physics: { gravity: 0, speedX: -3.0, spread: 0.5, lifeSpan: 0.02, sizeRange: [2, 4], convergence: 0.4 }
+    }
 };
 
 /**
- * Get elemental style for a given type
- * Falls back to 'normal' if type not found
+ * Gets elemental config for a Pokemon type, with fallback
  */
-export const getElementalStyle = (type: string): ElementalStyle => {
-    return ELEMENTAL_STYLES[type] || ELEMENTAL_STYLES.normal;
-};
-
-/**
- * Dual-Type Synergy Configuration
- * For dual-type Pokemon, determines how visual effects are distributed
- */
-export interface DualTypeSynergy {
-    primaryType: string;      // types[0] - White orb effects
-    secondaryType: string;    // types[1] - Black orb effects
-    primaryStyle: ElementalStyle;
-    secondaryStyle: ElementalStyle;
-    blendedConnectorColor: string; // Gradient blend for connector
+export function getElementalConfig(type: string): ElementalConfig {
+    const normalizedType = type.toLowerCase();
+    return ELEMENTAL_STYLES[normalizedType] || ELEMENTAL_STYLES.normal;
 }
 
 /**
- * Create dual-type synergy from Pokemon types array
- * White orb uses primary type, black orb uses secondary type
+ * Gets blended config for dual-type Pokemon
  */
-export const createDualTypeSynergy = (types: string[]): DualTypeSynergy => {
-    const primaryType = types[0] || 'normal';
-    const secondaryType = types[1] || primaryType; // Single types use same for both
+export function getDualTypeConfig(type1: string, type2?: string): ElementalConfig {
+    const config1 = getElementalConfig(type1);
+    if (!type2) return config1;
 
-    const primaryStyle = getElementalStyle(primaryType);
-    const secondaryStyle = getElementalStyle(secondaryType);
+    const config2 = getElementalConfig(type2);
 
+    // Use primary type's main properties, blend colors
     return {
-        primaryType,
-        secondaryType,
-        primaryStyle,
-        secondaryStyle,
-        blendedConnectorColor: primaryStyle.color, // Use primary for connector
+        ...config1,
+        secondaryColor: config2.color,
     };
-};
-
-/**
- * Check if a Pokemon has dual types
- */
-export const isDualType = (types: string[]): boolean => {
-    return types.length >= 2 && types[0] !== types[1];
-};
-
-/**
- * Get particle emission colors for dual-type support
- * Returns array of colors to randomly emit from
- */
-export const getDualTypeParticleColors = (types: string[]): string[] => {
-    const synergy = createDualTypeSynergy(types);
-
-    if (isDualType(types)) {
-        return [
-            synergy.primaryStyle.color,
-            synergy.primaryStyle.secondaryColor,
-            synergy.secondaryStyle.color,
-            synergy.secondaryStyle.secondaryColor,
-        ];
-    }
-
-    return [
-        synergy.primaryStyle.color,
-        synergy.primaryStyle.secondaryColor,
-    ];
-};
+}

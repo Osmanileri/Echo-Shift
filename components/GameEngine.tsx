@@ -138,7 +138,6 @@ import * as GlitchVFX from "../systems/GlitchVFX";
 // Spirit Character Rendering - Pokemon silhouettes and elemental auras
 import * as SpiritRenderer from "../systems/spiritRenderer";
 // Spirit VFX Systems - Trailing Soul, Elemental Styles, Enhanced Particles
-import * as ElementalParticles from "../systems/elementalParticles";
 import { SpriteManager } from "../systems/spriteManager";
 import * as TrailingSoul from "../systems/trailingSoul";
 import type { GlitchModeState, GlitchShard } from "../types";
@@ -599,6 +598,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Connector animation tracking for elastic easing
   const connectorAnimationStartTime = useRef<number>(0);
   // Wave path shards during Quantum Lock
+
+  // Maneuver-based Shield System - Requirements Update
+  const SHIELD_REWARD_STREAK = 20; // 20 near misses = 1 shield
   const wavePathShards = useRef<GlitchSystem.WavePathShard[]>([]);
   // Diamond bonus tracking for reflex rewards
   const lastDiamondCollectTime = useRef<number>(0);
@@ -1120,7 +1122,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const createSwapEffect = (x: number, y: number) => {
     // Use new ParticleSystem for burst effect
     const accentColor = getColor("accent");
-    ParticleSystem.emitBurst(x, y, [accentColor, "#FFFFFF", "#FF00FF"]);
+    ParticleSystem.emitBurst(x, y, activeCharacter?.types[0] || 'normal', 12);
 
     // Also add to legacy particles for backward compatibility
     for (let i = 0; i < 8; i++) {
@@ -1183,11 +1185,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     });
 
     // Requirements 3.5, 12.3: Spark particles from closest point using ParticleSystem
-    ParticleSystem.emitSpark(closestPoint.x, closestPoint.y, [
-      accentColor,
-      "#FFD700",
-      "#FFA500",
-    ]);
+    ParticleSystem.emitBurst(closestPoint.x, closestPoint.y, activeCharacter?.types[0] || 'normal', 6);
 
     // Also add to legacy particles for backward compatibility
     const sparkCount = Math.floor(randomRange(5, 9));
@@ -1822,11 +1820,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             finishExplosionTriggered.current = true;
 
             // Create explosion particles at finish line using ParticleSystem
-            ParticleSystem.emitBurst(
-              finishLineX.current,
-              screenHeight / 2,
-              ['#00ffff', '#ffffff', '#00ff88']
-            );
+            ParticleSystem.emitBurst(finishLineX.current, screenHeight / 2, activeCharacter?.types[0] || 'normal');
           }
 
           // Phase 3: Wait for explosion animation then trigger victory
@@ -2590,15 +2584,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // Trail Particles - Requirements 12.1: Emit trail particles based on movement speed
-      // Emit trail particles behind both orbs based on game speed
-      ParticleSystem.emitTrail(whiteOrbX - 5, whiteOrbY, speed.current, [
-        whiteOrb.color,
-        getColor("accent"),
-      ]);
-      ParticleSystem.emitTrail(blackOrbX - 5, blackOrbY, speed.current, [
-        blackOrb.color,
-        getColor("accent"),
-      ]);
+      // Emit converging trail particles: top orb particles go down, bottom orb particles go up
+      // This creates a V-shaped trail that meets at the connector level
+      const isWhiteTop = whiteOrbY < blackOrbY;
+      const activeType = activeCharacter?.types[0] || 'normal';
+
+      // White Orb emission
+      ParticleSystem.emit(whiteOrbX - 5, whiteOrbY, activeType, isWhiteTop);
+
+      // Black Orb emission (opposite direction)
+      ParticleSystem.emit(blackOrbX - 5, blackOrbY, activeType, !isWhiteTop);
 
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
       // Get dash speed multiplier for glitch tokens
@@ -2941,7 +2936,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Visual/audio feedback for hit
               const hitX = whiteHit ? whiteOrbX : blackOrbX;
               const hitY = whiteHit ? whiteOrbY : blackOrbY;
-              ParticleSystem.emitBurst(hitX, hitY, ["#FF4400", "#FF0000", "#FFAA00"]);
+              ParticleSystem.emitBurst(hitX, hitY, activeCharacter?.types[0] || 'normal');
               ScreenShake.triggerNearMiss();
 
               // Show hit counter
@@ -3042,7 +3037,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               useGameStore.getState().addEchoShards(shardValue);
 
               // Visual feedback with bonus indicator
-              ParticleSystem.emitBurst(shard.x, shard.y, ["#00FF00", "#00FFFF", "#FFFFFF"]);
+              ParticleSystem.emitBurst(shard.x, shard.y, activeCharacter?.types[0] || 'normal');
 
               // Show bonus text
               let bonusText = `+${shardValue} 💎`;
@@ -3123,16 +3118,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
             const collisionY = whiteCollision ? whiteOrbY : blackOrbY;
 
             // Dramatic collection animation - multiple bursts
-            ParticleSystem.emitBurst(collectible.x, collectible.y, [
-              "#FFD700",
-              "#FF00FF",
-              "#FFFFFF",
-            ]);
-            ParticleSystem.emitBurst(collisionX, collisionY, [
-              "#FFD700",
-              "#FF00FF",
-              "#FFFFFF",
-            ]);
+            ParticleSystem.emitBurst(collectible.x, collectible.y, activeCharacter?.types[0] || 'normal');
+            ParticleSystem.emitBurst(collisionX, collisionY, activeCharacter?.types[0] || 'normal');
 
             // Audio: S.H.I.F.T. letter collect sound - Phase 4
             AudioSystem.playShiftCollect();
@@ -3185,11 +3172,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               }
 
               // Visual feedback for Overdrive activation
-              ParticleSystem.emitBurst(playerX, playerY.current * height, [
-                "#FFD700",
-                "#FF00FF",
-                "#00F0FF",
-              ]);
+              ParticleSystem.emitBurst(playerX, playerY.current * height, activeCharacter?.types[0] || 'normal');
               scorePopups.current.push({
                 x: width / 2,
                 y: height / 2 - 80,
@@ -3354,12 +3337,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Visual feedback - BONUS için büyük patlama
           if (isBonus) {
             // Büyük patlama efekti - 3 dalga
-            ParticleSystem.emitBurst(shard.x, shard.y, [
-              "#FFD700", "#FF6B00", "#FFFFFF",
-            ]);
-            ParticleSystem.emitBurst(shard.x, shard.y, [
-              "#FF00FF", "#00FFFF", "#FFD700",
-            ]);
+            ParticleSystem.emitBurst(shard.x, shard.y, activeCharacter?.types[0] || 'normal');
+            ParticleSystem.emitBurst(shard.x, shard.y, activeCharacter?.types[1] || activeCharacter?.types[0] || 'normal');
             // Ekstra parçacıklar
             for (let i = 0; i < 15; i++) {
               particles.current.push({
@@ -3379,11 +3358,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             AudioSystem.playStreakBonus();
           } else {
             // Particle burst on shard collection - Requirements 14.1
-            ParticleSystem.emitBurst(shard.x, shard.y, [
-              "#00F0FF",
-              "#FFD700",
-              "#FFFFFF",
-            ]);
+            ParticleSystem.emitBurst(shard.x, shard.y, activeCharacter?.types[0] || 'normal');
             // Haptic feedback
             getHapticSystem().trigger("light");
             // Audio: Collection SFX on shard pickup - Requirements 14.1
@@ -3547,11 +3522,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 vy: -0.5,
               });
               // Emit burst particles for activation effect
-              ParticleSystem.emitBurst(playerX, playerY.current * height, [
-                "#00F0FF",
-                "#FF00FF",
-                "#FFFFFF",
-              ]);
+              ParticleSystem.emitBurst(playerX, playerY.current * height, activeCharacter?.types[0] || 'normal');
             }
 
             // Chromatic Aberration - Requirements 11.1, 11.2: Trigger based on rhythm streak
@@ -3703,11 +3674,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 obs.y + obs.height / 2,
                 "#FFD700"
               );
-              ParticleSystem.emitBurst(
-                obs.x + obs.width / 2,
-                obs.y + obs.height / 2,
-                ["#FFD700", "#FF00FF", "#00F0FF"]
-              );
+              ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
               // Screen shake for impact
               ScreenShake.triggerNearMiss();
@@ -3786,11 +3753,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Add particle burst at impact point for extra visual feedback
             const impactX = obs.x + obs.width / 2;
             const impactY = obs.y + obs.height / 2;
-            ParticleSystem.emitBurst(impactX, impactY, [
-              obsColor === '#FFFFFF' ? '#00FFFF' : '#FF00FF',
-              '#FFFFFF',
-              obsColor
-            ]);
+            ParticleSystem.emitBurst(impactX, impactY, activeCharacter?.types[0] || 'normal');
 
             // Mark obstacle for removal
             obs.passed = true;
@@ -3859,11 +3822,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   obs.y + obs.height / 2,
                   "#00F0FF"
                 );
-                ParticleSystem.emitBurst(
-                  obs.x + obs.width / 2,
-                  obs.y + obs.height / 2,
-                  ["#00F0FF", "#FF00FF", "#FFFFFF"]
-                );
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
                 // Requirements 1.5: Award 50 bonus points
                 if (!zenMode?.enabled) {
@@ -3892,11 +3851,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
 
                 // VFX: shatter burst + popup + mild shake + haptic
-                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, [
-                  "#00F0FF",
-                  "#FFFFFF",
-                  "#A855F7",
-                ]);
+                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, activeCharacter?.types[0] || 'normal');
                 scorePopups.current.push({
                   x: whiteOrb.x,
                   y: whiteOrb.y - 20,
@@ -3935,7 +3890,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               } else if (collisionResult === 'DESTROY') {
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
-                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, ["#FFD700", "#FF6600", "#FFFFFF"]);
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
                 ScreenShake.triggerNearMiss();
                 getHapticSystem().trigger("medium");
                 // Audio for Titan stomp - Requirements 6.5
@@ -3986,7 +3941,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   Date.now()
                 );
                 createExplosion(whiteOrb.x, whiteOrb.y, "#FF00FF");
-                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
+                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, activeCharacter?.types[0] || 'normal');
                 getHapticSystem().trigger("heavy");
 
                 // Audio for Second Chance - Requirements 6.5
@@ -4042,6 +3997,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Reset resonance state on collision
               resonanceState.current =
                 ResonanceSystem.createInitialResonanceState();
+
+              // Reset near-miss streak on collision - Requirements Update
+              nearMissState.current = createInitialNearMissState();
+              onNearMissStateUpdate?.(0);
             }
           }
         }
@@ -4074,11 +4033,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   obs.y + obs.height / 2,
                   "#00F0FF"
                 );
-                ParticleSystem.emitBurst(
-                  obs.x + obs.width / 2,
-                  obs.y + obs.height / 2,
-                  ["#00F0FF", "#FF00FF", "#FFFFFF"]
-                );
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
                 // Requirements 1.5: Award 50 bonus points
                 if (!zenMode?.enabled) {
@@ -4106,11 +4061,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 shieldChargesRemaining.current -= 1;
                 shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
 
-                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, [
-                  "#00F0FF",
-                  "#FFFFFF",
-                  "#A855F7",
-                ]);
+                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, activeCharacter?.types[0] || 'normal');
                 scorePopups.current.push({
                   x: blackOrb.x,
                   y: blackOrb.y - 20,
@@ -4147,7 +4098,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               } else if (blackCollisionResult === 'DESTROY') {
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
-                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, ["#FFD700", "#FF6600", "#FFFFFF"]);
+                ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
                 ScreenShake.triggerNearMiss();
                 getHapticSystem().trigger("medium");
                 // Audio for Titan stomp - Requirements 6.5
@@ -4198,7 +4149,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   Date.now()
                 );
                 createExplosion(blackOrb.x, blackOrb.y, "#FF00FF");
-                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, ["#FF00FF", "#00F0FF", "#FFFFFF"]);
+                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, activeCharacter?.types[0] || 'normal');
                 getHapticSystem().trigger("heavy");
 
                 // Audio for Second Chance - Requirements 6.5
@@ -4254,6 +4205,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Reset resonance state on collision
               resonanceState.current =
                 ResonanceSystem.createInitialResonanceState();
+
+              // Reset near-miss streak on collision - Requirements Update
+              nearMissState.current = createInitialNearMissState();
+              onNearMissStateUpdate?.(0);
             }
           }
         }
@@ -4279,6 +4234,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Notify UI of near miss state change - Requirements 3.7
               onNearMissStateUpdate?.(nearMissState.current.streakCount);
+
+              // Maneuver-based Shield System: Award shield every X near misses - Requirements Update
+              if (nearMissState.current.streakCount > 0 && nearMissState.current.streakCount % SHIELD_REWARD_STREAK === 0) {
+                shieldChargesRemaining.current += 1;
+
+                // Visual feedback for shield gain
+                scorePopups.current.push({
+                  x: whiteOrb.x,
+                  y: whiteOrb.y - 40,
+                  text: "🛡️ SHIELD RESTORED (+1)",
+                  color: "#00F0FF",
+                  life: 2.0,
+                  vy: -1.5,
+                });
+
+                // Audio: Shield gain sound
+                AudioSystem.playShieldBlock();
+                getHapticSystem().trigger("heavy");
+              }
 
               // Daily Rituals: Track near miss event - Requirements 3.7
               ritualTracking?.onNearMiss?.();
@@ -4351,6 +4325,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 whiteNearMiss.closestPoint,
                 streakResult.streakBonusAwarded
               );
+
+              // Audio and Haptic Feedback for successful near-miss - User Request
+              AudioSystem.playNearMiss();
+              getHapticSystem().trigger('medium');
             }
           }
 
@@ -4372,6 +4350,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Notify UI of near miss state change - Requirements 3.7
               onNearMissStateUpdate?.(nearMissState.current.streakCount);
+
+              // Maneuver-based Shield System: Award shield every X near misses - Requirements Update
+              if (nearMissState.current.streakCount > 0 && nearMissState.current.streakCount % SHIELD_REWARD_STREAK === 0) {
+                shieldChargesRemaining.current += 1;
+
+                // Visual feedback for shield gain
+                scorePopups.current.push({
+                  x: blackOrb.x,
+                  y: blackOrb.y - 40,
+                  text: "🛡️ SHIELD RESTORED (+1)",
+                  color: "#00F0FF",
+                  life: 2.0,
+                  vy: -1.5,
+                });
+
+                // Audio: Shield gain sound
+                AudioSystem.playShieldBlock();
+                getHapticSystem().trigger("heavy");
+              }
 
               // Daily Rituals: Track near miss event - Requirements 3.7
               ritualTracking?.onNearMiss?.();
@@ -4436,6 +4433,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 blackNearMiss.closestPoint,
                 streakResult.streakBonusAwarded
               );
+
+              // Audio and Haptic Feedback for successful near-miss - User Request
+              AudioSystem.playNearMiss();
+              getHapticSystem().trigger('medium');
             }
           }
         }
@@ -4464,7 +4465,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Update Particles - Requirements 12.4, 12.5
       // Update new ParticleSystem
-      ParticleSystem.update(16.67); // ~60fps delta time
+      ParticleSystem.update();
 
       // Update Screen Shake - Requirements 10.3, 10.4
       ScreenShake.update(Date.now());
@@ -4564,6 +4565,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- DRAW LOGIC ---
 
+
       // Screen Shake Transform - Requirements 10.3: Apply shake offset to canvas
       // Zen Mode: Reduce shake intensity - Requirements 9.4
       const shakeOffset = ScreenShake.getOffset();
@@ -4611,6 +4613,36 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Requirements 4.3: Draw bottom zone from Y=currentMidlineY to Y=canvasHeight
       ctx.fillStyle = bottomBgColor;
       ctx.fillRect(0, currentMidlineY, width, height - currentMidlineY);
+
+      // --- PARTICLES (BACKGROUND LAYER) ---
+      // Render new ParticleSystem particles with Zen Mode intensity
+      const visualIntensity = zenMode?.enabled
+        ? ZenMode.getVisualIntensity(zenModeState.current)
+        : 1.0;
+
+      ctx.save();
+      ctx.globalAlpha = visualIntensity;
+      ParticleSystem.render(ctx);
+      ctx.globalAlpha = 1.0;
+
+      // Render legacy particles with Zen Mode intensity
+      particles.current.forEach((p) => {
+        ctx.save();
+        ctx.globalAlpha = p.life * visualIntensity;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8 * p.life;
+        const size = (2 + p.life * 4) * (0.8 + Math.random() * 0.4);
+        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+        gradient.addColorStop(0, p.color);
+        gradient.addColorStop(0.5, p.color);
+        gradient.addColorStop(1, "transparent");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+      ctx.restore();
 
       // Theme Effects - Requirements 5.4: Cyberpunk grid lines
       if (hasEffect("gridLines")) {
@@ -5366,11 +5398,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.stroke();
           ctx.shadowBlur = 0;
         } else {
-          // Orb renkleri (tema sisteminden):
-          // - topOrb = bottomBg (beyaz/açık renk)
-          // - bottomOrb = topBg (siyah/koyu renk)
-          let orbFillColor = isWhite ? getColor("topOrb") : getColor("bottomOrb");
-          let orbBorderColor = isWhite ? getColor("bottomOrb") : getColor("topOrb");
+          // [CRITICAL FIX] Orb renkleri BLOKLARLA AYNI OLMALI
+          // Bloklar topObstacle/bottomObstacle kullanıyor ve doğru çalışıyor
+          // Bu yüzden aynı renkleri orblar için de kullanıyoruz:
+          // - isWhite=true (üst orb) → topObstacle = bottomBg (mor/lacivert)
+          // - isWhite=false (alt orb) → bottomObstacle = topBg (yeşil/kırmızı)
+          let orbFillColor = isWhite ? getColor("topObstacle") : getColor("bottomObstacle");
+          let orbBorderColor = isWhite ? getColor("bottomObstacle") : getColor("topObstacle");
 
           // Fallback to default colors if theme system returns empty
           if (!orbFillColor) orbFillColor = isWhite ? "#FFFFFF" : "#000000";
@@ -5486,16 +5520,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               now
             );
 
-            // Emit active elemental particles (sparks, leaves, etc.) based on motion
-            // Probability increases with velocity
-            if (activeCharacter.types && Math.random() < 0.3 + Math.abs(playerVelocityY.current) * 0.05) {
-              ElementalParticles.emitElementalParticles(
-                orb.x,
-                orb.y,
-                activeCharacter.types,
-                1 + Math.abs(playerVelocityY.current) * 0.1
-              );
-            }
+            // Note: Main converging trail particles are emitted in the main game loop (lines 2584-2594)
+            // Those emissions correctly use isTopOrb for V-shaped convergence
           }
         }
       };
@@ -5743,42 +5769,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
         SecondChanceVFX.renderSecondChanceVFX(ctx, secondChanceVFXState.current);
       }
 
-      // Particles - Requirements 12.1, 12.2, 12.3
-      // Zen Mode: Reduce visual intensity - Requirements 9.4
-      const visualIntensity = zenMode?.enabled
-        ? ZenMode.getVisualIntensity(zenModeState.current)
-        : 1.0;
-
-      // Render new ParticleSystem particles with Zen Mode intensity
-      ctx.globalAlpha = visualIntensity;
-      ParticleSystem.render(ctx);
-      ctx.globalAlpha = 1.0;
-
-      // Render legacy particles with Zen Mode intensity - VFX Polish Phase 4
-      particles.current.forEach((p) => {
-        ctx.save();
-        ctx.globalAlpha = p.life * visualIntensity;
-
-        // Add glow effect
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 8 * p.life;
-
-        // Dynamic size based on life
-        const size = (2 + p.life * 4) * (0.8 + Math.random() * 0.4);
-
-        // Draw particle with gradient
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
-        gradient.addColorStop(0, p.color);
-        gradient.addColorStop(0.5, p.color);
-        gradient.addColorStop(1, "transparent");
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.restore();
-      });
 
       // Draw Visual Effects - Requirements 3.4, 3.9
       // Zen Mode: Reduce visual intensity - Requirements 9.4
@@ -6003,6 +5993,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
       frameId.current = requestAnimationFrame(loop);
     };
 
+    // Preload active character sprite before starting if possible
+    if (activeCharacter?.spriteUrl) {
+      SpriteManager.getSprite(activeCharacter.spriteUrl).catch(console.error);
+    }
+
     frameId.current = requestAnimationFrame(loop);
 
     return () => {
@@ -6071,7 +6066,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // 2 second rewind animation - play snapshots backwards smoothly
         const elapsed = Date.now() - rewindStartTime.current;
-        const rewindDuration = 2000; // 2 seconds rewind animation
+        const rewindDuration = 1600; // 1.6 seconds rewind animation
         const progress = Math.min(1, elapsed / rewindDuration);
 
         // Calculate which snapshot to show based on progress
@@ -6189,7 +6184,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillText('GERİ SARILIYOR', width / 2, height / 2 + 10);
 
         // Time indicator (showing how far back we're going)
-        const secondsBack = (progress * 2).toFixed(1); // 2 second rewind
+        const secondsBack = (progress * 1.6).toFixed(1); // 1.6 second rewind
         ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
         ctx.font = '16px monospace';
         ctx.fillText(`-${secondsBack} sn`, width / 2, height / 2 + 40);

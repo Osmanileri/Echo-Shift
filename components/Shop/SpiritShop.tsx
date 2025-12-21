@@ -226,19 +226,29 @@ const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
                                     <span className="text-sm font-medium text-white">{spirit.displayName}</span>
                                 </div>
 
-                                {/* Stats Preview */}
-                                <div className="flex justify-center gap-2 mb-2 text-[10px] text-white/60">
-                                    <div className="flex items-center gap-0.5" title="Hız">
-                                        <Zap className="w-3 h-3 text-yellow-400" />
-                                        {spirit.stats.speed}
+                                {/* Stats & VFX Preview */}
+                                <div className="space-y-2 mb-3">
+                                    <div className="flex justify-center gap-3 text-[10px] text-white/70">
+                                        <div className="flex items-center gap-1" title="Hız">
+                                            <Zap className="w-3 h-3 text-yellow-400" />
+                                            {spirit.stats.speed}
+                                        </div>
+                                        <div className="flex items-center gap-1" title="Savunma">
+                                            <Shield className="w-3 h-3 text-blue-400" />
+                                            {spirit.stats.defense}
+                                        </div>
+                                        <div className="flex items-center gap-1" title="Saldırı">
+                                            <Swords className="w-3 h-3 text-red-400" />
+                                            {spirit.stats.attack}
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-0.5" title="Savunma">
-                                        <Shield className="w-3 h-3 text-blue-400" />
-                                        {spirit.stats.defense}
-                                    </div>
-                                    <div className="flex items-center gap-0.5" title="Saldırı">
-                                        <Swords className="w-3 h-3 text-red-400" />
-                                        {spirit.stats.attack}
+
+                                    {/* VFX Info Badge */}
+                                    <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10 group-hover:border-cyan-500/30 transition-colors">
+                                        <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+                                        <span className="text-[9px] font-bold text-cyan-300 uppercase tracking-tighter">
+                                            {primaryType} VFX AKTİF
+                                        </span>
                                     </div>
                                 </div>
 

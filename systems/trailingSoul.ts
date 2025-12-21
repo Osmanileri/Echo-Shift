@@ -10,7 +10,7 @@
  * - LOD (Level of Detail) for performance optimization
  */
 
-import { getElementalStyle } from './elementalStyles';
+import { getElementalConfig } from './elementalStyles';
 
 /**
  * Individual trail point representing one echo position
@@ -127,7 +127,7 @@ export const renderTrailingSoul = (
 ): void => {
     if (trail.points.length === 0) return;
 
-    const style = getElementalStyle(elementType);
+    const style = getElementalConfig(elementType);
 
     ctx.save();
 

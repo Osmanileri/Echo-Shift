@@ -11,11 +11,11 @@
  */
 
 import {
-    EnhancedResonanceState,
-    Obstacle,
-    ShiftProtocolState,
-    SnapshotBuffer,
-    GameSnapshot as TypesGameSnapshot
+  EnhancedResonanceState,
+  Obstacle,
+  ShiftProtocolState,
+  SnapshotBuffer,
+  GameSnapshot as TypesGameSnapshot
 } from '../types';
 
 // ============================================================================
@@ -130,7 +130,7 @@ export function recordSnapshot(
 ): RestoreState {
   // Add new snapshot to the buffer
   const newSnapshots = [...state.snapshots, snapshot];
-  
+
   // Trim to max size (rolling buffer)
   const trimmedSnapshots = newSnapshots.length > config.maxSnapshots
     ? newSnapshots.slice(newSnapshots.length - config.maxSnapshots)
@@ -357,7 +357,7 @@ interface SerializedRestoreState {
 export function deserialize(data: string): RestoreState {
   try {
     const parsed: SerializedRestoreState = JSON.parse(data);
-    
+
     // Validate required fields
     if (
       typeof parsed.isAvailable !== 'boolean' ||
@@ -412,10 +412,10 @@ export function initializeSnapshotBuffer(capacity: number = DEFAULT_SNAPSHOT_BUF
 export function pushSnapshot(buffer: SnapshotBuffer, snapshot: TypesGameSnapshot): SnapshotBuffer {
   const newSnapshots = [...buffer.snapshots];
   newSnapshots[buffer.head] = snapshot;
-  
+
   const newHead = (buffer.head + 1) % buffer.capacity;
   const newSize = Math.min(buffer.size + 1, buffer.capacity);
-  
+
   return {
     snapshots: newSnapshots,
     head: newHead,
@@ -435,14 +435,14 @@ export function getRestoreSnapshot(buffer: SnapshotBuffer): TypesGameSnapshot | 
   if (buffer.size === 0) {
     return null;
   }
-  
+
   // Calculate the index of the oldest snapshot
   // If buffer is full, oldest is at head (about to be overwritten)
   // If buffer is not full, oldest is at index 0
-  const oldestIndex = buffer.size < buffer.capacity 
-    ? 0 
+  const oldestIndex = buffer.size < buffer.capacity
+    ? 0
     : buffer.head;
-  
+
   return buffer.snapshots[oldestIndex] || null;
 }
 
@@ -520,12 +520,12 @@ export function canRestoreV2(shards: number, hasUsedRestore: boolean): boolean {
   if (hasUsedRestore) {
     return false;
   }
-  
+
   // Requirements 8.3: Cannot restore if insufficient shards
   if (shards < RESTORE_CONFIG.cost) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -624,14 +624,14 @@ export function deductRestoreCost(shards: number): number {
 export interface RestoreSystem {
   state: RestoreState;
   config: RestoreConfig;
-  
+
   recordSnapshot: (snapshot: GameSnapshot) => void;
   canRestore: (balance: number) => boolean;
   executeRestore: (currentPlayerX: number) => RestoreResult;
   markUsed: () => void;
   reset: () => void;
   clearSnapshots: () => void;
-  
+
   // Serialization
   serialize: () => string;
   deserialize: (data: string) => void;

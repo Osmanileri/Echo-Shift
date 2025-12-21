@@ -7,7 +7,7 @@
  */
 
 import { useMemo } from 'react';
-import { getElementalStyle } from './elementalStyles';
+import { getElementalConfig } from './elementalStyles';
 
 /**
  * UI color configuration based on Pokemon type
@@ -26,7 +26,7 @@ export interface UIColorConfig {
  */
 export const getUIColorConfig = (types: string[]): UIColorConfig => {
     const primaryType = types[0] || 'normal';
-    const style = getElementalStyle(primaryType);
+    const style = getElementalConfig(primaryType);
 
     return {
         primary: style.color,
@@ -136,6 +136,7 @@ export const renderElementalPanel = (
 
 /**
  * Render score/distance text with elemental styling
+ * Enhanced with background-aware contrast for Visual Legibility System
  */
 export const renderElementalText = (
     ctx: CanvasRenderingContext2D,
@@ -144,7 +145,8 @@ export const renderElementalText = (
     y: number,
     types: string[],
     fontSize: number = 16,
-    time: number = Date.now()
+    time: number = Date.now(),
+    backgroundColor?: string
 ): void => {
     const config = getUIColorConfig(types);
     const pulseAlpha = 0.8 + Math.sin(time / 200) * 0.2;
@@ -155,9 +157,42 @@ export const renderElementalText = (
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
+    // Determine text color based on background (if provided)
+    let textColor = config.text;
+    let shadowColor = config.primary;
+    let isLightBackground = false;
+
+    if (backgroundColor) {
+        // Calculate background luminance to determine contrast
+        const hex = backgroundColor.replace('#', '');
+        const r = parseInt(hex.substring(0, 2), 16) || 0;
+        const g = parseInt(hex.substring(2, 4), 16) || 0;
+        const b = parseInt(hex.substring(4, 6), 16) || 0;
+        const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        isLightBackground = luminance > 128;
+
+        if (isLightBackground) {
+            // Light background: use dark text with light glow
+            textColor = '#000000';
+            shadowColor = 'rgba(255,255,255,0.8)';
+        }
+    }
+
+    // Add contrast shadow for guaranteed visibility
+    ctx.shadowColor = isLightBackground ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 1;
+
+    // Draw text outline for extra visibility
+    ctx.strokeStyle = isLightBackground ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = pulseAlpha;
+    ctx.strokeText(text, x, y);
+
     // Text with glow
-    ctx.fillStyle = config.text;
-    ctx.shadowColor = config.primary;
+    ctx.fillStyle = textColor;
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 8;
     ctx.globalAlpha = pulseAlpha;
     ctx.fillText(text, x, y);

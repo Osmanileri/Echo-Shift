@@ -9,10 +9,41 @@
  */
 
 import {
-  createDualTypeSynergy,
-  ElementalStyle,
-  getElementalStyle,
+  ElementalConfig,
+  getDualTypeConfig,
+  getElementalConfig,
 } from "./elementalStyles";
+
+// Type alias for backwards compatibility
+type ElementalStyle = ElementalConfig;
+
+// Helper function for backwards compatibility
+const getElementalStyle = (type: string): ElementalStyle => getElementalConfig(type);
+
+// Create dual-type synergy from types array
+const createDualTypeSynergy = (types: string[]): { primaryType: string; primaryStyle: ElementalStyle } => {
+  const primaryType = types[0] || 'normal';
+  const secondaryType = types[1];
+  return {
+    primaryType,
+    primaryStyle: secondaryType ? getDualTypeConfig(primaryType, secondaryType) : getElementalStyle(primaryType),
+  };
+};
+
+// Helper function to determine if a color is light or dark
+const isColorLight = (color: string): boolean => {
+  // Parse hex color
+  let hex = color.replace('#', '');
+  if (hex.length === 3) {
+    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+  // Calculate luminance
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5;
+};
 
 /**
  * Render a spirit orb with Pokemon silhouette inside
@@ -29,29 +60,16 @@ export const renderSpiritOrb = (
   time: number = Date.now(),
   velocityY: number = 0
 ): void => {
-  ctx.save();
-
-  // 1. Draw the base orb
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = orbColor;
-  ctx.fill();
-  ctx.closePath();
-
-  // 2. Draw Pokemon silhouette inside (if image loaded)
-  if (image && image.complete && image.naturalWidth > 0) {
-    renderSilhouette(ctx, x, y, radius, image, orbColor, velocityY, time);
-  }
-
-  ctx.restore();
-
-  // 3. Draw elemental aura glow
-  renderAuraGlow(ctx, x, y, radius, pokemonType, time);
+  renderProfessionalOrb(ctx, x, y, radius, image, orbColor, pokemonType, velocityY, time);
 };
 
 /**
  * Render Pokemon silhouette with dynamic lean effect
  * Silhouette leans opposite to movement direction
+ */
+/**
+ * Render Pokemon silhouette with dynamic lean and breathing effect
+ * Silhouette color is inverted based on orb color (Polarity System)
  */
 const renderSilhouette = (
   ctx: CanvasRenderingContext2D,
@@ -63,107 +81,62 @@ const renderSilhouette = (
   velocityY: number,
   time: number
 ): void => {
-  // Create temporary canvas for silhouette masking
-  const tempCanvas = document.createElement("canvas");
-  const tempCtx = tempCanvas.getContext("2d");
+  // [CRITICAL FIX] Use offscreen canvas to create silhouette WITHOUT covering orb body
+  // This ensures the orb keeps its theme color (purple, green, etc.)
+  // while the Pokemon sprite appears as a white silhouette on top
 
-  if (!tempCtx) return;
+  const silhouetteColor = "#FFFFFF";
 
-  const size = radius * 2.2;
-  tempCanvas.width = size;
-  tempCanvas.height = size;
-
-  // Draw the sprite
-  tempCtx.drawImage(image, 0, 0, size, size);
-
-  // Get image data and convert to silhouette
-  const imageData = tempCtx.getImageData(0, 0, size, size);
-  const data = imageData.data;
-
-  // Determine silhouette color based on orb color (polarity system)
-  const isWhiteOrb =
-    orbColor === "#FFFFFF" ||
-    orbColor === "white" ||
-    orbColor.toLowerCase().includes("fff");
-  const silhouetteColor = isWhiteOrb ? [0, 0, 0] : [255, 255, 255];
-
-  // Convert to silhouette
-  for (let i = 0; i < data.length; i += 4) {
-    const alpha = data[i + 3];
-    if (alpha > 50) {
-      data[i] = silhouetteColor[0];
-      data[i + 1] = silhouetteColor[1];
-      data[i + 2] = silhouetteColor[2];
-      // Reduce opacity for ghostly effect
-      data[i + 3] = Math.min(alpha, 180);
-    }
-  }
-
-  tempCtx.putImageData(imageData, 0, 0);
-
-  // Apply breathing animation
-  const breathScale = 1 + Math.sin(time / 500) * 0.05;
-  const drawSize = size * breathScale;
-  const offset = (drawSize - size) / 2;
+  // Breathing effect (Pulse)
+  const breathScale = 1 + Math.sin(time / 400) * 0.05;
+  const drawSize = radius * 1.5 * breathScale;
 
   // Dynamic Lean Effect: Silhouette leans opposite to movement
-  // This creates the feeling that the character is "steering" the orb
-  const maxLean = radius * 0.15; // Max lean distance
-  const leanOffset = Math.max(-maxLean, Math.min(maxLean, velocityY * -2));
+  const maxLean = radius * 0.2;
+  const leanY = Math.max(-maxLean, Math.min(maxLean, velocityY * -2.5));
+
+  // Create offscreen canvas for silhouette (avoids affecting orb color)
+  const offscreen = document.createElement('canvas');
+  offscreen.width = Math.ceil(drawSize);
+  offscreen.height = Math.ceil(drawSize);
+  const offCtx = offscreen.getContext('2d');
+  if (!offCtx) return;
+
+  // Draw sprite on offscreen canvas
+  offCtx.drawImage(image, 0, 0, drawSize, drawSize);
+
+  // Color it white using source-in (only affects sprite pixels)
+  offCtx.globalCompositeOperation = 'source-in';
+  offCtx.fillStyle = silhouetteColor;
+  offCtx.fillRect(0, 0, drawSize, drawSize);
+
+  // Now draw the silhouette onto the main canvas (clipped to orb)
+  ctx.save();
 
   // Clip to orb shape
-  ctx.save();
   ctx.beginPath();
   ctx.arc(x, y, radius - 2, 0, Math.PI * 2);
   ctx.clip();
 
-  // Draw silhouette with lean offset
-  ctx.globalAlpha = 0.7;
+  // Add subtle glow to silhouette
+  ctx.shadowColor = "#FFFFFF";
+  ctx.shadowBlur = 5;
+  ctx.globalAlpha = 0.85;
+
+  // Draw the pre-colored silhouette at orb center with lean
   ctx.drawImage(
-    tempCanvas,
-    x - radius * 1.1 - offset / 2,
-    y - radius * 1.1 - offset / 2 + leanOffset,
+    offscreen,
+    x - drawSize / 2,
+    y + leanY - drawSize / 2,
     drawSize,
     drawSize
   );
-  ctx.globalAlpha = 1;
-  ctx.restore();
-};
-
-/**
- * Render elemental aura glow around orb
- * Uses additive blending for neon effect
- */
-const renderAuraGlow = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  pokemonType: string,
-  time: number
-): void => {
-  const style = getElementalStyle(pokemonType);
-  const pulseIntensity = 15 + Math.sin(time / 300) * 5;
-
-  ctx.save();
-
-  // Use additive blending for neon glow
-  ctx.globalCompositeOperation = "lighter";
-
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.strokeStyle = style.color;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = style.color;
-  ctx.shadowBlur = pulseIntensity;
-  ctx.stroke();
 
   ctx.restore();
 };
 
 /**
- * Professional orb renderer with all enhancements
- * BLACK-WHITE THEMED: Maintains game's monochrome aesthetic while showing Pokemon essence
+ * Professional orb renderer - Spirit of the Resonance
  */
 export const renderProfessionalOrb = (
   ctx: CanvasRenderingContext2D,
@@ -177,74 +150,59 @@ export const renderProfessionalOrb = (
   time: number = Date.now()
 ): void => {
   const style = getElementalStyle(elementType);
+  const orbitalRadius = radius * 1.3; // 30% size increase (was 20%)
 
   ctx.save();
 
-  // BLACK-WHITE THEME: Convert elemental colors to monochrome intensity
-  // This maintains the game's black-white aesthetic while preserving Pokemon uniqueness
-  const elementalIntensity = getElementalMonochromeIntensity(elementType);
-  const glowIntensity = 0.3 + elementalIntensity * 0.4; // Subtle glow based on type
-
-  // Outer aura glow (monochrome version)
+  // 1. Elemental Aura (Glow)
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.shadowColor = `rgba(255, 255, 255, ${glowIntensity})`;
-  ctx.shadowBlur = 20 * elementalIntensity;
+  ctx.shadowColor = style.glowColor;
+  ctx.shadowBlur = 20 + Math.sin(time / 300) * 8;
   ctx.beginPath();
-  ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(255, 255, 255, ${glowIntensity * 0.5})`;
-  ctx.lineWidth = 1;
+  ctx.arc(x, y, orbitalRadius + 2, 0, Math.PI * 2);
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
 
-  // Main orb fill (preserves game's black-white polarity)
+  // 2. Main Orb Body (Preserves Polarity)
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = orbColor; // Uses game's theme colors (white/black)
+  ctx.arc(x, y, orbitalRadius, 0, Math.PI * 2);
+  ctx.fillStyle = orbColor;
   ctx.fill();
 
-  // Dynamic silhouette with lean effect (monochrome)
+  // 3. Silhouette Masking (Living Energy)
   if (image && image.complete && image.naturalWidth > 0) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, radius - 2, 0, Math.PI * 2);
-    ctx.clip();
-
-    // Calculate lean offset (opposite to movement)
-    const maxLean = radius * 0.2;
-    const leanOffset = Math.max(-maxLean, Math.min(maxLean, velocityY * -2.5));
-
-    // Draw monochrome silhouette with intensity variation
-    ctx.globalCompositeOperation = "source-atop";
-    ctx.globalAlpha = 0.6 + elementalIntensity * 0.2; // Pokemon type affects opacity
-
-    const imgSize = radius * 1.6;
-    ctx.drawImage(
-      image,
-      x - imgSize / 2,
-      y - imgSize / 2 + leanOffset,
-      imgSize,
-      imgSize
-    );
-
-    ctx.restore();
+    renderSilhouette(ctx, x, y, orbitalRadius, image, orbColor, velocityY, time);
   }
 
-  // Inner glow ring (monochrome with intensity variation)
+  // 4. Outer Stroke for Visual Clarity (uses elemental contrastColor for guaranteed visibility)
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.arc(x, y, orbitalRadius, 0, Math.PI * 2);
 
-  // Ring color and intensity based on Pokemon type
-  const ringOpacity = 0.4 + elementalIntensity * 0.3;
-  const ringPulse = Math.sin(time / 300) * 0.1 + elementalIntensity * 0.1;
-  ctx.strokeStyle = `rgba(255, 255, 255, ${ringOpacity + ringPulse})`;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = `rgba(255, 255, 255, ${glowIntensity})`;
-  ctx.shadowBlur = 10 + elementalIntensity * 8;
+  // Use elemental contrastColor for guaranteed visibility on any background
+  const contrastColor = style.contrastColor || (isColorLight(orbColor) ? '#000000' : '#FFFFFF');
+  const contrastAlpha = 0.6; // Increased from 0.3 for better visibility
+
+  // Add subtle shadow for depth
+  ctx.shadowColor = contrastColor;
+  ctx.shadowBlur = 4;
+
+  ctx.strokeStyle = contrastColor === '#000000'
+    ? `rgba(0,0,0,${contrastAlpha})`
+    : `rgba(255,255,255,${contrastAlpha})`;
+  ctx.lineWidth = 2.5; // Slightly thicker for visibility
   ctx.stroke();
+
+  // Reset shadow
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 };
+
+
+
 
 /**
  * Convert Pokemon elemental type to monochrome intensity (0.0 to 1.0)

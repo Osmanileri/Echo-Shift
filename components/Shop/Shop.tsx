@@ -12,7 +12,6 @@ import {
   Palette,
   Play,
   Shield,
-  Sparkles,
   TrendingUp,
   X,
   Zap
@@ -34,7 +33,7 @@ import { getAnalyticsSystem } from "../../App";
 // Audio System - Phase 4 Launch Polish
 import * as AudioSystem from "../../systems/audioSystem";
 
-type ShopCategory = "spirits" | "skins" | "themes" | "upgrades";
+type ShopCategory = "spirits" | "themes" | "upgrades";
 
 interface ShopProps {
   isOpen: boolean;
@@ -61,7 +60,6 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
     icon: React.ReactNode;
   }[] = [
       { id: "spirits", label: "Ruhlar", icon: <Ghost className="w-4 h-4" /> },
-      { id: "skins", label: "Skinler", icon: <Sparkles className="w-4 h-4" /> },
       { id: "themes", label: "Temalar", icon: <Palette className="w-4 h-4" /> },
       {
         id: "upgrades",
@@ -322,7 +320,6 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
         {/* Content - Scrollable */}
         <div className="p-3 overflow-y-auto flex-1">
           {activeCategory === "spirits" && <SpiritShop />}
-          {activeCategory === "skins" && renderSkins()}
           {activeCategory === "themes" && renderThemes()}
           {activeCategory === "upgrades" && renderUpgrades()}
         </div>
