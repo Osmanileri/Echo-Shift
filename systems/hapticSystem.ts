@@ -10,6 +10,11 @@
  * - Selection feedback for UI buttons (5ms)
  */
 
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+
+
+
 // ============================================================================
 // Interfaces
 // ============================================================================
@@ -44,7 +49,7 @@ export interface HapticState {
 export interface HapticSystem {
   state: HapticState;
   config: HapticConfig;
-  
+
   trigger: (type: HapticType) => void;
   setEnabled: (enabled: boolean) => void;
   checkSupport: () => boolean;
@@ -139,6 +144,34 @@ export function triggerHaptic(
   // Requirements 4.6: Skip if disabled
   if (!state.isEnabled) {
     return false;
+  }
+
+  // Capacitor check
+  const isNative = Capacitor.isNativePlatform();
+
+  if (isNative) {
+    try {
+      switch (type) {
+        case 'light':
+          Haptics.impact({ style: ImpactStyle.Light });
+          break;
+        case 'medium':
+          Haptics.impact({ style: ImpactStyle.Medium });
+          break;
+        case 'heavy':
+          Haptics.impact({ style: ImpactStyle.Heavy });
+          break;
+        case 'selection':
+          Haptics.selectionStart();
+          break;
+        case 'success':
+          Haptics.notification({ type: NotificationType.Success });
+          break;
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // Requirements 4.7: Skip if not supported
