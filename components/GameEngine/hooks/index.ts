@@ -6,16 +6,25 @@
  * 
  * @example
  * ```tsx
- * import { usePlayerState } from './hooks';
+ * import { usePlayerState, useDesktopInput } from './hooks';
  * ```
  */
 
-export type { UsePlayerStateReturn } from '../types';
+// State hooks
+export { useGameState } from './useGameState';
 export { usePlayerState } from './usePlayerState';
+export { useSystemRefs } from './useSystemRefs';
 
-// Future exports (to be added as we create more hooks):
-// export { useGameState } from './useGameState';
-// export { useSystemRefs } from './useSystemRefs';
-// export { useDesktopInput } from './useDesktopInput';
-// export { useMobileInput } from './useMobileInput';
-// export { usePhaseDashInput } from './usePhaseDashInput';
+// Input hooks
+export { useDesktopInput } from './useDesktopInput';
+export { useMobileInput } from './useMobileInput';
+export { usePlayerActions } from './usePlayerActions';
+export { useSpawnLogic } from './useSpawnLogic';
+
+// Type exports
+export type { UsePlayerStateReturn } from '../types';
+export type { UseDesktopInputOptions } from './useDesktopInput';
+export type { UseGameStateReturn } from './useGameState';
+export type { UseMobileInputOptions } from './useMobileInput';
+export type { UseSystemRefsReturn } from './useSystemRefs';
+

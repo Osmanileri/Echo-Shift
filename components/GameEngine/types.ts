@@ -5,7 +5,10 @@
  * For global game types, see ../../types.ts
  */
 
+import { LevelConfig } from '../../data/levels';
+import { DailyChallengeConfig } from '../../systems/dailyChallenge';
 import type { TrailState } from '../../systems/trailingSoul';
+import { GameState, MissionEvent } from '../../types';
 
 // =============================================================================
 // Input State Types
@@ -110,4 +113,90 @@ export interface TouchControlState {
     currentY: number;
     touchId: number | null;
     hasMoved: boolean;
+}
+
+// =============================================================================
+// Game Props & Configuration Interfaces
+// =============================================================================
+
+// Campaign mode configuration
+export interface CampaignModeConfig {
+    enabled: boolean;
+    levelConfig?: LevelConfig;
+    targetScore?: number;
+    targetDistance?: number;
+    useDistanceMode?: boolean;
+    onLevelComplete?: (score: number) => void;
+    onDistanceLevelComplete?: (result: {
+        distanceTraveled: number;
+        shardsCollected: number;
+        totalShardsSpawned: number;
+        damageTaken: number;
+        healthRemaining: number;
+    }) => void;
+    onDistanceUpdate?: (currentDistance: number, targetDistance: number, progressPercent: number) => void;
+    onChapterGameOver?: (result: {
+        distanceTraveled: number;
+        targetDistance: number;
+        shardsCollected: number;
+        damageTaken: number;
+    }) => void;
+}
+
+// Daily Challenge mode configuration
+export interface DailyChallengeMode {
+    enabled: boolean;
+    config?: DailyChallengeConfig;
+    onChallengeComplete?: (score: number, echoShardsEarned: number) => void;
+}
+
+// Zen Mode configuration
+export interface ZenModeConfig {
+    enabled: boolean;
+    onRespawn?: (respawnCount: number) => void;
+}
+
+// Ghost Racer mode configuration
+export interface GhostRacerConfig {
+    enabled: boolean;
+    onNewHighScore?: (finalScore: number) => void;
+}
+
+// Restore Mode configuration
+export interface RestoreModeConfig {
+    enabled: boolean;
+    onShowRestorePrompt?: (scoreAtDeath: number, canRestore: boolean) => void;
+    onRestoreComplete?: () => void;
+}
+
+// Daily Rituals tracking callbacks
+export interface RitualTrackingCallbacks {
+    onNearMiss?: () => void;
+    onPhantomPass?: () => void;
+    onScoreAccumulate?: (score: number) => void;
+    onSpeedSurvival?: (seconds: number) => void;
+    onStreakReached?: (streak: number) => void;
+    onNoSwapSurvival?: (seconds: number) => void;
+}
+
+export interface GameEngineProps {
+    gameState: GameState;
+    onScoreUpdate: (score: number) => void;
+    onGameOver: (finalScore: number) => void;
+    setGameSpeedDisplay: (speed: number) => void;
+    onRhythmStateUpdate?: (multiplier: number, streak: number) => void;
+    onNearMissStateUpdate?: (streak: number) => void;
+    slowMotionActive?: boolean;
+    onSlowMotionStateUpdate?: (active: boolean) => void;
+    onDashStateUpdate?: (energy: number, active: boolean, remainingPercent?: number) => void;
+    onQuantumLockStateUpdate?: (isActive: boolean) => void;
+    campaignMode?: CampaignModeConfig;
+    dailyChallengeMode?: DailyChallengeMode;
+    zenMode?: ZenModeConfig;
+    ghostRacerMode?: GhostRacerConfig;
+    restoreMode?: RestoreModeConfig;
+    restoreRequested?: boolean;
+    onRestoreStateUpdate?: (canRestore: boolean, hasBeenUsed: boolean) => void;
+    ritualTracking?: RitualTrackingCallbacks;
+    onMissionEvent?: (event: MissionEvent) => void;
 }

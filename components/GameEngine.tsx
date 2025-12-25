@@ -143,7 +143,10 @@ import * as TrailingSoul from "../systems/trailingSoul";
 import type { GlitchModeState, GlitchShard } from "../types";
 // Enemy Manager System - Glitch Dart attacks
 import * as EnemyManager from "../systems/EnemyManager";
-
+// Enemy Death VFX System - Explosion, shatter, and element-based death effects
+import * as EnemyDeathVFX from "../systems/enemyDeathVFX";
+// Flux Overload System - Yasaklı Hat Mekaniği (2-Strike damage system)
+import * as FluxOverload from "../systems/fluxOverloadSystem";
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -617,6 +620,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Track if counter-attack was rendered this frame (to prevent double-rendering)
   const counterAttackActive = useRef<boolean>(false);
 
+  // Flux Overload State - Yasaklı Hat Mekaniği (2-Strike damage)
+  const fluxOverloadState = useRef<FluxOverload.FluxOverloadState>(
+    FluxOverload.createInitialState()
+  );
 
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
@@ -776,6 +783,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Orb Trail System
     OrbTrailSystem.resetTrails();
 
+    // Reset Enemy Death VFX
+    EnemyDeathVFX.resetDeathVFX();
+
 
     // Reset/Initialize Zen Mode State - Requirements 9.1, 9.2, 9.4
     if (zenMode?.enabled) {
@@ -893,6 +903,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
       window.innerHeight
     );
     counterAttackActive.current = false;
+
+    // Reset Flux Overload State - Yasaklı Hat Mekaniği
+    fluxOverloadState.current = FluxOverload.createInitialState();
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -2619,7 +2632,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- ENEMY MANAGER UPDATE - Glitch Dart System ---
       // Update enemy state: tracking → locked → firing → cooldown
-      if (enemyManagerState.current) {
+      // DISABLED during special abilities: Phase Dash and Quantum Lock (diamond collection)
+      const isInSpecialAbility = PhaseDash.isDashActive(phaseDashState.current) || glitchModeState.current.isActive;
+      if (enemyManagerState.current && !isInSpecialAbility) {
         // Get current distance for spawn threshold check
         const currentDistance = distanceStateRef.current.currentDistance || 0;
 
@@ -2644,8 +2659,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         counterAttackActive.current = false;
 
         // Check for counter-attack if Pokemon is equipped and dart is firing
+        // IMPORTANT: Don't counter if knockback is active OR already been knocked back this attack
         const dartPos = EnemyManager.getDartPosition(enemyManagerState.current);
-        if (dartPos && activeCharacter) {
+        const isKnockbackActive = enemyManagerState.current.dart.knockbackActive;
+        const hasBeenKnockedBack = enemyManagerState.current.dart.hasBeenKnockedBack;
+
+        if (dartPos && activeCharacter && !isKnockbackActive && !hasBeenKnockedBack) {
           // Check if dart is within counter-attack range of either orb
           const whiteOrbClose = EnemyManager.isDartInCounterRange(
             enemyManagerState.current,
@@ -2671,45 +2690,99 @@ const GameEngine: React.FC<GameEngineProps> = ({
               type: activeCharacter.types[0] || 'normal',
             };
 
-            // Destroy the dart
-            enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+            // ============================================
+            // RARITY-BASED COUNTER-ATTACK SYSTEM
+            // Legendary: Instant destroy (counterDart)
+            // Epic/Rare/Common: Knockback based on level
+            // ============================================
+            const pokemonTier = activeCharacter.tier || 'common';
+            // Derive "level" from BST: BST/50 gives roughly 1-14 range
+            const pokemonLevel = Math.floor((activeCharacter.bst || 300) / 50);
+            const pokemonAttack = activeCharacter.stats?.attack || 50;
+
+            if (pokemonTier === 'legendary') {
+              // DEBUG: Log tier detection
+              console.log('[COUNTER] LEGENDARY tier detected - destroying enemy', { pokemonTier, pokemonLevel, pokemonAttack });
+              // LEGENDARY: Instant destroy - bypass knockback
+              enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+
+              // Epic death explosion for Legendary
+              EnemyDeathVFX.triggerDeathExplosion(dartPos.x, dartPos.y, activeCharacter.types[0] || 'normal');
+              ParticleSystem.emitBurst(dartPos.x, dartPos.y, activeCharacter.types[0] || 'normal', 25);
+
+              // Strong feedback
+              ScreenShake.triggerCollision();
+              getHapticSystem().trigger('heavy');
+              AudioSystem.playShieldBlock();
+
+              scorePopups.current.push({
+                x: dartPos.x,
+                y: dartPos.y - 20,
+                text: '💀 DESTROY!',
+                color: '#FF00FF',
+                life: 2.0,
+                vy: -3,
+              });
+            } else {
+              // DEBUG: Log knockback path
+              console.log('[COUNTER] NON-LEGENDARY - applying knockback', { pokemonTier, pokemonLevel, pokemonAttack });
+              // COMMON/RARE/EPIC: Knockback with level-based distance
+              const pushDistance = EnemyManager.calculatePushDistance(pokemonLevel, pokemonAttack);
+              console.log('[COUNTER] Push distance calculated:', pushDistance);
+              enemyManagerState.current = EnemyManager.applyKnockback(
+                enemyManagerState.current,
+                pushDistance,
+                width
+              );
+              console.log('[COUNTER] Knockback applied, new dart state:', enemyManagerState.current.dart);
+
+              // Knockback VFX - impact flash, speed lines, shockwave
+              const knockbackTargetX = enemyManagerState.current.dart.knockbackTargetX;
+              EnemyDeathVFX.triggerKnockbackVFX(dartPos.x, dartPos.y, knockbackTargetX, activeCharacter.types[0] || 'normal');
+
+              // Visual feedback - smaller burst for knockback
+              ParticleSystem.emitBurst(dartPos.x, dartPos.y, activeCharacter.types[0] || 'normal', 10);
+
+              // Medium feedback
+              ScreenShake.triggerNearMiss();
+              getHapticSystem().trigger('medium');
+              AudioSystem.playShieldBlock();
+
+              // Show push distance indicator
+              const pushText = pushDistance >= 400 ? '💨 MEGA PUSH!' :
+                pushDistance >= 250 ? '💨 PUSHED!' : '💨 Push';
+              scorePopups.current.push({
+                x: dartPos.x,
+                y: dartPos.y - 20,
+                text: pushText,
+                color: '#FFD700',
+                life: 1.5,
+                vy: -2,
+              });
+            }
+
+            // Store render data for projectile visualization
             (enemyManagerState.current as any).counterAttackRender = counterRenderData;
-
-            // Visual feedback
-            ParticleSystem.emitBurst(dartPos.x, dartPos.y, activeCharacter.types[0] || 'normal', 15);
-
-            // Screen shake and haptic
-            ScreenShake.triggerNearMiss();
-            getHapticSystem().trigger('medium');
-
-            // Audio feedback
-            AudioSystem.playShieldBlock();
-
-            // Score popup
-            scorePopups.current.push({
-              x: dartPos.x,
-              y: dartPos.y - 20,
-              text: '⚡ COUNTER!',
-              color: '#FFD700',
-              life: 1.5,
-              vy: -2,
-            });
           }
         }
 
-        // Check for collision (if no Pokemon or dart missed counter window)
-        if (!counterAttackActive.current && enemyManagerState.current.dart.state === 'firing') {
+        // Check for collision - Enemy ALWAYS deals damage when touching orbs
+        // No state check - if dart touches an orb, player takes damage
+        // Use LARGER collision radius (4x) to ensure reliable detection
+        if (enemyManagerState.current.isActive) {
+          // Use actual orb visual radius for fair collision
+          const collisionRadius = whiteOrb.radius * 2; // 2x for visual match, not 4x
           const whiteHit = EnemyManager.checkDartCollision(
             enemyManagerState.current,
             whiteOrb.x,
             whiteOrb.y,
-            whiteOrb.radius
+            collisionRadius
           );
           const blackHit = EnemyManager.checkDartCollision(
             enemyManagerState.current,
             blackOrb.x,
             blackOrb.y,
-            blackOrb.radius
+            collisionRadius
           );
 
           if (whiteHit || blackHit) {
@@ -2763,10 +2836,108 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 life: 1.0,
                 vy: -2,
               });
+            } else {
+              // Pokemon is active but still got hit (knockback wasn't enough)
+              // DEAL DAMAGE - enemy reached the orb
+              const hitOrb = whiteHit ? whiteOrb : blackOrb;
+              createExplosion(hitOrb.x, hitOrb.y, '#FF0000');
+
+              // Reset dart after hit
+              enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
+
+              // Reset streaks (penalty for getting hit)
+              nearMissState.current = createInitialNearMissState();
+              onNearMissStateUpdate?.(0);
+              rhythmState.current = createInitialRhythmState();
+              onRhythmStateUpdate?.(1, 0);
+
+              // Visual/audio feedback
+              ScreenShake.triggerCollision();
+              getHapticSystem().trigger('heavy');
+              AudioSystem.playGlitchDamage();
+
+              scorePopups.current.push({
+                x: hitOrb.x,
+                y: hitOrb.y - 20,
+                text: '💥 DAMAGE!',
+                color: '#FF0000',
+                life: 1.0,
+                vy: -2,
+              });
             }
           }
         }
-        // NOTE: Enemy drawing moved to DRAW section (after orbs) to prevent being covered by background
+      } else if (enemyManagerState.current && isInSpecialAbility) {
+        // Force reset enemy to idle state if it was active
+        if (enemyManagerState.current.dart.state !== 'idle') {
+          enemyManagerState.current = EnemyManager.resetDart(enemyManagerState.current, width, height);
+          counterAttackActive.current = false;
+        }
+      }  // NOTE: Enemy drawing moved to DRAW section (after orbs) to prevent being covered by background
+
+      // --- FLUX OVERLOAD UPDATE - Yasaklı Hat Mekaniği (2-Strike System) ---
+      // SIFIR ÇİZGİSİ (midline) tehlikeli: toplar midline'a "YANIK" anında değerse hasar
+      // DİKKAT: Yetenekler sırasında (Phase Dash, Quantum Lock) çalışmaz!
+      const fluxDistance = distanceStateRef.current.currentDistance || 0;
+      const fluxLevel = campaignModeRef.current?.levelConfig?.id || 1;
+      const fluxCurrentTime = Date.now();
+
+      // Check if player is using any special ability (immune to FluxOverload)
+      const isUsingAbility = PhaseDash.isDashActive(phaseDashState.current) ||
+        glitchModeState.current.isActive ||
+        glitchModeState.current.phase === 'warning';
+
+      // Trigger check - Only trigger when not using abilities
+      if (!isUsingAbility && FluxOverload.shouldTrigger(fluxDistance, fluxLevel, fluxOverloadState.current)) {
+        fluxOverloadState.current = FluxOverload.startWarning(
+          fluxOverloadState.current,
+          fluxCurrentTime,
+          fluxDistance
+        );
+        AudioSystem.playFluxOverloadWarning();
+        getHapticSystem().trigger('light');
+      }
+
+      // Update FluxOverload state - skip damage check if using ability
+      const prevStrikes = fluxOverloadState.current.strikes;
+      const fluxResult = isUsingAbility
+        ? { newState: fluxOverloadState.current, triggerGameOver: false, hitOrbY: null }
+        : FluxOverload.update(
+          fluxOverloadState.current,
+          fluxCurrentTime,
+          whiteOrbY,
+          blackOrbY,
+          INITIAL_CONFIG.orbRadius,
+          currentMidlineY
+        );
+      fluxOverloadState.current = fluxResult.newState;
+
+      // Strike detected - orb touched the midline
+      if (fluxResult.newState.strikes > prevStrikes) {
+        ScreenShake.triggerCollision();
+        getHapticSystem().trigger('heavy');
+        AudioSystem.playFluxOverloadStrike();
+
+        // Show strike indicator at the hit position (on midline)
+        const midX = (whiteOrbX + blackOrbX) / 2;
+        const strikeY = fluxResult.hitOrbY || currentMidlineY;
+        scorePopups.current.push({
+          x: midX,
+          y: strikeY - 30,
+          text: fluxResult.newState.strikes === 1 ? '⚡ STRIKE 1!' : '💀 STRIKE 2!',
+          color: '#FF0055',
+          life: 1.5,
+          vy: -3,
+        });
+      }
+
+      // Game over on 2nd strike
+      if (fluxResult.triggerGameOver) {
+        // Create explosion effect at midline
+        const midX = (whiteOrbX + blackOrbX) / 2;
+        createExplosion(midX, currentMidlineY, '#FF0055');
+        onGameOver(score.current);
+        return;
       }
 
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
@@ -5520,6 +5691,37 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
+      // --- FLUX OVERLOAD MIDLINE - Yasaklı Hat (Sıfır Çizgisi Tehlikeli) ---
+      // Render unstable MIDLINE during warning and active phases
+      // KALP ATIŞI: Yanık iken tehlikeli, sönük iken güvenli geçiş
+      const fluxPhase = FluxOverload.getCurrentPhase(fluxOverloadState.current);
+      if (fluxPhase !== 'inactive') {
+        // Get pulse intensity for visual (1.0 = bright/danger, 0.15 = dim/safe)
+        const pulseIntensity = fluxPhase === 'active'
+          ? FluxOverload.getPulseIntensity(fluxOverloadState.current.phaseStartTime, Date.now())
+          : 0.7; // Warning phase = steady medium brightness
+
+        // Check if any orb is near the midline (for danger indicator)
+        const whiteNearMidline = FluxOverload.isOrbTouchingMidline(
+          visualWhiteOrb.y, visualWhiteOrb.radius, currentMidlineY
+        );
+        const blackNearMidline = FluxOverload.isOrbTouchingMidline(
+          visualBlackOrb.y, visualBlackOrb.radius, currentMidlineY
+        );
+        const isInDanger = whiteNearMidline || blackNearMidline;
+
+        // Render the unstable midline (horizontal laser line across screen)
+        SpiritRenderer.renderFluxOverloadConnector(
+          ctx,
+          { x: 0, y: currentMidlineY },           // Left edge of screen
+          { x: width, y: currentMidlineY },       // Right edge of screen
+          fluxPhase as 'warning' | 'active',
+          Date.now(),
+          isInDanger,
+          pulseIntensity                          // Pass pulse intensity for visual
+        );
+      }
+
       // Helper to draw an orb - Skin System Integration - Requirements 3.1, 3.2, 3.3, 3.4
       // Theme System Integration - Requirements 5.1, 5.2, 5.3
       // isWhite parameter determines the orb's identity (not position):
@@ -5814,8 +6016,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- ENEMY RENDERING - Glitch Dart System ---
       // Draw enemy AFTER other game elements so it's visible on top
-      if (enemyManagerState.current && enemyManagerState.current.isActive) {
+      // HIDDEN during special abilities: Phase Dash and Quantum Lock (diamond collection)
+      const isInSpecialAbilityRender = PhaseDash.isDashActive(phaseDashState.current) || glitchModeState.current.isActive;
+      if (enemyManagerState.current && enemyManagerState.current.isActive && !isInSpecialAbilityRender) {
         EnemyManager.drawEnemy(ctx, enemyManagerState.current, width);
+
+        // Draw knockback VFX (impact flash, speed lines, shockwave)
+        EnemyDeathVFX.drawKnockbackVFX(ctx);
 
         // Draw counter-attack projectile if active
         const counterRender = (enemyManagerState.current as any).counterAttackRender;
@@ -5833,6 +6040,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
           (enemyManagerState.current as any).counterAttackRender = null;
         }
       }
+
+      // --- ENEMY DEATH VFX RENDERING - Explosion and Shatter Effects ---
+      // Update and draw death VFX (runs independently of enemy state)
+      EnemyDeathVFX.updateDeathVFX(16); // ~60fps
+      EnemyDeathVFX.drawDeathVFX(ctx);
 
       // --- CONSTRUCT RENDERING - Requirements 3.5, 4.5, 5.6 ---
       // Update construct render state for animations
@@ -6081,6 +6293,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const envEffectsState = EnvironmentalEffects.getEnvironmentalEffectsState();
       if (EnvironmentalEffects.isGlitchActive(envEffectsState)) {
         EnvironmentalEffects.applyGlitchArtifact(ctx, canvas, envEffectsState);
+      }
+
+      // --- FLUX OVERLOAD RENDERING - Yasaklı Hat Glitch Efektleri ---
+      // Glitch overlay when player took damage (intensity fades over time)
+      if (fluxOverloadState.current.glitchIntensity > 0) {
+        SpiritRenderer.drawGlitchOverlay(
+          ctx,
+          width,
+          height,
+          fluxOverloadState.current.glitchIntensity
+        );
+      }
+
+      // Warning text during warning phase
+      if (fluxOverloadState.current.isWarningPhase) {
+        SpiritRenderer.drawFluxOverloadWarning(ctx, width, Date.now());
       }
 
       // --- PHASE DASH VFX RENDERING ---

@@ -1239,6 +1239,85 @@ export function playCounterAttack(pokemonType: string) {
   }
 }
 
+// ============ FLUX OVERLOAD SOUNDS ============
+
+/**
+ * Flux Overload warning - electrical buzzing buildup
+ * Plays when warning phase starts
+ */
+export function playFluxOverloadWarning() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Low frequency electrical hum
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(80, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(120, ctx.currentTime + 0.5);
+
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.3);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.6);
+
+  osc.connect(gain);
+  gain.connect(master);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.6);
+
+  // Crackling noise
+  playNoise(0.4, 2000, 'bandpass', 0.06);
+}
+
+/**
+ * Flux Overload strike - harsh electrical shock
+ * Plays when player takes a strike (orbs too close)
+ */
+export function playFluxOverloadStrike() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Sharp electric zap
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc1.type = 'square';
+  osc2.type = 'sawtooth';
+
+  // Glitchy frequency jumps
+  osc1.frequency.setValueAtTime(1500, ctx.currentTime);
+  osc1.frequency.setValueAtTime(800, ctx.currentTime + 0.03);
+  osc1.frequency.setValueAtTime(2000, ctx.currentTime + 0.06);
+  osc1.frequency.setValueAtTime(400, ctx.currentTime + 0.1);
+
+  osc2.frequency.setValueAtTime(300, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.15);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.2);
+  osc2.stop(ctx.currentTime + 0.2);
+
+  // Heavy static burst
+  playNoise(0.15, 1500, 'bandpass', 0.25);
+
+  // Low impact thud
+  setTimeout(() => playNoise(0.1, 200, 'lowpass', 0.15), 50);
+}
+
 // ============ SETTINGS CONTROL ============
 
 /**
@@ -1360,6 +1439,10 @@ export const AudioSystem = {
   playLockOn,
   playDartFire,
   playCounterAttack,
+
+  // Flux Overload Sounds - Yasaklı Hat Mekaniği
+  playFluxOverloadWarning,
+  playFluxOverloadStrike,
 };
 
 export default AudioSystem;

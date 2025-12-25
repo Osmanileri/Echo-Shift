@@ -1590,3 +1590,226 @@ export const preloadSpriteImage = (
     img.src = spriteUrl;
   });
 };
+
+/**
+ * Render the unstable MIDLINE during Flux Overload
+ * 
+ * Warning Phase: Yellow pulsing, subtle tremor
+ * Active Phase: Red neon, electric jitter - with ON/OFF pulse
+ * 
+ * @param pulseIntensity - 0=off/safe (dim), 1=on/dangerous (bright)
+ */
+export const renderFluxOverloadConnector = (
+  ctx: CanvasRenderingContext2D,
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  phase: 'warning' | 'active',
+  time: number,
+  isInDanger: boolean = false,
+  pulseIntensity: number = 1.0
+): void => {
+  const config = {
+    warningColor: '#FFDD00',
+    activeColor: '#FF0055',
+    safeColor: '#330011',
+    jitterAmount: 6,
+    segments: 15,
+    coreBaseRadius: 6,
+    corePulseAmount: 4,
+  };
+
+  ctx.save();
+
+  // Phase-based styling
+  const isWarning = phase === 'warning';
+
+  // USE PULSE INTENSITY FOR DRAMATIC ON/OFF VISUAL
+  // ON (pulseIntensity ~1.0) = Parlak kırmızı, tehlikeli
+  // OFF (pulseIntensity ~0.15) = Neredeyse görünmez, güvenli
+  const effectiveAlpha = isWarning ? 0.7 : pulseIntensity;
+  const effectiveJitter = isWarning ? 2 : config.jitterAmount * pulseIntensity;
+  const effectiveGlow = isWarning ? 10 : 25 * pulseIntensity;
+  const effectiveWidth = isWarning ? 3 : 2 + 4 * pulseIntensity;
+
+  // Color interpolation: bright red when ON, dark/invisible when OFF
+  const baseColor = isWarning ? config.warningColor : config.activeColor;
+
+  // Skip rendering entirely if almost invisible (OFF pulse)
+  if (effectiveAlpha < 0.1 && !isWarning) {
+    ctx.restore();
+    return;
+  }
+
+  // Glow effect - pulses with intensity
+  ctx.shadowColor = baseColor;
+  ctx.shadowBlur = effectiveGlow;
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = effectiveWidth;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = effectiveAlpha;
+
+  // Draw electric/jittery line
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+
+  for (let i = 1; i <= config.segments; i++) {
+    const t = i / config.segments;
+    const currX = p1.x + (p2.x - p1.x) * t;
+    const currY = p1.y + (p2.y - p1.y) * t;
+
+    // Electric jitter effect - scales with pulse intensity
+    const offsetX = (Math.random() - 0.5) * effectiveJitter;
+    const offsetY = (Math.random() - 0.5) * effectiveJitter;
+
+    ctx.lineTo(currX + offsetX, currY + offsetY);
+  }
+
+  ctx.stroke();
+
+  // Secondary spark line (only when pulse is ON and bright)
+  if (!isWarning && pulseIntensity > 0.6 && Math.random() > 0.3) {
+    ctx.globalAlpha = pulseIntensity * 0.6;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+
+    for (let i = 1; i <= config.segments; i++) {
+      const t = i / config.segments;
+      const currX = p1.x + (p2.x - p1.x) * t;
+      const currY = p1.y + (p2.y - p1.y) * t;
+      const offsetX = (Math.random() - 0.5) * effectiveJitter * 2;
+      const offsetY = (Math.random() - 0.5) * effectiveJitter * 2;
+      ctx.lineTo(currX + offsetX, currY + offsetY);
+    }
+
+    ctx.stroke();
+  }
+
+  // Overload Core - only visible when pulse is ON
+  if (pulseIntensity > 0.3 || isWarning) {
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const corePulse = Math.sin(time / 100) * config.corePulseAmount * pulseIntensity;
+    const coreRadius = config.coreBaseRadius * pulseIntensity + corePulse;
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.max(2, coreRadius + 4), 0, Math.PI * 2);
+    ctx.fillStyle = baseColor;
+    ctx.globalAlpha = 0.3 * pulseIntensity;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(midX, midY, Math.max(2, coreRadius), 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.globalAlpha = pulseIntensity;
+    ctx.shadowColor = baseColor;
+    ctx.shadowBlur = 15 * pulseIntensity;
+    ctx.fill();
+
+    // Danger zone indicator - red pulse when orbs touching midline
+    if (isInDanger) {
+      ctx.beginPath();
+      ctx.arc(midX, midY, coreRadius + 8 + Math.sin(time / 50) * 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#FF0000';
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.8 * pulseIntensity;
+      ctx.stroke();
+    }
+  }
+
+  // Spark particles (active phase)
+  if (!isWarning) {
+    for (let i = 0; i < 4; i++) {
+      const particleT = ((time / 300 + i * 0.25) % 1);
+      const px = p1.x + (p2.x - p1.x) * particleT;
+      const py = p1.y + (p2.y - p1.y) * particleT;
+      const sparkOffset = Math.sin(time / 80 + i * 2) * 10;
+
+      ctx.beginPath();
+      ctx.arc(px + sparkOffset, py, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.globalAlpha = (1 - particleT) * 0.7;
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+};
+
+/**
+ * Draw glitch overlay effect when player takes damage
+ * Creates horizontal "slice" displacement effect
+ */
+export const drawGlitchOverlay = (
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  intensity: number
+): void => {
+  if (intensity <= 0) return;
+
+  ctx.save();
+
+  // Red tint overlay
+  ctx.fillStyle = `rgba(255, 0, 85, ${intensity * 0.15})`;
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  // Horizontal slice displacement effect
+  const sliceCount = Math.floor(5 + intensity * 10);
+  for (let i = 0; i < sliceCount; i++) {
+    const y = Math.random() * canvasHeight;
+    const h = Math.random() * 15 + 5;
+    const xOffset = (Math.random() - 0.5) * 40 * intensity;
+
+    // Create displacement effect
+    ctx.fillStyle = `rgba(255, 0, 85, ${intensity * 0.3})`;
+    ctx.fillRect(xOffset > 0 ? 0 : canvasWidth + xOffset, y, Math.abs(xOffset), h);
+
+    // White scanline flicker
+    if (Math.random() > 0.7) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${intensity * 0.4})`;
+      ctx.fillRect(0, y, canvasWidth, 1);
+    }
+  }
+
+  // Color channel separation (RGB shift)
+  if (intensity > 0.5) {
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = `rgba(255, 0, 0, ${intensity * 0.1})`;
+    ctx.fillRect(2, 0, canvasWidth, canvasHeight);
+    ctx.fillStyle = `rgba(0, 255, 255, ${intensity * 0.1})`;
+    ctx.fillRect(-2, 0, canvasWidth, canvasHeight);
+  }
+
+  ctx.restore();
+};
+
+/**
+ * Draw warning text overlay during warning phase
+ */
+export const drawFluxOverloadWarning = (
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  time: number
+): void => {
+  ctx.save();
+
+  // Pulsing opacity
+  const alpha = 0.3 + Math.sin(time / 100) * 0.2;
+
+  ctx.font = 'bold 14px monospace';
+  ctx.fillStyle = `rgba(255, 221, 0, ${alpha})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  // Shadow for readability
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 4;
+
+  ctx.fillText('⚠ DİKKAT: HAT KARARSIZ ⚠', canvasWidth / 2, 45);
+
+  ctx.restore();
+};
