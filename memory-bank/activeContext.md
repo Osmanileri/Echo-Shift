@@ -109,6 +109,32 @@
 | advanced-game-mechanics | ✅ TAMAMLANDI | ✅ |
 | progression-system | ✅ TAMAMLANDI | ✅ |
 
+## ⚠️ KRİTİK KURAL: GameEngine Modülarizasyonu
+
+> [!CAUTION]
+> **GameEngine.tsx'e YENİ KOD EKLEME!**
+> 
+> Bu dosya ~6800 satır. Daha fazla büyümemeli. Tüm yeni özellikler AYRI DOSYALARDA oluşturulmalı!
+
+### 🔴 ZORUNLU Yaklaşım (ÖNEMLİ!)
+| Ekleme Türü | Nereye Ekle | Örnek |
+|-------------|-------------|-------|
+| Yeni sistem/özellik | `systems/` | `systems/newFeature.ts` |
+| Rendering mantığı | Ayrı dosya | `utils/newRenderer.ts` |
+| Yardımcı fonksiyonlar | `utils/` | `utils/newHelper.ts` |
+
+### GameEngine'de SADECE İzin Verilenler:
+1. Import statement (1 satır)
+2. State ref tanımı (1 satır)  
+3. Sistem çağrısı (1 fonksiyon call)
+
+### Aralık 2025 Temizlik:
+- ✅ `components/GameEngine/` klasörü silindi (4600 satır duplicate)
+- ✅ Array operations optimize edildi (in-place loops)
+- ✅ Yedek: `GameEngine.backup.tsx`
+
+---
+
 ## Bilinen Konular / Riskler
 
 - ~~`README.md` ve `prd.md` güncel değil~~ → ✅ Düzeltildi

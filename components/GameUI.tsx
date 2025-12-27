@@ -71,6 +71,8 @@ interface GameUIProps {
   dashRemainingPercent?: number; // Remaining dash time (100 = full, 0 = empty)
   // Quantum Lock - Requirements 7.5
   isQuantumLockActive?: boolean;
+  // Tutorial Mode - Level 0 interactive tutorial
+  tutorialMode?: boolean;
 }
 
 const GameUI: React.FC<GameUIProps> = ({
@@ -118,6 +120,8 @@ const GameUI: React.FC<GameUIProps> = ({
   dashActive = false,
   dashRemainingPercent = 100,
   isQuantumLockActive = false,
+  // Tutorial Mode - hide all HUD during tutorial
+  tutorialMode = false,
 }) => {
   const [showContent, setShowContent] = useState(false);
 
@@ -203,6 +207,26 @@ const GameUI: React.FC<GameUIProps> = ({
 
   // ============ PLAYING STATE ============
   if (gameState === GameState.PLAYING) {
+    // Tutorial Mode: Hide all HUD elements for clean learning experience
+    if (tutorialMode) {
+      return (
+        <>
+          {/* Only show pause button during tutorial */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleButtonClick(onPause);
+              }}
+              className="p-2 bg-black/30 backdrop-blur-sm rounded-full border border-white/20 hover:bg-white/20 transition-colors"
+            >
+              <Pause className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">

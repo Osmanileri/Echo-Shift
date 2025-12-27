@@ -211,7 +211,7 @@ export interface ScorePopup {
 }
 
 // Visual Effect Types - Requirements 3.4, 3.5, 3.9
-export type EffectType = 'glow' | 'spark' | 'burst';
+export type EffectType = 'glow' | 'spark' | 'burst' | 'flash';
 
 export interface VisualEffect {
   type: EffectType;

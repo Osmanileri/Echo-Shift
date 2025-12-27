@@ -1,105 +1,125 @@
 /**
  * Progressive Speed Controller for Campaign Mode
- * Campaign Chapter System - Logarithmic speed progression with climax boost
+ * Jetpack Joyride Style - Square root-based asymptotic acceleration
+ * Formula: v = v_min + (v_max - v_min) × √(progress)
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 
+import { INITIAL_CONFIG } from '../constants';
 import { DistanceState } from './distanceTracker';
 
 /**
+ * Speed System Constants - Game Balancing Configuration
+ * Centralized for easy tuning during game balance iterations
+ */
+export const SPEED_CONSTANTS = {
+  /** Speed bonus percentage per level (5% = 0.05) */
+  LEVEL_INCREMENT_RATE: 0.05,
+  /** Maximum speed bonus ratio at target distance (50% = 0.5) */
+  MAX_BONUS_RATIO: 0.5,
+  /** Speed multiplier in climax zone (final 20%) */
+  CLIMAX_MULTIPLIER: 1.2,
+  /** Progress threshold for climax zone (80% = 0.8) */
+  CLIMAX_ZONE_START: 0.8,
+  /** Duration of climax transition in milliseconds */
+  CLIMAX_TRANSITION_MS: 500,
+  /** Maximum allowed speed to prevent frame-skipping (pixels/frame) */
+  MAX_ALLOWED_SPEED: 15,
+} as const;
+
+/**
  * Speed configuration state
- * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
+ * Jetpack Joyride Style - Square root-based progression
  */
 export interface SpeedConfig {
-  baseSpeed: number;              // Fixed base speed (5 px/frame)
-  logarithmicMultiplier: number;  // Current logarithmic multiplier
+  baseSpeed: number;              // Fixed base speed at chapter start
+  sqrtMultiplier: number;         // Current sqrt-based multiplier (1.0 - 1.5)
   climaxMultiplier: number;       // Climax zone multiplier (1.0 or 1.2)
   isInClimaxZone: boolean;        // Whether in final 20%
   climaxTransitionProgress: number; // 0-1 for smooth transition
   finalSpeed: number;             // Calculated final speed
+  progressPercent: number;        // Current progress (0-100%)
 }
 
 /**
  * Speed controller configuration options
  */
 export interface SpeedControllerOptions {
-  baseSpeed?: number;             // Default: 5 (pixels per frame)
-  climaxMultiplier?: number;      // Default: 1.2
-  transitionDuration?: number;    // Default: 500ms
-  logarithmicFactor?: number;     // Default: 0.3
-  distanceDivisor?: number;       // Default: 50
+  baseSpeed?: number;             // Default: from INITIAL_CONFIG
+  climaxMultiplier?: number;      // Default: SPEED_CONSTANTS.CLIMAX_MULTIPLIER
+  transitionDuration?: number;    // Default: SPEED_CONSTANTS.CLIMAX_TRANSITION_MS
+  maxAllowedSpeed?: number;       // Default: SPEED_CONSTANTS.MAX_ALLOWED_SPEED
 }
 
-import { INITIAL_CONFIG } from '../constants';
-
 /**
- * Default configuration values
- * Requirements: 4.1, 4.2, 4.4
+ * Default configuration values (for backward compatibility)
  */
-const DEFAULT_BASE_SPEED = INITIAL_CONFIG.baseSpeed; // Use config value (mobile-friendly)
-const DEFAULT_CLIMAX_MULTIPLIER = 1.2;  // 1.2x in climax zone (Requirement 4.4)
-const DEFAULT_TRANSITION_DURATION = 500; // milliseconds
-const DEFAULT_LOGARITHMIC_FACTOR = 0.3; // Standard logarithmic factor (Requirement 4.2)
-const DEFAULT_DISTANCE_DIVISOR = 50;    // Standard distance divisor (Requirement 4.2)
+const DEFAULT_BASE_SPEED = INITIAL_CONFIG.baseSpeed;
+const DEFAULT_CLIMAX_MULTIPLIER = SPEED_CONSTANTS.CLIMAX_MULTIPLIER;
+const DEFAULT_TRANSITION_DURATION = SPEED_CONSTANTS.CLIMAX_TRANSITION_MS;
+const DEFAULT_DISTANCE_DIVISOR = 50;
 
 /**
  * Speed Controller class for managing progressive speed in campaign mode
+ * Jetpack Joyride Style - DRY refactored version
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 export class SpeedController {
   private baseSpeed: number;
   private climaxMultiplier: number;
   private transitionDuration: number;
-  private logarithmicFactor: number;
-  private distanceDivisor: number;
+  private maxAllowedSpeed: number;
   private climaxTransitionProgress: number = 0;
   private wasInClimaxZone: boolean = false;
 
   /**
    * Create a new speed controller
-   * Requirements: 4.1 - Base speed is 5 pixels per frame
    * @param options - Configuration options
    */
   constructor(options: SpeedControllerOptions = {}) {
     this.baseSpeed = options.baseSpeed ?? DEFAULT_BASE_SPEED;
     this.climaxMultiplier = options.climaxMultiplier ?? DEFAULT_CLIMAX_MULTIPLIER;
     this.transitionDuration = options.transitionDuration ?? DEFAULT_TRANSITION_DURATION;
-    this.logarithmicFactor = options.logarithmicFactor ?? DEFAULT_LOGARITHMIC_FACTOR;
-    this.distanceDivisor = options.distanceDivisor ?? DEFAULT_DISTANCE_DIVISOR;
+    this.maxAllowedSpeed = options.maxAllowedSpeed ?? SPEED_CONSTANTS.MAX_ALLOWED_SPEED;
+  }
+
+  /**
+   * DRY Helper: Get effective base speed scaled by level
+   * Level 1: 1.0x, Level 5: 1.2x, Level 10: 1.45x, Level 20: 1.95x
+   * @param level - Current level number (default: 1)
+   * @returns Scaled base speed
+   */
+  private getEffectiveBaseSpeed(level: number = 1): number {
+    const multiplier = 1 + (level - 1) * SPEED_CONSTANTS.LEVEL_INCREMENT_RATE;
+    return this.baseSpeed * multiplier;
   }
 
   /**
    * Initialize the controller for a new chapter
-   * Requirements: 4.1, 4.5 - Speed resets to baseSpeed at chapter start
    * @param _chapterId - Chapter number (unused, kept for API compatibility)
    */
   initialize(_chapterId?: number): void {
-    this.baseSpeed = INITIAL_CONFIG.baseSpeed; // Use config value
+    this.baseSpeed = INITIAL_CONFIG.baseSpeed;
     this.climaxTransitionProgress = 0;
     this.wasInClimaxZone = false;
   }
 
   /**
-   * Update the climax transition progress
-   * Requirements: 3.3 - Smooth transition over 500ms
+   * Update the climax transition progress (time-based smooth transition)
    * @param deltaTime - Time since last frame in milliseconds
    * @param isInClimaxZone - Whether currently in climax zone
    */
   update(deltaTime: number, isInClimaxZone: boolean): void {
-    // Handle transition into climax zone
     if (isInClimaxZone && !this.wasInClimaxZone) {
-      // Just entered climax zone, start transition
       this.climaxTransitionProgress = 0;
     }
 
     if (isInClimaxZone) {
-      // Progress the transition (deltaTime is in ms, transitionDuration is in ms)
       this.climaxTransitionProgress = Math.min(
         1,
         this.climaxTransitionProgress + (deltaTime / this.transitionDuration)
       );
     } else {
-      // Not in climax zone, reset transition
       this.climaxTransitionProgress = 0;
     }
 
@@ -108,81 +128,77 @@ export class SpeedController {
 
   /**
    * Calculate the current speed based on distance state
-   * Requirements: 4.2 - Logarithmic speed formula: baseSpeed × (1 + factor × log(1 + distance/50))
-   * Requirements: 4.3 - Speed increases proportionally with distance
-   * Requirements: 4.4 - 1.2x climax multiplier in final 20%
+   * Jetpack Joyride Style: v = baseSpeed + (maxBonus × √progress)
+   * Includes speed cap to prevent frame-skipping at high levels
+   * 
    * @param distanceState - Current distance tracking state
-   * @param level - Level number (used to scale base speed and acceleration rate)
-   * @returns Current speed value
+   * @param level - Level number (scales base speed and max bonus)
+   * @returns Current speed value (capped at MAX_ALLOWED_SPEED)
    */
   calculateSpeed(distanceState: DistanceState, level?: number): number {
-    const currentLevel = level ?? 1;
-    
-    // Scale BASE SPEED based on level - higher levels start faster
-    // Level 1: 1.0x, Level 3: 1.1x, Level 5: 1.2x, Level 10: 1.45x, Level 20: 1.95x
-    // Formula: baseSpeed × (1 + (level - 1) × 0.05)
-    const baseSpeedMultiplier = 1 + (currentLevel - 1) * 0.05;
-    const effectiveBaseSpeed = this.baseSpeed * baseSpeedMultiplier;
-    
-    // Scale ACCELERATION RATE based on level - higher levels accelerate faster
-    // Level 1: 0.3, Level 3: 0.36, Level 5: 0.42, Level 10: 0.57, Level 20: 0.87
-    // Formula: baseFactor × (1 + (level - 1) × 0.03)
-    const accelMultiplier = 1 + (currentLevel - 1) * 0.03;
-    const effectiveLogFactor = this.logarithmicFactor * accelMultiplier;
-    
-    // Calculate logarithmic multiplier based on current distance
-    // Formula: effectiveBaseSpeed × (1 + effectiveLogFactor × log(1 + distance/50))
-    // Requirements: 4.2
-    const logFactor = Math.log(1 + distanceState.currentDistance / this.distanceDivisor);
-    const logarithmicMultiplier = 1 + (effectiveLogFactor * logFactor);
+    // DRY: Use helper for effective base speed
+    const effectiveBaseSpeed = this.getEffectiveBaseSpeed(level ?? 1);
 
-    // Calculate climax multiplier with smooth transition
-    // Requirements: 4.4 - 1.2x multiplier in final 20%
+    // Calculate progress (0.0 - 1.0), guard against division by zero
+    const progress = distanceState.targetDistance > 0
+      ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
+      : 0;
+
+    // Jetpack Joyride Formula: maxBonus from constants
+    const maxBonus = effectiveBaseSpeed * SPEED_CONSTANTS.MAX_BONUS_RATIO;
+
+    // Square root-based acceleration: fast initial, gradual stabilization
+    const currentBonus = maxBonus * Math.sqrt(progress);
+    const sqrtSpeed = effectiveBaseSpeed + currentBonus;
+
+    // Apply climax multiplier with smooth transition
     let effectiveClimaxMultiplier = 1.0;
     if (distanceState.isInClimaxZone) {
-      // Interpolate between 1.0 and climaxMultiplier based on transition progress
-      effectiveClimaxMultiplier = 1.0 + 
+      effectiveClimaxMultiplier = 1.0 +
         (this.climaxMultiplier - 1.0) * this.climaxTransitionProgress;
     }
 
-    // Final speed = effectiveBaseSpeed × logarithmicMultiplier × climaxMultiplier
-    return effectiveBaseSpeed * logarithmicMultiplier * effectiveClimaxMultiplier;
+    // Calculate final speed with speed cap to prevent frame-skipping
+    const finalSpeed = sqrtSpeed * effectiveClimaxMultiplier;
+    return Math.min(finalSpeed, this.maxAllowedSpeed);
   }
 
   /**
    * Get the current speed configuration state
+   * Jetpack Joyride Style - Returns sqrt-based speed info
    * @param distanceState - Current distance tracking state
-   * @param level - Level number (used to scale base speed and acceleration rate)
+   * @param level - Level number (used to scale base speed)
    * @returns SpeedConfig with all speed information
    */
   getConfig(distanceState: DistanceState, level?: number): SpeedConfig {
     const currentLevel = level ?? 1;
-    
+
     // Scale base speed based on level
     const baseSpeedMultiplier = 1 + (currentLevel - 1) * 0.05;
     const effectiveBaseSpeed = this.baseSpeed * baseSpeedMultiplier;
-    
-    // Scale logarithmic factor based on level
-    const accelMultiplier = 1 + (currentLevel - 1) * 0.03;
-    const effectiveLogFactor = this.logarithmicFactor * accelMultiplier;
-    
-    // Calculate logarithmic multiplier
-    const logFactor = Math.log(1 + distanceState.currentDistance / this.distanceDivisor);
-    const logarithmicMultiplier = 1 + (effectiveLogFactor * logFactor);
-    
+
+    // Calculate progress (0.0 - 1.0)
+    const progress = distanceState.targetDistance > 0
+      ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
+      : 0;
+
+    // Sqrt multiplier: 1.0 at start, up to 1.5 at target (50% max bonus)
+    const sqrtMultiplier = 1 + 0.5 * Math.sqrt(progress);
+
     let effectiveClimaxMultiplier = 1.0;
     if (distanceState.isInClimaxZone) {
-      effectiveClimaxMultiplier = 1.0 + 
+      effectiveClimaxMultiplier = 1.0 +
         (this.climaxMultiplier - 1.0) * this.climaxTransitionProgress;
     }
 
     return {
       baseSpeed: effectiveBaseSpeed,
-      logarithmicMultiplier,
+      sqrtMultiplier,
       climaxMultiplier: effectiveClimaxMultiplier,
       isInClimaxZone: distanceState.isInClimaxZone,
       climaxTransitionProgress: this.climaxTransitionProgress,
-      finalSpeed: effectiveBaseSpeed * logarithmicMultiplier * effectiveClimaxMultiplier,
+      finalSpeed: effectiveBaseSpeed * sqrtMultiplier * effectiveClimaxMultiplier,
+      progressPercent: progress * 100,
     };
   }
 
@@ -220,19 +236,31 @@ export function createSpeedController(
 }
 
 /**
- * Calculate logarithmic speed without climax multiplier
- * Pure function for testing Property 7: Speed Formula Correctness
- * Requirements: 4.2 - Formula: baseSpeed × (1 + 0.3 × log(1 + distance/50))
- * @param baseSpeed - Base speed (default: 5)
- * @param currentDistance - Current distance traveled
- * @returns Speed value using logarithmic formula
+ * Calculate dynamic speed using Jetpack Joyride sqrt formula
+ * Pure function for testing - used by SpeedController.calculateSpeed internally
+ * Formula: v = baseSpeed + (maxBonus × √(progress))
+ * @param currentMeters - Current distance traveled
+ * @param chapterTarget - Chapter's target distance
+ * @param baseSpeed - Base speed at chapter start
+ * @returns Speed value using sqrt formula
  */
-export function calculateLogarithmicSpeed(
-  baseSpeed: number,
-  currentDistance: number
+export function calculateDynamicSpeed(
+  currentMeters: number,
+  chapterTarget: number,
+  baseSpeed: number
 ): number {
-  const logFactor = Math.log(1 + currentDistance / DEFAULT_DISTANCE_DIVISOR);
-  return baseSpeed * (1 + DEFAULT_LOGARITHMIC_FACTOR * logFactor);
+  // 1. Calculate progress percentage (0.0 - 1.0)
+  const progress = chapterTarget > 0
+    ? Math.min(currentMeters / chapterTarget, 1.0)
+    : 0;
+
+  // 2. Maximum speed bonus (50% of base speed)
+  const maxBonus = baseSpeed * 0.5;
+
+  // 3. Square root-based acceleration (Jetpack Joyride feel)
+  const currentBonus = maxBonus * Math.sqrt(progress);
+
+  return baseSpeed + currentBonus;
 }
 
 /**
@@ -271,13 +299,13 @@ export function isInClimaxZone(
 }
 
 /**
- * @deprecated Use calculateLogarithmicSpeed instead
+ * @deprecated Use calculateDynamicSpeed instead
  * Kept for backward compatibility
  */
 export function calculateProgressiveSpeed(
   baseSpeed: number,
   currentDistance: number,
-  _targetDistance: number
+  targetDistance: number
 ): number {
-  return calculateLogarithmicSpeed(baseSpeed, currentDistance);
+  return calculateDynamicSpeed(currentDistance, targetDistance, baseSpeed);
 }

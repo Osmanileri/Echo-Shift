@@ -3,7 +3,7 @@ import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
   DailyChallengeMode,
   RestoreModeConfig
-} from "./components/GameEngine";
+} from "./components/GameEngine.tsx";
 import GameUI from "./components/GameUI";
 import MissionComplete from "./components/Missions/MissionComplete";
 import MissionPanel from "./components/Missions/MissionPanel";
@@ -129,6 +129,10 @@ const App: React.FC = () => {
   // Tutorial state - Requirements 17.1, 17.3, 17.4, 17.5
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
+  // Interactive Tutorial System - Level 0 (7-Phase Tutorial)
+  const [interactiveTutorialMode, setInteractiveTutorialMode] = useState<boolean>(false);
+  const [tutorialPhase, setTutorialPhase] = useState<string>('NAVIGATION');
+  const [tutorialPhaseIndex, setTutorialPhaseIndex] = useState<number>(0);
   // Restore System state - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
   const [showRestorePrompt, setShowRestorePrompt] = useState<boolean>(false);
   const [restoreScoreAtDeath, setRestoreScoreAtDeath] = useState<number>(0);
@@ -309,6 +313,15 @@ const App: React.FC = () => {
     AudioSystem.initialize();
     AudioSystem.playButtonClick();
 
+    // Check if interactive tutorial is needed (Level 0)
+    // New users must complete tutorial before accessing campaign
+    const tutorialCompleted = useGameStore.getState().tutorialCompleted;
+    if (!tutorialCompleted) {
+      console.log('[Tutorial] User has not completed tutorial, redirecting to Level 0');
+      handleStartInteractiveTutorial();
+      return;
+    }
+
     // Open campaign level selection directly - Requirements 1.1
     setShowCampaignMap(true);
   };
@@ -373,6 +386,43 @@ const App: React.FC = () => {
     setShowTutorial(false);
   };
 
+  // Interactive Tutorial System handlers - Level 0
+  const handleInteractiveTutorialComplete = useCallback(() => {
+    console.log('[Tutorial] Interactive tutorial completed!');
+    setInteractiveTutorialMode(false);
+    setGameState(GameState.MENU);
+
+    // Mark tutorial as completed in store
+    useGameStore.getState().setTutorialCompleted(true);
+
+    // Play celebration sound
+    AudioSystem.playNewHighScore();
+
+    // Open campaign map directly after tutorial
+    setShowCampaignMap(true);
+  }, []);
+
+  const handleTutorialPhaseChange = useCallback((phase: string, phaseIndex: number) => {
+    console.log('[Tutorial] Phase changed:', phase, phaseIndex);
+    setTutorialPhase(phase);
+    setTutorialPhaseIndex(phaseIndex);
+  }, []);
+
+  const handleStartInteractiveTutorial = useCallback(() => {
+    console.log('[Tutorial] Starting interactive tutorial (Level 0)');
+    AudioSystem.initialize();
+    AudioSystem.playGameStart();
+
+    setInteractiveTutorialMode(true);
+    setTutorialPhase('NAVIGATION');
+    setTutorialPhaseIndex(0);
+    setGameState(GameState.PLAYING);
+    setScore(0);
+    setEarnedShards(0);
+
+    // Reset campaign config (tutorial is Level 0)
+    setCampaignLevelConfig(null);
+  }, []);
   const handlePause = () => {
     setGameState(GameState.PAUSED);
   };
@@ -1117,6 +1167,9 @@ const App: React.FC = () => {
         restoreRequested={restoreRequested}
         onRestoreStateUpdate={handleRestoreStateUpdate}
         onMissionEvent={handleMissionEvent}
+        tutorialMode={interactiveTutorialMode ? { enabled: true } : undefined}
+        onTutorialComplete={handleInteractiveTutorialComplete}
+        onTutorialPhaseChange={handleTutorialPhaseChange}
       />
       <GameUI
         gameState={gameState}
@@ -1182,6 +1235,8 @@ const App: React.FC = () => {
         dashActive={dashActive}
         dashRemainingPercent={dashRemainingPercent}
         isQuantumLockActive={isQuantumLockActive}
+        // Tutorial Mode - Level 0
+        tutorialMode={interactiveTutorialMode}
       />
       <Shop isOpen={isShopOpen} onClose={handleCloseShop} />
       <ThemeCreatorModal isOpen={isStudioOpen} onClose={handleCloseStudio} />
@@ -1320,6 +1375,10 @@ const App: React.FC = () => {
           onSelectLevel={handleSelectCampaignLevel}
           newlyUnlockedLevel={newlyUnlockedLevel}
           justCompletedLevel={justCompletedLevel}
+          onStartTutorial={() => {
+            setShowCampaignMap(false);
+            handleStartInteractiveTutorial();
+          }}
         />
       )}
       {/* Daily Reward Claim Modal - Requirements 5.1 */}
@@ -1413,3 +1472,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

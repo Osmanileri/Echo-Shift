@@ -147,7 +147,10 @@ import * as EnemyManager from "../systems/EnemyManager";
 import * as EnemyDeathVFX from "../systems/enemyDeathVFX";
 // Flux Overload System - Yasaklı Hat Mekaniği (2-Strike damage system)
 import * as FluxOverload from "../systems/fluxOverloadSystem";
-
+// Interactive Tutorial System - 7-Phase Tutorial for Level 0
+import * as InteractiveTutorial from "../systems/interactiveTutorialSystem";
+import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
+import * as TutorialVFX from "../systems/tutorialVFXEngine";
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
 // Campaign Chapter System - Requirements: 4.1, 4.5, 1.5, 6.1, 6.2, 6.3
@@ -242,6 +245,10 @@ interface GameEngineProps {
   ritualTracking?: RitualTrackingCallbacks;
   // Mission System - Requirements 7.1, 7.2, 7.3, 7.4, 7.5
   onMissionEvent?: (event: MissionEvent) => void;
+  // Tutorial Mode - Level 0 interactive tutorial
+  tutorialMode?: { enabled: boolean };
+  onTutorialComplete?: () => void;
+  onTutorialPhaseChange?: (phase: import('../systems/interactiveTutorialSystem').TutorialPhase, phaseIndex: number) => void;
 }
 
 const GameEngine: React.FC<GameEngineProps> = ({
@@ -264,6 +271,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
   onRestoreStateUpdate,
   ritualTracking,
   onMissionEvent,
+  tutorialMode,
+  onTutorialComplete,
+  onTutorialPhaseChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -625,6 +635,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
     FluxOverload.createInitialState()
   );
 
+  // Interactive Tutorial State - Level 0 Tutorial System
+  const tutorialState = useRef<InteractiveTutorial.TutorialState>(
+    InteractiveTutorial.createInitialState()
+  );
+  const tutorialVFXState = useRef<TutorialVFX.TutorialVFXState>(
+    TutorialVFX.createInitialState()
+  );
+  // Track spawned blocks/diamonds for tutorial patterns
+  const tutorialSpawnedBlockIds = useRef<Set<string>>(new Set());
+  const tutorialSpawnedDiamondIds = useRef<Set<string>>(new Set());
+
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
     const upgradeEffects = getActiveUpgradeEffects();
@@ -786,7 +807,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Enemy Death VFX
     EnemyDeathVFX.resetDeathVFX();
 
-
+    // Reset Tutorial State - Level 0 Tutorial System
+    if (tutorialMode?.enabled) {
+      tutorialState.current = InteractiveTutorial.startTutorial(
+        InteractiveTutorial.createInitialState()
+      );
+      tutorialVFXState.current = TutorialVFX.createInitialState();
+      tutorialSpawnedBlockIds.current = new Set();
+      tutorialSpawnedDiamondIds.current = new Set();
+    } else {
+      tutorialState.current = InteractiveTutorial.createInitialState();
+    }
     // Reset/Initialize Zen Mode State - Requirements 9.1, 9.2, 9.4
     if (zenMode?.enabled) {
       zenModeState.current = ZenMode.activateZenMode(
@@ -2204,7 +2235,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // During Quantum Lock, distance increases 3x faster
           const dashDistanceMultiplier = PhaseDash.getDistanceMultiplier(phaseDashState.current);
           const quantumLockDistanceMultiplier = GlitchSystem.getDistanceMultiplier(glitchModeState.current);
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * quantumLockDistanceMultiplier * 0.8;
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * quantumLockDistanceMultiplier * 1.0;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
 
           // Update distance state ref
@@ -2257,9 +2288,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const isInPostDashCooldown = PhaseDash.isInPostDashCooldown(phaseDashState.current);
         const isDashingNow = PhaseDash.isDashActive(phaseDashState.current);
         const isQuantumLockActive = GlitchSystem.shouldBlockObstacleSpawn(glitchModeState.current);
+        // Tutorial Mode: Completely disable random spawning - use predefined patterns
+        const isTutorialModeActive = tutorialMode?.enabled && tutorialState.current.isActive;
         const shouldStopSpawning = isInFinishMode.current ||
           isInPostDashCooldown ||
           isQuantumLockActive ||
+          isTutorialModeActive || // Disable spawning during tutorial
           (distanceStateRef.current.targetDistance > 0 &&
             distanceStateRef.current.progressPercent >= 98);
 
@@ -2633,8 +2667,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- ENEMY MANAGER UPDATE - Glitch Dart System ---
       // Update enemy state: tracking → locked → firing → cooldown
       // DISABLED during special abilities: Phase Dash and Quantum Lock (diamond collection)
+      // ALSO DISABLED during tutorial mode - Level 0 has no enemies
       const isInSpecialAbility = PhaseDash.isDashActive(phaseDashState.current) || glitchModeState.current.isActive;
-      if (enemyManagerState.current && !isInSpecialAbility) {
+      const isTutorialActive = tutorialMode?.enabled && tutorialState.current.isActive;
+      if (enemyManagerState.current && !isInSpecialAbility && !isTutorialActive) {
         // Get current distance for spawn threshold check
         const currentDistance = distanceStateRef.current.currentDistance || 0;
 
@@ -4880,33 +4916,50 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      // Update legacy particles
-      particles.current.forEach((p) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.05;
-      });
-      particles.current = particles.current.filter((p) => p.life > 0);
-
-      // Update Score Popups - Requirements 3.3
-      scorePopups.current.forEach((popup) => {
-        popup.y += popup.vy;
-        popup.life -= 0.02;
-      });
-      scorePopups.current = scorePopups.current.filter(
-        (popup) => popup.life > 0
-      );
-
-      // Update Visual Effects - Requirements 3.4, 3.9
-      visualEffects.current.forEach((effect) => {
-        effect.life -= 0.03;
-        if (effect.type === "glow") {
-          effect.scale += 0.05; // Expand glow
+      // Update legacy particles - OPTIMIZED: in-place loop to reduce GC
+      {
+        let writeIdx = 0;
+        for (let i = 0; i < particles.current.length; i++) {
+          const p = particles.current[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= 0.05;
+          if (p.life > 0) {
+            particles.current[writeIdx++] = p;
+          }
         }
-      });
-      visualEffects.current = visualEffects.current.filter(
-        (effect) => effect.life > 0
-      );
+        particles.current.length = writeIdx;
+      }
+
+      // Update Score Popups - OPTIMIZED: in-place loop
+      {
+        let writeIdx = 0;
+        for (let i = 0; i < scorePopups.current.length; i++) {
+          const popup = scorePopups.current[i];
+          popup.y += popup.vy;
+          popup.life -= 0.02;
+          if (popup.life > 0) {
+            scorePopups.current[writeIdx++] = popup;
+          }
+        }
+        scorePopups.current.length = writeIdx;
+      }
+
+      // Update Visual Effects - OPTIMIZED: in-place loop
+      {
+        let writeIdx = 0;
+        for (let i = 0; i < visualEffects.current.length; i++) {
+          const effect = visualEffects.current[i];
+          effect.life -= 0.03;
+          if (effect.type === "glow") {
+            effect.scale += 0.05;
+          }
+          if (effect.life > 0) {
+            visualEffects.current[writeIdx++] = effect;
+          }
+        }
+        visualEffects.current.length = writeIdx;
+      }
 
       // --- DRAW LOGIC ---
 
@@ -6338,6 +6391,168 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Render Phase Dash debris particles (from destroyed obstacles)
       PhaseDashVFX.updateAndDrawDebris(ctx);
 
+      // --- INTERACTIVE TUTORIAL SYSTEM UPDATE & RENDER ---
+      // Level 0 Tutorial: Update state and render VFX
+      if (tutorialMode?.enabled && tutorialState.current.isActive) {
+        const tutorialInput: InteractiveTutorial.TutorialInputState = {
+          isPressed: true, // Simplified - tutorial tracks via isSwapped
+          wasReleased: false, // Will be set by swap detection
+          wasTapped: false,
+          playerY: playerY.current,
+          isSwapped: isSwapped.current,
+        };
+
+        // Create obstacle info for tutorial system
+        const tutorialObstacles: InteractiveTutorial.TutorialObstacle[] = obstacles.current.map(obs => ({
+          id: `obs-${obs.x}-${obs.y}`,
+          x: obs.x,
+          y: obs.y,
+          lane: obs.y < height / 2 ? 'top' : 'bottom',
+          polarity: obs.polarity === 'white' ? 'white' : 'black',
+          passed: obs.x < width / 8,
+        }));
+
+        // Get previous phase for phase change detection
+        const prevPhase = tutorialState.current.currentPhase;
+        const prevPhaseIndex = tutorialState.current.phaseIndex;
+
+        // Update tutorial state
+        tutorialState.current = InteractiveTutorial.update(
+          tutorialState.current,
+          tutorialInput,
+          tutorialObstacles,
+          16, // deltaTime ~60fps
+          height
+        );
+
+        // Check for phase change and notify parent
+        if (tutorialState.current.phaseIndex !== prevPhaseIndex) {
+          onTutorialPhaseChange?.(
+            tutorialState.current.currentPhase,
+            tutorialState.current.phaseIndex
+          );
+          // Clear spawned block/diamond IDs when phase changes
+          tutorialSpawnedBlockIds.current.clear();
+          tutorialSpawnedDiamondIds.current.clear();
+        }
+
+        // --- TUTORIAL BLOCK SPAWNING ---
+        // Spawn blocks based on phase patterns with timing
+        const phaseElapsedTime = InteractiveTutorial.getPhaseElapsedTime(tutorialState.current);
+        const blocksToSpawn = TutorialPatterns.getBlocksToSpawn(
+          tutorialState.current.currentPhase,
+          phaseElapsedTime,
+          tutorialSpawnedBlockIds.current
+        );
+
+        // Spawn each block that's ready
+        blocksToSpawn.forEach(block => {
+          tutorialSpawnedBlockIds.current.add(block.id);
+
+          // Create obstacle at right edge of screen
+          const obsWidth = 50; // INITIAL_CONFIG.obstacleWidth
+          const blockHeight = block.crossesCenter ? height * 0.55 : height * 0.45;
+          const blockY = block.lane === 'top'
+            ? 0
+            : height - blockHeight;
+
+          const newObstacle = {
+            id: block.id,
+            x: width + 50,
+            y: blockY,
+            targetY: blockY,
+            width: obsWidth,
+            height: blockHeight,
+            lane: block.lane,
+            polarity: block.polarity,
+            passed: false,
+            shouldOscillate: false,
+            oscillationIntensity: 0,
+            oscillationPhase: 0,
+          };
+
+          obstacles.current.push(newObstacle);
+        });
+
+        // Spawn diamonds for diamond phase
+        const diamondsToSpawn = TutorialPatterns.getDiamondsToSpawn(
+          tutorialState.current.currentPhase,
+          phaseElapsedTime,
+          tutorialSpawnedDiamondIds.current
+        );
+
+        diamondsToSpawn.forEach(diamond => {
+          tutorialSpawnedDiamondIds.current.add(diamond.id);
+
+          // Create shard at right edge
+          const diamondY = height * diamond.y;
+          const diamondLane = diamondY < height / 2 ? 'TOP' : 'BOTTOM';
+
+          // Use ShardPlacement system to generate proper movement config
+          const movement = ShardPlacement.generateShardMovement("safe");
+
+          const newShard: ShardPlacement.PlacedShard = {
+            id: diamond.id,
+            x: width + 30,
+            y: diamondY,
+            baseX: width + 30,
+            baseY: diamondY,
+            lane: diamondLane as Lane,
+            type: 'safe',
+            value: 1,
+            collected: false,
+            spawnTime: Date.now(),
+            movement: movement,
+            isBonus: false
+          };
+
+          activeShards.current.push(newShard);
+        });
+
+        // Check for tutorial completion
+        if (tutorialState.current.isComplete && onTutorialComplete) {
+          onTutorialComplete();
+        }
+
+        // Update VFX state
+        tutorialVFXState.current = TutorialVFX.update(
+          tutorialVFXState.current,
+          tutorialState.current,
+          16, // deltaTime
+          width,
+          height
+        );
+
+        // Render tutorial VFX on top of game
+        TutorialVFX.render(ctx, tutorialVFXState.current, width, height);
+
+        // Render tutorial message if any
+        if (tutorialState.current.currentMessage) {
+          const msg = tutorialState.current.currentMessage;
+          ctx.save();
+          ctx.font = msg.style === 'celebration' ? 'bold 36px monospace' : 'bold 20px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          if (msg.style === 'glitch') {
+            // Glitch text effect
+            ctx.fillStyle = '#00f0ff';
+            ctx.fillText(msg.text, width / 2 - 2, height / 3);
+            ctx.fillStyle = '#ff00ff';
+            ctx.fillText(msg.text, width / 2 + 2, height / 3);
+          }
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(msg.text, width / 2, height / 3);
+          ctx.restore();
+        }
+
+        // Render progress indicator
+        const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
+        ctx.fillRect(0, height - 10, (width * progress) / 100, 10);
+        ctx.restore();
+      }
 
       if (collisionDetected) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2

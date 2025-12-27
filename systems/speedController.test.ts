@@ -1,22 +1,22 @@
 /**
  * Property-Based Tests for Progressive Speed Controller
- * Campaign Chapter System
+ * Jetpack Joyride Style - Square root-based asymptotic acceleration
  * 
  * Tests for:
- * - Property 7: Speed Formula Correctness
+ * - Property 7: Speed Formula Correctness (sqrt-based)
  * - Property 8: Climax Speed Multiplier
  * 
- * **Validates: Requirements 4.2, 4.4**
+ * **Validates: Requirements 4.2, 4.3, 4.4**
  */
 
 import * as fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { DistanceState } from './distanceTracker';
 import {
-    applyClimaxMultiplier,
-    calculateLogarithmicSpeed,
-    createSpeedController,
-    isInClimaxZone
+  applyClimaxMultiplier,
+  calculateDynamicSpeed,
+  createSpeedController,
+  isInClimaxZone
 } from './speedController';
 
 import { INITIAL_CONFIG } from '../constants';
@@ -27,31 +27,36 @@ import { INITIAL_CONFIG } from '../constants';
 const DEFAULT_BASE_SPEED = INITIAL_CONFIG.baseSpeed;
 const DEFAULT_CLIMAX_MULTIPLIER = 1.2;
 
-describe('Speed Controller Properties - Campaign Chapter System', () => {
+describe('Speed Controller Properties - Jetpack Joyride Style', () => {
   /**
-   * **Feature: campaign-chapter-system, Property 7: Speed Formula Correctness**
+   * **Feature: jetpack-joyride-speed, Property 7: Speed Formula Correctness**
    * **Validates: Requirements 4.2**
    * 
-   * For any currentDistance value, the calculated speed SHALL equal
-   * `baseSpeed × (1 + 0.3 × log(1 + currentDistance/50))`.
+   * For any progress value, the calculated speed SHALL equal
+   * `baseSpeed + (baseSpeed × 0.5 × √(progress))`
    */
-  test('Property 7: Speed Formula Correctness', () => {
+  test('Property 7: Sqrt Speed Formula Correctness', () => {
     fc.assert(
       fc.property(
         // Base speed (positive)
         fc.float({ min: 1, max: 20, noNaN: true }),
-        // Current distance (0 to 1000 meters)
-        fc.float({ min: 0, max: 1000, noNaN: true }),
-        (baseSpeed, currentDistance) => {
-          // Calculate expected speed using the formula from Requirements 4.2
-          const expectedSpeed = baseSpeed * (1 + 0.3 * Math.log(1 + currentDistance / 50));
-          
+        // Target distance (positive)
+        fc.float({ min: 100, max: 1000, noNaN: true }),
+        // Progress ratio (0 to 1)
+        fc.float({ min: 0, max: 1, noNaN: true }),
+        (baseSpeed, targetDistance, progressRatio) => {
+          const currentDistance = targetDistance * progressRatio;
+
+          // Calculate expected speed using Jetpack Joyride formula
+          const maxBonus = baseSpeed * 0.5;
+          const expectedSpeed = baseSpeed + maxBonus * Math.sqrt(progressRatio);
+
           // Calculate using the pure function
-          const actualSpeed = calculateLogarithmicSpeed(baseSpeed, currentDistance);
-          
+          const actualSpeed = calculateDynamicSpeed(currentDistance, targetDistance, baseSpeed);
+
           // Speeds should match
           expect(actualSpeed).toBeCloseTo(expectedSpeed, 5);
-          
+
           return true;
         }
       ),
@@ -59,8 +64,9 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
     );
   });
 
+
   /**
-   * **Feature: campaign-chapter-system, Property 7: Speed increases with distance**
+   * **Feature: jetpack-joyride-speed, Property 7: Speed increases with distance**
    * **Validates: Requirements 4.3**
    * 
    * Speed should monotonically increase as distance increases.
@@ -70,18 +76,22 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
       fc.property(
         // Base speed
         fc.float({ min: 1, max: 20, noNaN: true }),
-        // Two distances where distance2 > distance1
-        fc.float({ min: 0, max: 500, noNaN: true }),
-        fc.float({ min: Math.fround(0.1), max: 500, noNaN: true }),
-        (baseSpeed, distance1, distanceDiff) => {
-          const distance2 = distance1 + distanceDiff;
-          
-          const speed1 = calculateLogarithmicSpeed(baseSpeed, distance1);
-          const speed2 = calculateLogarithmicSpeed(baseSpeed, distance2);
-          
+        // Target distance
+        fc.float({ min: 100, max: 1000, noNaN: true }),
+        // Two progress values where progress2 > progress1
+        fc.float({ min: 0, max: Math.fround(0.5), noNaN: true }),
+        fc.float({ min: Math.fround(0.01), max: Math.fround(0.5), noNaN: true }),
+        (baseSpeed, targetDistance, progress1, progressDiff) => {
+          const progress2 = Math.min(progress1 + progressDiff, 1.0);
+          const distance1 = targetDistance * progress1;
+          const distance2 = targetDistance * progress2;
+
+          const speed1 = calculateDynamicSpeed(distance1, targetDistance, baseSpeed);
+          const speed2 = calculateDynamicSpeed(distance2, targetDistance, baseSpeed);
+
           // Speed at higher distance should be greater
           expect(speed2).toBeGreaterThan(speed1);
-          
+
           return true;
         }
       ),
@@ -90,22 +100,24 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
   });
 
   /**
-   * **Feature: campaign-chapter-system, Property 7: Speed at zero distance equals base speed**
+   * **Feature: jetpack-joyride-speed, Property 7: Speed at zero distance equals base speed**
    * **Validates: Requirements 4.1, 4.2**
    * 
-   * At 0 distance, speed equals baseSpeed (since log(1) = 0).
+   * At 0 distance, sqrt(0) = 0, so speed = baseSpeed.
    */
   test('Property 7: Speed at zero distance equals base speed', () => {
     fc.assert(
       fc.property(
         // Base speed
         fc.float({ min: 1, max: 20, noNaN: true }),
-        (baseSpeed) => {
-          // At 0 distance, log(1 + 0/50) = log(1) = 0
-          // So speed = baseSpeed * (1 + 0.3 * 0) = baseSpeed
-          const speedAt0 = calculateLogarithmicSpeed(baseSpeed, 0);
+        // Target distance
+        fc.float({ min: 100, max: 1000, noNaN: true }),
+        (baseSpeed, targetDistance) => {
+          // At 0 distance, sqrt(0) = 0
+          // So speed = baseSpeed + (maxBonus * 0) = baseSpeed
+          const speedAt0 = calculateDynamicSpeed(0, targetDistance, baseSpeed);
           expect(speedAt0).toBeCloseTo(baseSpeed, 5);
-          
+
           return true;
         }
       ),
@@ -128,10 +140,10 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
         (speed) => {
           // When in climax zone with full transition
           const speedWithClimax = applyClimaxMultiplier(speed, true, 1);
-          
+
           // Should be exactly 1.2x the input speed
           expect(speedWithClimax).toBeCloseTo(speed * DEFAULT_CLIMAX_MULTIPLIER, 5);
-          
+
           return true;
         }
       ),
@@ -153,10 +165,10 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
         (speed) => {
           // When not in climax zone
           const speedWithoutClimax = applyClimaxMultiplier(speed, false, 0);
-          
+
           // Should equal the input speed unchanged
           expect(speedWithoutClimax).toBeCloseTo(speed, 5);
-          
+
           return true;
         }
       ),
@@ -180,14 +192,14 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
         (targetDistance, progressRatio) => {
           const currentDistance = targetDistance * progressRatio;
           const inClimax = isInClimaxZone(currentDistance, targetDistance);
-          
+
           // Should be in climax zone if progress >= 80%
           if (progressRatio >= 0.8) {
             expect(inClimax).toBe(true);
           } else {
             expect(inClimax).toBe(false);
           }
-          
+
           return true;
         }
       ),
@@ -214,13 +226,13 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
             true,
             transitionProgress
           );
-          
+
           // Expected multiplier: 1.0 + (1.2 - 1.0) * transitionProgress
           const expectedMultiplier = 1.0 + 0.2 * transitionProgress;
           const expectedSpeed = speed * expectedMultiplier;
-          
+
           expect(speedDuringTransition).toBeCloseTo(expectedSpeed, 5);
-          
+
           return true;
         }
       ),
@@ -229,11 +241,11 @@ describe('Speed Controller Properties - Campaign Chapter System', () => {
   });
 });
 
-describe('Speed Controller Integration - Campaign Chapter System', () => {
+describe('Speed Controller Integration - Jetpack Joyride Style', () => {
   /**
-   * Test SpeedController class with DistanceState using logarithmic formula
+   * Test SpeedController class with DistanceState using sqrt formula
    */
-  test('SpeedController calculates correct speed with logarithmic formula', () => {
+  test('SpeedController calculates correct speed with sqrt formula', () => {
     fc.assert(
       fc.property(
         // Target distance
@@ -243,7 +255,7 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
         (targetDistance, progressRatio) => {
           const controller = createSpeedController();
           const currentDistance = targetDistance * progressRatio;
-          
+
           const distanceState: DistanceState = {
             currentDistance,
             targetDistance,
@@ -251,14 +263,15 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
             isInClimaxZone: false,
             isNearFinish: false,
           };
-          
+
           const speed = controller.calculateSpeed(distanceState);
-          
-          // Expected: baseSpeed × (1 + 0.3 × log(1 + distance/50))
-          const expectedSpeed = DEFAULT_BASE_SPEED * (1 + 0.3 * Math.log(1 + currentDistance / 50));
-          
-          expect(speed).toBeCloseTo(expectedSpeed, 5);
-          
+
+          // Expected: baseSpeed + (baseSpeed × 0.5 × √progress)
+          const maxBonus = DEFAULT_BASE_SPEED * 0.5;
+          const expectedSpeed = DEFAULT_BASE_SPEED + maxBonus * Math.sqrt(progressRatio);
+
+          expect(speed).toBeCloseTo(expectedSpeed, 4);
+
           return true;
         }
       ),
@@ -279,7 +292,7 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
         (targetDistance, progressRatio) => {
           const controller = createSpeedController();
           const currentDistance = targetDistance * progressRatio;
-          
+
           const distanceState: DistanceState = {
             currentDistance,
             targetDistance,
@@ -287,18 +300,19 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
             isInClimaxZone: true,
             isNearFinish: progressRatio >= 0.95,
           };
-          
+
           // Simulate full transition (500ms passed)
           controller.update(500, true);
-          
+
           const speed = controller.calculateSpeed(distanceState);
-          
-          // Expected: baseSpeed × (1 + 0.3 × log(1 + distance/50)) × 1.2
-          const logarithmicSpeed = DEFAULT_BASE_SPEED * (1 + 0.3 * Math.log(1 + currentDistance / 50));
-          const expectedSpeed = logarithmicSpeed * DEFAULT_CLIMAX_MULTIPLIER;
-          
-          expect(speed).toBeCloseTo(expectedSpeed, 5);
-          
+
+          // Expected: (baseSpeed + maxBonus × √progress) × 1.2
+          const maxBonus = DEFAULT_BASE_SPEED * 0.5;
+          const sqrtSpeed = DEFAULT_BASE_SPEED + maxBonus * Math.sqrt(progressRatio);
+          const expectedSpeed = sqrtSpeed * DEFAULT_CLIMAX_MULTIPLIER;
+
+          expect(speed).toBeCloseTo(expectedSpeed, 4);
+
           return true;
         }
       ),
@@ -312,21 +326,21 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
    */
   test('SpeedController resets to base speed 5 at chapter start', () => {
     const controller = createSpeedController();
-    
+
     expect(controller.getBaseSpeed()).toBe(DEFAULT_BASE_SPEED);
-    
+
     // Re-initialize for a new chapter
     controller.initialize();
-    
+
     expect(controller.getBaseSpeed()).toBe(DEFAULT_BASE_SPEED);
   });
 
   /**
-   * Test getConfig returns correct state with logarithmic multiplier
+   * Test getConfig returns correct state with sqrt multiplier
    */
   test('SpeedController getConfig returns correct state', () => {
     const controller = createSpeedController();
-    
+
     const distanceState: DistanceState = {
       currentDistance: 100,
       targetDistance: 500,
@@ -334,14 +348,14 @@ describe('Speed Controller Integration - Campaign Chapter System', () => {
       isInClimaxZone: false,
       isNearFinish: false,
     };
-    
+
     const config = controller.getConfig(distanceState);
-    
+
     expect(config.baseSpeed).toBe(DEFAULT_BASE_SPEED);
-    // log(1 + 100/50) = log(3) ≈ 1.0986
-    // multiplier = 1 + 0.3 * 1.0986 ≈ 1.3296
-    const expectedMultiplier = 1 + 0.3 * Math.log(1 + 100 / 50);
-    expect(config.logarithmicMultiplier).toBeCloseTo(expectedMultiplier, 5);
+    // progress = 100/500 = 0.2
+    // sqrtMultiplier = 1 + 0.5 * sqrt(0.2) ≈ 1 + 0.5 * 0.447 ≈ 1.224
+    const expectedMultiplier = 1 + 0.5 * Math.sqrt(100 / 500);
+    expect(config.sqrtMultiplier).toBeCloseTo(expectedMultiplier, 5);
     expect(config.climaxMultiplier).toBe(1.0);
     expect(config.isInClimaxZone).toBe(false);
   });
@@ -361,13 +375,13 @@ describe('Speed Controller Edge Cases', () => {
    */
   test('Reset clears transition state', () => {
     const controller = createSpeedController();
-    
+
     // Simulate being in climax zone
     controller.update(500, true);
-    
+
     // Reset
     controller.reset();
-    
+
     const distanceState: DistanceState = {
       currentDistance: 450,
       targetDistance: 500,
@@ -375,7 +389,7 @@ describe('Speed Controller Edge Cases', () => {
       isInClimaxZone: true,
       isNearFinish: false,
     };
-    
+
     // After reset, transition should start from 0
     const config = controller.getConfig(distanceState);
     expect(config.climaxTransitionProgress).toBe(0);
@@ -386,10 +400,10 @@ describe('Speed Controller Edge Cases', () => {
    */
   test('Climax transition progresses smoothly over 500ms', () => {
     const controller = createSpeedController();
-    
+
     // Update with 250ms (half transition)
     controller.update(250, true);
-    
+
     const distanceState: DistanceState = {
       currentDistance: 450,
       targetDistance: 500,
@@ -397,7 +411,7 @@ describe('Speed Controller Edge Cases', () => {
       isInClimaxZone: true,
       isNearFinish: false,
     };
-    
+
     const config = controller.getConfig(distanceState);
     expect(config.climaxTransitionProgress).toBeCloseTo(0.5, 2);
     expect(config.climaxMultiplier).toBeCloseTo(1.1, 2); // Halfway between 1.0 and 1.2
@@ -408,7 +422,7 @@ describe('Speed Controller Edge Cases', () => {
    */
   test('Speed at distance 0 equals base speed', () => {
     const controller = createSpeedController();
-    
+
     const distanceState: DistanceState = {
       currentDistance: 0,
       targetDistance: 500,
@@ -416,7 +430,7 @@ describe('Speed Controller Edge Cases', () => {
       isInClimaxZone: false,
       isNearFinish: false,
     };
-    
+
     const speed = controller.calculateSpeed(distanceState);
     expect(speed).toBe(DEFAULT_BASE_SPEED);
   });
