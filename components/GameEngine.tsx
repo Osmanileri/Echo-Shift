@@ -150,6 +150,7 @@ import * as FluxOverload from "../systems/fluxOverloadSystem";
 // Interactive Tutorial System - 7-Phase Tutorial for Level 0
 import * as InteractiveTutorial from "../systems/interactiveTutorialSystem";
 import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
+import * as TutorialIntroRenderer from "../systems/tutorialIntroRenderer";
 import * as TutorialVFX from "../systems/tutorialVFXEngine";
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -1483,7 +1484,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glitchModeState.current.phase === 'warning' ||
           glitchModeState.current.phase === 'exiting';
 
-        if (PhaseDash.canActivate(phaseDashState.current) && !isQuantumLockEngaged) {
+        // Disable dash during tutorial
+        const isTutorialActive = tutorialState.current.isActive;
+
+        if (PhaseDash.canActivate(phaseDashState.current) && !isQuantumLockEngaged && !isTutorialActive) {
           const dashDuration = getActiveUpgradeEffects().dashDuration;
           phaseDashState.current = PhaseDash.activateDash(phaseDashState.current, dashDuration);
 
@@ -2601,7 +2605,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // During Phase Dash, player also moves forward for visual effect
       const basePlayerX = width / 8;
       const dashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
-      const playerX = basePlayerX + finishModePlayerX.current + dashXOffset;
+
+      // Tutorial slide-in offset - player hidden during INTRO, slides in during NAVIGATION
+      let tutorialSlideOffset = 0;
+      if (tutorialMode?.enabled && tutorialState.current.isActive) {
+        // During INTRO phase, player is completely hidden off-screen
+        if (tutorialState.current.currentPhase === 'INTRO') {
+          tutorialSlideOffset = -basePlayerX * 2; // Far off screen
+        } else {
+          // NAVIGATION and beyond - use slide progress
+          const slideProgress = tutorialState.current.playerSlideInProgress ?? 1;
+          tutorialSlideOffset = (1 - slideProgress) * -basePlayerX;
+        }
+      }
+
+      const playerX = basePlayerX + finishModePlayerX.current + dashXOffset + tutorialSlideOffset;
 
       // During dash, use spin angle for clockwise rotation effect
       const dashSpinAngle = PhaseDash.getSpinAngle(phaseDashState.current);
@@ -2923,8 +2941,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         glitchModeState.current.isActive ||
         glitchModeState.current.phase === 'warning';
 
-      // Trigger check - Only trigger when not using abilities
-      if (!isUsingAbility && FluxOverload.shouldTrigger(fluxDistance, fluxLevel, fluxOverloadState.current)) {
+      // Trigger check - Only trigger when not using abilities and not in tutorial
+      if (!isUsingAbility && !tutorialState.current.isActive && FluxOverload.shouldTrigger(fluxDistance, fluxLevel, fluxOverloadState.current)) {
         fluxOverloadState.current = FluxOverload.startWarning(
           fluxOverloadState.current,
           fluxCurrentTime,
@@ -2934,9 +2952,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         getHapticSystem().trigger('light');
       }
 
-      // Update FluxOverload state - skip damage check if using ability
+      // Update FluxOverload state - skip during tutorial or when using ability
       const prevStrikes = fluxOverloadState.current.strikes;
-      const fluxResult = isUsingAbility
+      const skipFluxOverload = isUsingAbility || tutorialState.current.isActive;
+      const fluxResult = skipFluxOverload
         ? { newState: fluxOverloadState.current, triggerGameOver: false, hitOrbY: null }
         : FluxOverload.update(
           fluxOverloadState.current,
@@ -2977,82 +2996,90 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // --- GLITCH TOKEN UPDATE AND COLLECTION - Requirements 1.1, 1.2, 1.3, 1.4 ---
-      // Get dash speed multiplier for glitch tokens
-      const dashSpeedMultiplierForTokens = PhaseDash.getSpeedMultiplier(phaseDashState.current);
-      glitchTokens.current = glitchTokens.current.filter((token) => {
-        if (token.collected) return false;
+      // Skip token processing during tutorial - no constructs/tokens visible
+      if (tutorialState.current.isActive) {
+        glitchTokens.current = []; // Clear any existing tokens
+      } else {
+        // Get dash speed multiplier for glitch tokens
+        const dashSpeedMultiplierForTokens = PhaseDash.getSpeedMultiplier(phaseDashState.current);
+        glitchTokens.current = glitchTokens.current.filter((token) => {
+          if (token.collected) return false;
 
-        // Move token with game speed - Apply dash multiplier for warp feel
-        const updatedToken = GlitchTokenSpawner.updateTokenPosition(
-          token,
-          -speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForTokens
-        );
-        token.x = updatedToken.x;
+          // Move token with game speed - Apply dash multiplier for warp feel
+          const updatedToken = GlitchTokenSpawner.updateTokenPosition(
+            token,
+            -speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForTokens
+          );
+          token.x = updatedToken.x;
 
-        // Check if off-screen
-        if (GlitchTokenSpawner.isTokenOffScreen(token)) {
-          return false;
-        }
+          // Check if off-screen
+          if (GlitchTokenSpawner.isTokenOffScreen(token)) {
+            return false;
+          }
 
-        // Check collision with white orb
-        const whiteTokenCollision = GlitchTokenSpawner.canCollectToken(
-          whiteOrbX, whiteOrbY, token
-        );
-
-        // Check collision with black orb
-        const blackTokenCollision = GlitchTokenSpawner.canCollectToken(
-          blackOrbX, blackOrbY, token
-        );
-
-        if (whiteTokenCollision || blackTokenCollision) {
-          // Mark as collected
-          token.collected = true;
-
-          // Get position for VFX
-          const vfxX = whiteTokenCollision ? whiteOrbX : blackOrbX;
-          const vfxY = whiteTokenCollision ? whiteOrbY : blackOrbY;
-
-          // Transform to the construct - Requirements 1.3, 2.1
-          constructSystemState.current = ConstructSystem.transformTo(
-            constructSystemState.current,
-            token.constructType,
-            Date.now()
+          // Check collision with white orb
+          const whiteTokenCollision = GlitchTokenSpawner.canCollectToken(
+            whiteOrbX, whiteOrbY, token
           );
 
-          // Trigger transformation VFX - Requirements 2.2
-          transformationVFXState.current = TransformationVFX.triggerTransformation(
-            transformationVFXState.current,
-            vfxX,
-            vfxY,
-            Date.now()
+          // Check collision with black orb
+          const blackTokenCollision = GlitchTokenSpawner.canCollectToken(
+            blackOrbX, blackOrbY, token
           );
 
-          // Play transformation sound - Requirements 6.5
-          AudioSystem.playConstructTransform();
-          AudioSystem.playGlitchTokenCollect();
-          ScreenShake.triggerNearMiss();
-          ChromaticAberration.setStreakLevel(3); // Trigger chromatic aberration effect
-          getHapticSystem().trigger("heavy");
+          if (whiteTokenCollision || blackTokenCollision) {
+            // Mark as collected
+            token.collected = true;
 
-          // Score popup for transformation
-          scorePopups.current.push({
-            x: token.x,
-            y: token.y - 20,
-            text: `⚡ ${token.constructType} ⚡`,
-            color: "#00F0FF",
-            life: 2.0,
-            vy: -2,
-          });
+            // Get position for VFX
+            const vfxX = whiteTokenCollision ? whiteOrbX : blackOrbX;
+            const vfxY = whiteTokenCollision ? whiteOrbY : blackOrbY;
 
-          return false;
-        }
+            // Transform to the construct - Requirements 1.3, 2.1
+            constructSystemState.current = ConstructSystem.transformTo(
+              constructSystemState.current,
+              token.constructType,
+              Date.now()
+            );
 
-        return true;
-      });
+            // Trigger transformation VFX - Requirements 2.2
+            transformationVFXState.current = TransformationVFX.triggerTransformation(
+              transformationVFXState.current,
+              vfxX,
+              vfxY,
+              Date.now()
+            );
+
+            // Play transformation sound - Requirements 6.5
+            AudioSystem.playConstructTransform();
+            AudioSystem.playGlitchTokenCollect();
+            ScreenShake.triggerNearMiss();
+            ChromaticAberration.setStreakLevel(3); // Trigger chromatic aberration effect
+            getHapticSystem().trigger("heavy");
+
+            // Score popup for transformation
+            scorePopups.current.push({
+              x: token.x,
+              y: token.y - 20,
+              text: `⚡ ${token.constructType} ⚡`,
+              color: "#00F0FF",
+              life: 2.0,
+              vy: -2,
+            });
+
+            return false;
+          }
+
+          return true;
+        });
+      } // End tutorial check else block
 
       // --- GLITCH SHARD UPDATE AND COLLISION - Requirements 2.4, 2.5, 3.1, 3.2, 3.3 ---
-      // Skip if hit stop is active - Requirements 3.2
-      if (hitStopFramesRemaining.current > 0) {
+      // Skip during tutorial
+      if (tutorialState.current.isActive) {
+        glitchShardRef.current = null;
+        hitStopFramesRemaining.current = 0;
+      } else if (hitStopFramesRemaining.current > 0) {
         // Decrement hit stop counter
         hitStopFramesRemaining.current = GlitchSystem.updateHitStop(hitStopFramesRemaining.current);
 
@@ -3169,7 +3196,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- QUANTUM LOCK MODE UPDATE - Requirements 5.2, 7.2, 7.3, 7.4 ---
       // Update Glitch Mode state (phase transitions, wave offset, ghost mode)
-      if (glitchModeState.current.isActive || glitchModeState.current.phase === 'ghost') {
+      // Disable Quantum Lock in tutorial
+      if (tutorialState.current.isActive) {
+        if (glitchModeState.current.isActive || glitchModeState.current.phase !== 'inactive') {
+          glitchModeState.current.isActive = false;
+          glitchModeState.current.phase = 'inactive';
+          AudioSystem.removeGlitchMusicFilter();
+        }
+      } else if (glitchModeState.current.isActive || glitchModeState.current.phase === 'ghost') {
         const previousPhase = glitchModeState.current.phase;
 
         // Update mode state - Requirements 7.2, 7.3, 7.4
@@ -4098,6 +4132,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Also skip if pending restore (waiting for user decision) or restore animation is playing
         // Skip collision in finish mode - player is exiting screen
+        // Skip collision in tutorial mode - player is learning
         if (
           isPhasing.current ||
           gravityState.current.isInvincible ||
@@ -4108,7 +4143,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glitchInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current ||
-          isInFinishMode.current
+          isInFinishMode.current ||
+          tutorialState.current.isActive  // Tutorial invincibility
         )
           return;
 
@@ -6529,22 +6565,80 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Render tutorial message if any
         if (tutorialState.current.currentMessage) {
           const msg = tutorialState.current.currentMessage;
-          ctx.save();
-          ctx.font = msg.style === 'celebration' ? 'bold 36px monospace' : 'bold 20px monospace';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
+          const isIntroPhase = tutorialState.current.currentPhase === 'INTRO';
+          const introStep = tutorialState.current.introStoryStep ?? 0;
 
-          if (msg.style === 'glitch') {
-            // Glitch text effect
-            ctx.fillStyle = '#00f0ff';
-            ctx.fillText(msg.text, width / 2 - 2, height / 3);
-            ctx.fillStyle = '#ff00ff';
-            ctx.fillText(msg.text, width / 2 + 2, height / 3);
+          ctx.save();
+
+          // Multi-line text support
+          const lines = msg.text.split('\n').filter(line => line.trim() !== '');
+
+          if (isIntroPhase) {
+            // Use modular intro renderer
+            const introState = TutorialIntroRenderer.calculateIntroState(
+              tutorialState.current.introStoryStartTime || Date.now(),
+              msg.text
+            );
+            if (introState) {
+              // Track last char sound for typewriter effect
+              if (!(tutorialState.current as any).lastCharSound) {
+                (tutorialState.current as any).lastCharSound = 0;
+              }
+              TutorialIntroRenderer.render(
+                ctx,
+                introState,
+                width,
+                height,
+                { current: (tutorialState.current as any).lastCharSound }
+              );
+              (tutorialState.current as any).lastCharSound =
+                Math.floor(introState.lineElapsed / 60); // Update sound index
+            }
+
+
+          } else {
+            // ========================================
+            // OTHER PHASES: Compact top panel
+            // ========================================
+            const lineHeight = 18;
+            const fontSize = 14;
+            const totalTextHeight = lines.length * lineHeight;
+
+            const panelPadding = 12;
+            const panelWidth = Math.min(width * 0.75, 280);
+            const panelHeight = totalTextHeight + panelPadding * 2;
+            const panelX = (width - panelWidth) / 2;
+            const panelY = height * 0.08;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.beginPath();
+            ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 12);
+            ctx.fill();
+
+            ctx.strokeStyle = '#00f0ff';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 15;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            ctx.font = `bold ${fontSize}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const textStartY = panelY + panelPadding + lineHeight / 2;
+
+            lines.forEach((line, index) => {
+              const lineY = textStartY + index * lineHeight;
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(line, width / 2, lineY);
+            });
           }
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(msg.text, width / 2, height / 3);
+
           ctx.restore();
         }
+
+
 
         // Render progress indicator
         const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
@@ -7003,8 +7097,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     >
       <canvas ref={canvasRef} className="block w-full h-full touch-none" />
 
-      {/* Mobile Controls Hint - Show briefly when playing on mobile */}
-      {isMobile && gameState === GameState.PLAYING && showMobileHint && (
+      {/* Mobile Controls Hint - Show briefly when playing on mobile (NOT during tutorial) */}
+      {isMobile && gameState === GameState.PLAYING && showMobileHint && !tutorialMode?.enabled && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-500">
           <div className="flex flex-col items-center gap-1 text-white/60 text-sm bg-black/30 px-4 py-2 rounded-lg backdrop-blur-sm">
             <div className="flex items-center gap-2">

@@ -14,9 +14,10 @@
 // ============================================================================
 
 /**
- * 7 Tutorial Phase
+ * 8 Tutorial Phase (Intro + 7 Gameplay)
  */
 export type TutorialPhase =
+    | 'INTRO'             // Faz 0: Giriş hikayesi
     | 'NAVIGATION'         // Faz 1: Dikey hareket
     | 'COLOR_MATCH'        // Faz 2: Renk uyumu
     | 'SWAP_MECHANIC'      // Faz 3: Swap mekaniği
@@ -54,7 +55,7 @@ export interface PhaseConfig {
 export interface TutorialState {
     isActive: boolean;
     currentPhase: TutorialPhase;
-    phaseIndex: number;           // 0-6
+    phaseIndex: number;           // 0-7 (INTRO dahil)
     progress: number;             // Current progress toward goal
     targetGoal: number;           // Goal for current phase
     speedMultiplier: number;      // Current speed multiplier
@@ -62,7 +63,7 @@ export interface TutorialState {
     inputType?: 'release' | 'tap';
 
     // Phase completion tracking
-    phasesCompleted: boolean[];   // [false, false, false, false, false, false, false]
+    phasesCompleted: boolean[];   // [false x 8] - INTRO dahil 8 faz
 
     // Message queue
     currentMessage: TutorialMessage | null;
@@ -88,7 +89,23 @@ export interface TutorialState {
 
     // Tutorial complete flag
     isComplete: boolean;
+
+    // Player slide-in animation (NAVIGATION fazında)
+    playerSlideInProgress: number;    // 0 (ekran dışı) -> 1 (yerinde)
+    playerSlideInComplete: boolean;
+
+    // NAVIGATION sub-phase for timed sequence
+    navigationSubPhase: number;
+    focusMaskScale: number;
+
+    // INTRO story animation
+    introStoryStep: number;      // 0-5 hangi satır gösteriliyor
+    introStoryStartTime: number; // Story ekranının başladığı zaman
+    introStoryComplete: boolean; // Tüm satırlar gösterildi mi
 }
+
+
+
 
 /**
  * Input state from GameEngine
@@ -119,11 +136,20 @@ export interface TutorialObstacle {
 
 export const PHASE_CONFIGS: PhaseConfig[] = [
     {
+        phase: 'INTRO',
+        title: 'Echo Shift',
+        message: 'İki enerji çekirdeğini\nengellerin arasından geçir.\n\n⟨ Dokun ⟩',
+        targetGoal: 1,
+        speedMultiplier: 0,
+        waitForInput: true,
+        inputType: 'tap',
+    },
+    {
         phase: 'NAVIGATION',
-        title: 'Temel Navigasyon',
-        message: 'Ekrana basılı tut ve parmağını yukarı/aşağı kaydırarak hareket et.',
-        targetGoal: 3,          // 3 hedef noktaya ulaş
-        speedMultiplier: 0.5,   // Yavaş başla
+        title: 'Hareket',
+        message: 'Yukarı / Aşağı kaydır',
+        targetGoal: 3,
+        speedMultiplier: 0.5,
         waitForInput: false,
     },
     {
@@ -185,7 +211,7 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
  * Create initial tutorial state
  */
 export function createInitialState(): TutorialState {
-    const firstPhase = PHASE_CONFIGS[0];
+    const firstPhase = PHASE_CONFIGS[0]; // INTRO fazı
 
     return {
         isActive: false,
@@ -197,7 +223,7 @@ export function createInitialState(): TutorialState {
         waitingForInput: firstPhase.waitForInput,
         inputType: firstPhase.inputType,
 
-        phasesCompleted: [false, false, false, false, false, false, false],
+        phasesCompleted: [false, false, false, false, false, false, false, false], // 8 faz
 
         currentMessage: null,
         messageQueue: [],
@@ -216,14 +242,30 @@ export function createInitialState(): TutorialState {
 
         failedThisPhase: false,
         isComplete: false,
+
+        // Player slide-in animation
+        playerSlideInProgress: 0,
+        playerSlideInComplete: false,
+
+        // Timed sequence
+        navigationSubPhase: 0,
+        focusMaskScale: 0,
+
+        // Intro story animation
+        introStoryStep: 0,
+        introStoryStartTime: 0,
+        introStoryComplete: false,
     };
 }
+
+
+
 
 /**
  * Start the tutorial
  */
 export function startTutorial(state: TutorialState): TutorialState {
-    const firstPhase = PHASE_CONFIGS[0];
+    const firstPhase = PHASE_CONFIGS[0]; // INTRO
     const now = Date.now();
 
     return {
@@ -232,13 +274,15 @@ export function startTutorial(state: TutorialState): TutorialState {
         phaseStartTime: now,
         lastUpdateTime: now,
         currentMessage: {
-            text: 'Echo Shift\'e hoş geldin. İki enerji çekirdeğini kontrol ediyorsun.',
-            duration: 4000,
+            text: firstPhase.message,
+            duration: 10000, // INTRO mesajı uzun süre görünsün
             style: 'normal',
             startTime: now,
         },
-        showFocusMask: true,
-        showGhostHand: true,
+        showFocusMask: false,  // INTRO'da focus mask yok
+        showGhostHand: false,  // INTRO'da ghost hand yok
+        playerSlideInProgress: 0, // Başlangıçta ekran dışı
+        playerSlideInComplete: false,
     };
 }
 
@@ -373,9 +417,69 @@ export function update(
 
     // Phase-specific update logic
     switch (state.currentPhase) {
-        case 'NAVIGATION':
-            newState = updateNavigationPhase(newState, input, canvasHeight);
+        case 'INTRO':
+            newState = updateIntroPhase(newState, input);
             break;
+        case 'NAVIGATION': {
+            // TIMED SEQUENCE based on elapsed time
+            const elapsed = now - newState.phaseStartTime;
+
+            // Sub-phase timings (milliseconds)
+            // Sub-phase timings (milliseconds)
+            const WAIT_TIME = 0;          // No wait, start sliding immediately
+            const SLIDE_DURATION = 2000;  // Exact 2s slide as requested
+            const FOCUS_DELAY = 100;      // Almost immediately start focus mask
+            const INSTRUCTION_DELAY = 500; // Shorter delay after focus
+
+            // Sub-phase 0: Wait for few seconds (story absorbed)
+            if (elapsed < WAIT_TIME) {
+                newState.navigationSubPhase = 0;
+                // Player hidden, no focus mask
+            }
+            // Sub-phase 1: Bar sliding in
+            else if (elapsed < WAIT_TIME + SLIDE_DURATION) {
+                newState.navigationSubPhase = 1;
+                const slideElapsed = elapsed - WAIT_TIME;
+                const slideProgress = Math.min(1, slideElapsed / SLIDE_DURATION);
+                // Smooth easing
+                newState.playerSlideInProgress = slideProgress * slideProgress * (3 - 2 * slideProgress);
+
+                // Focus mask starts growing after FOCUS_DELAY into sliding
+                if (slideElapsed > FOCUS_DELAY) {
+                    const focusElapsed = slideElapsed - FOCUS_DELAY;
+                    newState.focusMaskScale = Math.min(1, focusElapsed / (SLIDE_DURATION - FOCUS_DELAY));
+                }
+            }
+            // Sub-phase 2: Everything in place, show instruction
+            else {
+                newState.navigationSubPhase = 2;
+                newState.playerSlideInProgress = 1;
+                newState.playerSlideInComplete = true;
+                newState.focusMaskScale = 1;
+
+                // Show instruction message after delay
+                if (!newState.showGhostHand && elapsed > WAIT_TIME + SLIDE_DURATION + INSTRUCTION_DELAY) {
+                    newState.navigationSubPhase = 3;
+                    newState.showGhostHand = true;
+                    newState.showFocusMask = true;
+                    // Set navigation message
+                    if (!newState.currentMessage || newState.currentMessage.text !== 'Yukarı / Aşağı kaydır') {
+                        newState.currentMessage = {
+                            text: 'Yukarı / Aşağı kaydır',
+                            duration: 5000,
+                            style: 'normal',
+                            startTime: now,
+                        };
+                    }
+                }
+            }
+
+            // Only process actual navigation after sub-phase 3
+            if (newState.navigationSubPhase >= 3) {
+                newState = updateNavigationPhase(newState, input, canvasHeight);
+            }
+            break;
+        }
         case 'COLOR_MATCH':
             newState = updateColorMatchPhase(newState, obstacles);
             break;
@@ -439,28 +543,178 @@ function updateMessages(state: TutorialState, now: number): TutorialState {
 // PHASE-SPECIFIC UPDATE LOGIC
 // ============================================================================
 
+// INTRO story - welcoming message
+const INTRO_STORY_LINES = [
+    "Echo Shift'e hoş geldin.",
+    "İki enerji çekirdeğini kontrol ediyorsun.",
+    "Görevin, çekirdekleri engellerle aynı hizaya getirerek yolun sonuna ulaşmak.",
+    "Hadi başlayalım!",
+];
+
+const INTRO_DELAY_START = 800;    // 0.8s before first line
+const INTRO_LINE_DELAY = 3500;    // 3.5s per line (slower pacing)
+const INTRO_TAP_DELAY = 800;      // 0.8s before tap hint
+
+/**
+ * Phase 0: Intro - animated story screen then tap to continue
+ */
+function updateIntroPhase(
+    state: TutorialState,
+    input: TutorialInputState
+): TutorialState {
+    const now = Date.now();
+    let newState = { ...state };
+
+    // Initialize story start time if not set
+    if (newState.introStoryStartTime === 0) {
+        newState.introStoryStartTime = now;
+    }
+
+    const elapsed = now - newState.introStoryStartTime;
+
+    // Calculate which story step we're on
+    if (elapsed < INTRO_DELAY_START) {
+        // Waiting period - show nothing
+        newState.introStoryStep = -1;
+        newState.currentMessage = null;
+    } else {
+        const lineTime = elapsed - INTRO_DELAY_START;
+        const currentStep = Math.min(
+            Math.floor(lineTime / INTRO_LINE_DELAY),
+            INTRO_STORY_LINES.length - 1
+        );
+
+        // Update story step and message
+        if (currentStep !== newState.introStoryStep) {
+            newState.introStoryStep = currentStep;
+
+            // Build cumulative message (all lines up to current)
+            const visibleLines = INTRO_STORY_LINES.slice(0, currentStep + 1);
+            newState.currentMessage = {
+                text: visibleLines.join('\n'),
+                duration: 30000, // Long duration
+                style: 'normal',
+                startTime: now,
+            };
+        }
+
+        // Check if all lines shown
+        // Custom timing: Last line ("Hadi başlayalım") should be shorter (2000ms) to avoid waiting
+        const lastLineIndex = INTRO_STORY_LINES.length - 1;
+        const lastLineDuration = 2000;
+        const allLinesTime = INTRO_DELAY_START + (lastLineIndex * INTRO_LINE_DELAY) + lastLineDuration;
+
+        if (elapsed > allLinesTime) {
+            newState.introStoryComplete = true;
+        }
+    }
+
+    // Auto-transition immediately when story is complete (no tap required)
+    if (newState.introStoryComplete) {
+        return {
+            ...newState,
+            currentPhase: 'NAVIGATION' as any,
+            phaseStartTime: now,
+            currentMessage: {
+                text: "Senkronizasyon başlatılıyor... Bağlantı kuruluyor.",
+                duration: 4000,
+                style: 'normal',
+                startTime: now,
+            },
+        };
+    }
+
+    return newState;
+}
+
+
 /**
  * Phase 1: Navigation - reach target positions
  */
+
 function updateNavigationPhase(
     state: TutorialState,
     input: TutorialInputState,
     canvasHeight: number
 ): TutorialState {
-    // Target positions: top third, middle, bottom third
-    const targets = [0.25, 0.5, 0.75];
-    const currentTarget = targets[Math.min(state.progress, targets.length - 1)];
+    const now = Date.now();
+    const elapsed = now - state.phaseStartTime;
+    let newState = { ...state };
 
-    // Check if player reached target
-    const tolerance = 0.1;
-    if (Math.abs(input.playerY - currentTarget) < tolerance) {
-        return {
-            ...state,
-            progress: state.progress + 1,
-        };
+    // Sub-phase timings
+    const SLIDE_DURATION = 2000;
+
+    // === SUB-PHASE 0: SLIDE IN ===
+    if (state.navigationSubPhase === 0) {
+        // Slide logic
+        const slideProgress = Math.min(1, elapsed / SLIDE_DURATION);
+        newState.playerSlideInProgress = slideProgress * slideProgress * (3 - 2 * slideProgress);
+
+        if (slideProgress >= 1) {
+            // Transition to UP task
+            newState.navigationSubPhase = 1;
+            newState.currentMessage = {
+                text: "KALİBRASYON: Sistem senkronizasyonu için enerjiyi YUKARI yönlendir.",
+                duration: 10000,
+                style: 'normal',
+                startTime: now
+            };
+            newState.focusMaskScale = 0; // Reset for new anim
+        }
+    }
+    // === SUB-PHASE 1: TEACH UP ===
+    else if (state.navigationSubPhase === 1) {
+        newState.focusMaskScale = Math.min(1, newState.focusMaskScale + 0.05);
+
+        // Check for Up movement (Y < 0.35)
+        if (input.playerY < 0.35) {
+            // Success -> Transition to DOWN
+            newState.navigationSubPhase = 2;
+            newState.currentMessage = {
+                text: "HİZALAMA: Alt kanal verimliliği için enerjiyi AŞAĞI yönlendir.",
+                duration: 10000,
+                style: 'normal',
+                startTime: now
+            };
+            // VFX feedback could be triggered here via state flags if needed
+        }
+    }
+    // === SUB-PHASE 2: TEACH DOWN ===
+    else if (state.navigationSubPhase === 2) {
+        // Check for Down movement (Y > 0.65)
+        if (input.playerY > 0.65) {
+            // Success -> Transition to EXPLAIN
+            newState.navigationSubPhase = 3;
+            newState.phaseStartTime = now; // Reset timer for explanation
+            newState.currentMessage = {
+                text: "KRİTİK UYARI: Bağlantı stabil değil. Çubuk sürekli uzuyor...\nHareket alanın bu hattın sınırlarıdır.",
+                duration: 8000,
+                style: 'glitch', // Emphasize warning
+                startTime: now
+            };
+        }
+    }
+    // === SUB-PHASE 3: EXPLAIN GROWTH ===
+    else if (state.navigationSubPhase === 3) {
+        const explainElapsed = now - state.phaseStartTime;
+
+        // Wait for explanation
+        if (explainElapsed > 6000) {
+            newState.progress = 100; // Complete phase
+            // Advance logic handles transition
+            return {
+                ...newState,
+                progress: newState.targetGoal + 1 // Ensure completion trigger
+            };
+        }
     }
 
-    return state;
+    // Check completion (if not handled above)
+    if (newState.progress > state.targetGoal) {
+        return newState;
+    }
+
+    return newState;
 }
 
 /**

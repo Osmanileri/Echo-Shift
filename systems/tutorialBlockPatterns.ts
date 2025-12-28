@@ -39,6 +39,15 @@ export interface PhasePattern {
 // ============================================================================
 
 /**
+ * Phase 0: INTRO - No obstacles, just story screen
+ */
+const INTRO_PATTERN: PhasePattern = {
+    phase: 'INTRO',
+    blocks: [],  // No blocks in intro phase
+    diamonds: [],
+};
+
+/**
  * Phase 1: NAVIGATION - No obstacles, just movement practice
  */
 const NAVIGATION_PATTERN: PhasePattern = {
@@ -46,6 +55,7 @@ const NAVIGATION_PATTERN: PhasePattern = {
     blocks: [],  // No blocks in navigation phase
     diamonds: [],
 };
+
 
 /**
  * Phase 2: COLOR_MATCH - Simple blocks that don't cross center
@@ -151,6 +161,7 @@ const DIAMOND_COLLECTION_PATTERN: PhasePattern = {
 // ============================================================================
 
 export const PHASE_PATTERNS: Record<TutorialPhase, PhasePattern> = {
+    'INTRO': INTRO_PATTERN,
     'NAVIGATION': NAVIGATION_PATTERN,
     'COLOR_MATCH': COLOR_MATCH_PATTERN,
     'SWAP_MECHANIC': SWAP_MECHANIC_PATTERN,

@@ -256,6 +256,10 @@ export function update(
 
     // Update based on current phase
     switch (tutorialState.currentPhase) {
+        case 'INTRO':
+            // INTRO fazında VFX yok - temiz hikaye ekranı
+            updateIntroVFX(newState, tutorialState, canvasWidth, canvasHeight);
+            break;
         case 'NAVIGATION':
             updateNavigationVFX(newState, tutorialState, canvasWidth, canvasHeight);
             break;
@@ -294,40 +298,109 @@ export function update(
 // PHASE-SPECIFIC VFX UPDATES
 // ============================================================================
 
+/**
+ * INTRO Phase - Clean screen, no VFX distractions
+ */
+function updateIntroVFX(
+    state: TutorialVFXState,
+    tutorial: TutorialState,
+    canvasWidth: number,
+    canvasHeight: number
+): void {
+    // INTRO fazında tüm VFX kapalı - temiz hikaye ekranı
+    state.focusMask.enabled = false;
+    state.ghostHand.visible = false;
+    state.pulseCircle.active = false;
+    state.timeDistortion.active = false;
+    state.warningBanners.visible = false;
+    state.screenShakeActive = false;
+    state.diamondGlow.active = false;
+}
+
 function updateNavigationVFX(
     state: TutorialVFXState,
     tutorial: TutorialState,
     canvasWidth: number,
     canvasHeight: number
 ): void {
-    // Focus mask - darken edges, highlight the orb area
-    // Player orbs are at x = canvasWidth / 8 (12.5% from left)
     const orbX = canvasWidth / 8;
-    const focusRadius = 100; // Radius around player to keep visible
+    const connectorLength = 160;
+    const orbRadius = 18;
+    const padding = 20;
 
-    state.focusMask.enabled = true;
-    state.focusMask.alpha = Math.min(0.6, state.focusMask.alpha + 0.02);
+    const subPhase = tutorial.navigationSubPhase ?? 0;
+
+    // Ghost Hand Logic (Directional)
+    state.ghostHand.visible = (subPhase === 1 || subPhase === 2);
+
+    if (state.ghostHand.visible) {
+        // Slower animation for clarity ("yavaş yavaş uygulayan")
+        state.ghostHand.phase += 0.005; // Reduced from 0.008
+        if (state.ghostHand.phase > 1) state.ghostHand.phase = 0;
+
+        const p = state.ghostHand.phase;
+        const startY = 0.5;
+        const targetY = subPhase === 1 ? 0.20 : 0.80; // Extended range for clear motion
+
+        // --- GHOST HAND ANIMATION ---
+        if (p < 0.2) {
+            state.ghostHand.y = startY;
+        } else if (p < 0.7) {
+            // Smooth slide (Cubic Ease Out)
+            const t = (p - 0.2) / 0.5;
+            const eased = 1 - Math.pow(1 - t, 3);
+            state.ghostHand.y = startY + (targetY - startY) * eased;
+        } else {
+            // Hold at target
+            state.ghostHand.y = targetY;
+        }
+    }
+
+    // --- FOCUS MASK (Original Scaling Logic) ---
+    // "Gelen karakter ile aynı şekilde büyüyen ve sabit duran"
+    const focusWidth = (orbRadius + padding) * 2;
+    const focusHeight = connectorLength + (orbRadius + padding) * 2;
+
+    const scale = tutorial.focusMaskScale ?? 0;
+    state.focusMask.enabled = scale > 0;
+    state.focusMask.alpha = Math.min(0.85, scale * 0.85);
+
+    const scaledWidth = focusWidth * scale;
+    const scaledHeight = focusHeight * scale;
+
     state.focusMask.targetArea = {
-        x: orbX - focusRadius,
-        y: canvasHeight * 0.15,
-        width: focusRadius * 2,
-        height: canvasHeight * 0.7,
+        x: orbX - scaledWidth / 2,
+        y: canvasHeight / 2 - scaledHeight / 2,
+        width: scaledWidth,
+        height: scaledHeight,
     };
 
-    // Ghost hand animation - sinusoidal up/down
-    state.ghostHand.visible = true;
-    state.ghostHand.phase += 0.03;
-    state.ghostHand.y = 0.5 + Math.sin(state.ghostHand.phase) * 0.2;
+    // Re-enable Focus Mask ONLY for Explain phase (3) to highlight the connector constraint
+    if (subPhase === 3) {
+        state.focusMask.enabled = true;
+        state.focusMask.alpha = 0.6;
 
-    // Pulse circle at target position
-    const targets = [0.25, 0.5, 0.75];
-    const currentTarget = targets[Math.min(tutorial.progress, targets.length - 1)];
-    state.pulseCircle.active = true;
-    state.pulseCircle.x = orbX;
-    state.pulseCircle.y = canvasHeight * currentTarget;
-    state.pulseCircle.radius = 30 + Math.sin(state.time * 0.005) * 10;
-    state.pulseCircle.alpha = 0.5 + Math.sin(state.time * 0.008) * 0.3;
+        const width = 120;
+        state.focusMask.targetArea = {
+            x: orbX - width / 2,
+            y: canvasHeight / 2 - (connectorLength + 100) / 2,
+            width: width,
+            height: connectorLength + 100
+        };
+    }
+
+    // Warning Banners for Phase 3 (Growth Warning)
+    if (subPhase === 3) {
+        state.warningBanners.visible = true;
+        state.warningBanners.alpha = 0.4 + Math.sin(state.time * 0.005) * 0.2;
+    } else {
+        state.warningBanners.visible = false;
+    }
+
+    state.pulseCircle.active = false;
 }
+
+
 
 function updateColorMatchVFX(
     state: TutorialVFXState,
@@ -582,25 +655,96 @@ function renderGhostHand(
 ): void {
     if (!state.ghostHand.visible) return;
 
-    const x = canvasWidth * 0.15;
+    const centerX = canvasWidth * 0.22; // Orb'ların sağında
     const y = canvasHeight * state.ghostHand.y;
+    const phase = state.ghostHand.phase;
 
     ctx.save();
-    ctx.globalAlpha = 0.4;
-    ctx.fillStyle = COLORS.ghostHand;
 
-    // Simple hand shape (pointing finger)
+    // --- TOUCH RIPPLE EFFECT (phase 0-0.25) ---
+    if (phase < 0.25) {
+        const rippleProgress = phase / 0.25;
+        const rippleRadius = 20 + rippleProgress * 40;
+        const rippleAlpha = 0.6 * (1 - rippleProgress);
+
+        ctx.beginPath();
+        ctx.arc(centerX, canvasHeight * 0.5, rippleRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 240, 255, ${rippleAlpha})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Inner ripple
+        ctx.beginPath();
+        ctx.arc(centerX, canvasHeight * 0.5, rippleRadius * 0.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 240, 255, ${rippleAlpha * 0.7})`;
+        ctx.stroke();
+    }
+
+    // --- DRAG TRAIL (phase 0.25-0.75) ---
+    if (phase >= 0.25 && phase < 0.75) {
+        const startY = canvasHeight * 0.5;
+
+        // Gradient trail line
+        const gradient = ctx.createLinearGradient(centerX, startY, centerX, y);
+        gradient.addColorStop(0, 'rgba(0, 240, 255, 0.1)');
+        gradient.addColorStop(1, 'rgba(0, 240, 255, 0.5)');
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, startY);
+        ctx.lineTo(centerX, y);
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Arrow indicators
+        const arrowSize = 8;
+        const arrowY = (startY + y) / 2;
+        const direction = y > startY ? 1 : -1;
+
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(centerX, arrowY + direction * arrowSize);
+        ctx.lineTo(centerX - arrowSize, arrowY - direction * arrowSize);
+        ctx.lineTo(centerX + arrowSize, arrowY - direction * arrowSize);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // --- FINGER ICON (always visible) ---
+    // Outer glow
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 20;
+
+    // Finger circle
     ctx.beginPath();
-    ctx.ellipse(x, y, 15, 25, 0, 0, Math.PI * 2);
+    ctx.arc(centerX, y, 24, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.fill();
 
-    // Finger
+    // Inner gradient
+    const fingerGradient = ctx.createRadialGradient(centerX, y, 0, centerX, y, 20);
+    fingerGradient.addColorStop(0, 'rgba(0, 240, 255, 0.3)');
+    fingerGradient.addColorStop(1, 'rgba(0, 240, 255, 0)');
+    ctx.fillStyle = fingerGradient;
+    ctx.fill();
+
+    // Finger tip detail
+    ctx.shadowBlur = 0;
     ctx.beginPath();
-    ctx.ellipse(x, y - 30, 8, 15, 0, 0, Math.PI * 2);
+    ctx.arc(centerX, y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 180, 220, 0.8)';
+    ctx.fill();
+
+    // Touch indicator dot
+    ctx.beginPath();
+    ctx.arc(centerX, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#00f0ff';
     ctx.fill();
 
     ctx.restore();
 }
+
 
 function renderPulseCircle(ctx: CanvasRenderingContext2D, state: TutorialVFXState): void {
     if (!state.pulseCircle.active) return;
