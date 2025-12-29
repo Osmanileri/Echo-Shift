@@ -151,6 +151,7 @@ import * as FluxOverload from "../systems/fluxOverloadSystem";
 import * as InteractiveTutorial from "../systems/interactiveTutorialSystem";
 import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
 import * as TutorialIntroRenderer from "../systems/tutorialIntroRenderer";
+import { TutorialOverlayRenderer } from "../systems/tutorialOverlayRenderer";
 import * as TutorialVFX from "../systems/tutorialVFXEngine";
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -6431,9 +6432,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Level 0 Tutorial: Update state and render VFX
       if (tutorialMode?.enabled && tutorialState.current.isActive) {
         const tutorialInput: InteractiveTutorial.TutorialInputState = {
-          isPressed: true, // Simplified - tutorial tracks via isSwapped
-          wasReleased: false, // Will be set by swap detection
-          wasTapped: false,
+          isPressed: inputStateRef.current.isPressed,
+          wasReleased: inputStateRef.current.isReleaseFrame,
+          wasTapped: inputStateRef.current.isTapFrame,
           playerY: playerY.current,
           isSwapped: isSwapped.current,
         };
@@ -6598,41 +6599,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           } else {
             // ========================================
-            // OTHER PHASES: Compact top panel
+            // OTHER PHASES: Professional Overlay Renderer
             // ========================================
-            const lineHeight = 18;
-            const fontSize = 14;
-            const totalTextHeight = lines.length * lineHeight;
-
-            const panelPadding = 12;
-            const panelWidth = Math.min(width * 0.75, 280);
-            const panelHeight = totalTextHeight + panelPadding * 2;
-            const panelX = (width - panelWidth) / 2;
-            const panelY = height * 0.08;
-
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-            ctx.beginPath();
-            ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 12);
-            ctx.fill();
-
-            ctx.strokeStyle = '#00f0ff';
-            ctx.lineWidth = 2;
-            ctx.shadowColor = '#00f0ff';
-            ctx.shadowBlur = 15;
-            ctx.stroke();
-            ctx.shadowBlur = 0;
-
-            ctx.font = `bold ${fontSize}px monospace`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            const textStartY = panelY + panelPadding + lineHeight / 2;
-
-            lines.forEach((line, index) => {
-              const lineY = textStartY + index * lineHeight;
-              ctx.fillStyle = '#ffffff';
-              ctx.fillText(line, width / 2, lineY);
-            });
+            TutorialOverlayRenderer.render(ctx, tutorialState.current, width, height);
           }
 
           ctx.restore();

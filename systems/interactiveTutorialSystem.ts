@@ -9,6 +9,7 @@
  * - Input interceptor mantığı
  */
 
+import { playGlitchSpawn, playNearMiss, playObstaclePass, playStreakBonus } from './audioSystem';
 // ============================================================================
 // TYPES & INTERFACES
 // ============================================================================
@@ -75,6 +76,7 @@ export interface TutorialState {
     showTimeDistortion: boolean;
     showVictoryAnimation: boolean;
     showUnlockAnimation: boolean;
+    showInfoModal: boolean;  // v4: Renk uyumu bilgilendirme ekranı
 
     // Diamond collection (Phase 7)
     diamondsCollected: number;
@@ -102,6 +104,9 @@ export interface TutorialState {
     introStoryStep: number;      // 0-5 hangi satır gösteriliyor
     introStoryStartTime: number; // Story ekranının başladığı zaman
     introStoryComplete: boolean; // Tüm satırlar gösterildi mi
+
+    // Scheduled messages tracking
+    scheduledMessagesShown: Record<string, boolean>;
 }
 
 
@@ -154,10 +159,10 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
     },
     {
         phase: 'COLOR_MATCH',
-        title: 'Renk Uyumu',
-        message: 'Beyaz top beyaz bloktan, siyah top siyah bloktan geçer. Onları hizala!',
-        targetGoal: 5,          // 5 bloktan geç
-        speedMultiplier: 0.6,
+        title: 'Pratik Zamanı',
+        message: 'Şimdi öğrendiklerini test edelim!\nAynı Renk Top → Aynı Renk Blok',
+        targetGoal: 19,          // 19 bloktan geç (S1 reduced + Gates + Midline)
+        speedMultiplier: 0.75,
         waitForInput: false,
     },
     {
@@ -233,6 +238,7 @@ export function createInitialState(): TutorialState {
         showTimeDistortion: false,
         showVictoryAnimation: false,
         showUnlockAnimation: false,
+        showInfoModal: false,
 
         diamondsCollected: 0,
         diamondsToCollect: 5,
@@ -255,6 +261,8 @@ export function createInitialState(): TutorialState {
         introStoryStep: 0,
         introStoryStartTime: 0,
         introStoryComplete: false,
+
+        scheduledMessagesShown: {},
     };
 }
 
@@ -425,58 +433,100 @@ export function update(
             const elapsed = now - newState.phaseStartTime;
 
             // Sub-phase timings (milliseconds)
-            // Sub-phase timings (milliseconds)
             const WAIT_TIME = 0;          // No wait, start sliding immediately
             const SLIDE_DURATION = 2000;  // Exact 2s slide as requested
             const FOCUS_DELAY = 100;      // Almost immediately start focus mask
             const INSTRUCTION_DELAY = 500; // Shorter delay after focus
 
             // Sub-phase 0: Wait for few seconds (story absorbed)
-            if (elapsed < WAIT_TIME) {
+            if (newState.navigationSubPhase < 2 && elapsed < WAIT_TIME) {
                 newState.navigationSubPhase = 0;
-                // Player hidden, no focus mask
             }
             // Sub-phase 1: Bar sliding in
-            else if (elapsed < WAIT_TIME + SLIDE_DURATION) {
+            else if (newState.navigationSubPhase < 2 && elapsed < WAIT_TIME + SLIDE_DURATION) {
                 newState.navigationSubPhase = 1;
                 const slideElapsed = elapsed - WAIT_TIME;
                 const slideProgress = Math.min(1, slideElapsed / SLIDE_DURATION);
-                // Smooth easing
                 newState.playerSlideInProgress = slideProgress * slideProgress * (3 - 2 * slideProgress);
 
-                // Focus mask starts growing after FOCUS_DELAY into sliding
                 if (slideElapsed > FOCUS_DELAY) {
                     const focusElapsed = slideElapsed - FOCUS_DELAY;
                     newState.focusMaskScale = Math.min(1, focusElapsed / (SLIDE_DURATION - FOCUS_DELAY));
                 }
             }
-            // Sub-phase 2: Everything in place, show instruction
+            // Sub-phase 2+: Navigation detection
             else {
-                newState.navigationSubPhase = 2;
                 newState.playerSlideInProgress = 1;
                 newState.playerSlideInComplete = true;
                 newState.focusMaskScale = 1;
 
-                // Show instruction message after delay
-                if (!newState.showGhostHand && elapsed > WAIT_TIME + SLIDE_DURATION + INSTRUCTION_DELAY) {
-                    newState.navigationSubPhase = 3;
-                    newState.showGhostHand = true;
-                    newState.showFocusMask = true;
-                    // Set navigation message
-                    if (!newState.currentMessage || newState.currentMessage.text !== 'Yukarı / Aşağı kaydır') {
+                // DEBUG LOG
+                if (Math.random() < 0.02) {
+                    console.log('[NAV] playerY:', input.playerY.toFixed(3), 'subPhase:', newState.navigationSubPhase);
+                }
+
+                // SUB-PHASE 2: Waiting for UP movement
+                if (newState.navigationSubPhase === 2 || newState.navigationSubPhase < 2) {
+                    if (newState.navigationSubPhase < 2) {
+                        newState.navigationSubPhase = 2;
+                    }
+                    if (!newState.currentMessage || !newState.currentMessage.text.includes('YUKARI')) {
                         newState.currentMessage = {
-                            text: 'Yukarı / Aşağı kaydır',
-                            duration: 5000,
+                            text: '↑ YUKARI KAYDIR',
+                            duration: 30000,
                             style: 'normal',
                             startTime: now,
                         };
                     }
+                    // Check UP: playerY < 0.48 (relaxed threshold for connector constraints)
+                    if (input.playerY < 0.48) {
+                        console.log('[NAV] UP DONE! playerY:', input.playerY);
+                        playObstaclePass(); // Success tick sound
+                        newState.navigationSubPhase = 3;
+                        newState.currentMessage = {
+                            text: '✓ Harika! Şimdi ↓ AŞAĞI KAYDIR',
+                            duration: 30000,
+                            style: 'celebration',
+                            startTime: now,
+                        };
+                    }
                 }
-            }
+                // SUB-PHASE 3: Waiting for DOWN movement
+                else if (newState.navigationSubPhase === 3) {
+                    // Check DOWN: playerY > 0.52 (relaxed threshold for connector constraints)
+                    if (input.playerY > 0.52) {
+                        console.log('[NAV] DOWN DONE! playerY:', input.playerY);
+                        playStreakBonus(); // Celebration sound
+                        newState.navigationSubPhase = 4;
+                        newState.showInfoModal = true;
+                        newState.phaseStartTime = now; // Reset for modal timing
+                        newState.currentMessage = {
+                            text: '✓✓ ÇOK GÜZEL!',
+                            duration: 2000,
+                            style: 'celebration',
+                            startTime: now,
+                        };
+                    }
+                }
+                // SUB-PHASE 4: INFO MODAL displayed
+                else if (newState.navigationSubPhase === 4) {
+                    // Hide instruction text and focus mask while modal is open
+                    newState.currentMessage = null;
+                    newState.messageQueue = []; // Force clear queue to prevent reappearing text
+                    newState.showFocusMask = false;
 
-            // Only process actual navigation after sub-phase 3
-            if (newState.navigationSubPhase >= 3) {
-                newState = updateNavigationPhase(newState, input, canvasHeight);
+                    // Wait at least 1.2 seconds before allowing dismiss (enough for visual scan)
+                    const modalDisplayTime = now - newState.phaseStartTime;
+
+                    // Allow dismiss if touched/tapped after delay
+                    if (modalDisplayTime > 1200 && (input.isPressed || input.wasTapped)) {
+                        console.log('[NAV] INFO MODAL dismissed after', modalDisplayTime, 'ms');
+                        playObstaclePass(); // Confirmation sound
+                        newState.showInfoModal = false;
+                        newState.showFocusMask = true; // Restore focus mask for next phase
+                        newState.progress = newState.targetGoal + 1; // Complete phase
+                    }
+                }
             }
             break;
         }
@@ -641,6 +691,11 @@ function updateNavigationPhase(
     const elapsed = now - state.phaseStartTime;
     let newState = { ...state };
 
+    // DEBUG: Log navigation phase entry
+    if (Math.random() < 0.01) {
+        console.log('[Tutorial NAV] subPhase:', state.navigationSubPhase, 'elapsed:', elapsed, 'playerY:', input.playerY.toFixed(3));
+    }
+
     // Sub-phase timings
     const SLIDE_DURATION = 2000;
 
@@ -666,8 +721,14 @@ function updateNavigationPhase(
     else if (state.navigationSubPhase === 1) {
         newState.focusMaskScale = Math.min(1, newState.focusMaskScale + 0.05);
 
-        // Check for Up movement (Y < 0.35)
-        if (input.playerY < 0.35) {
+        // DEBUG: Log playerY to see actual values
+        if (Math.random() < 0.02) {
+            console.log('[Tutorial] SubPhase 1 - playerY:', input.playerY.toFixed(3));
+        }
+
+        // Check for Up movement (Y < 0.40) - Relaxed threshold
+        if (input.playerY < 0.40) {
+            console.log('[Tutorial] UP detected! playerY:', input.playerY);
             // Success -> Transition to DOWN
             newState.navigationSubPhase = 2;
             newState.currentMessage = {
@@ -681,15 +742,32 @@ function updateNavigationPhase(
     }
     // === SUB-PHASE 2: TEACH DOWN ===
     else if (state.navigationSubPhase === 2) {
-        // Check for Down movement (Y > 0.65)
-        if (input.playerY > 0.65) {
-            // Success -> Transition to EXPLAIN
+        // DEBUG: Log playerY to see actual values
+        if (Math.random() < 0.02) {
+            console.log('[Tutorial] SubPhase 2 - playerY:', input.playerY.toFixed(3));
+        }
+
+        // Check for Down movement (Y > 0.60) - Relaxed threshold
+        if (input.playerY > 0.60) {
+            console.log('[Tutorial] DOWN detected! playerY:', input.playerY);
+            // Success -> Show INFO MODAL
+            newState.navigationSubPhase = 4;
+            newState.phaseStartTime = now;
+            newState.showInfoModal = true;
+            newState.currentMessage = null; // Clear message for modal
+        }
+    }
+    // === SUB-PHASE 4: INFO MODAL ===
+    else if (state.navigationSubPhase === 4) {
+        // Wait for tap to dismiss
+        if (input.wasTapped || input.wasReleased) {
             newState.navigationSubPhase = 3;
-            newState.phaseStartTime = now; // Reset timer for explanation
+            newState.showInfoModal = false;
+            newState.phaseStartTime = now;
             newState.currentMessage = {
                 text: "KRİTİK UYARI: Bağlantı stabil değil. Çubuk sürekli uzuyor...\nHareket alanın bu hattın sınırlarıdır.",
                 duration: 8000,
-                style: 'glitch', // Emphasize warning
+                style: 'glitch',
                 startTime: now
             };
         }
@@ -727,9 +805,52 @@ function updateColorMatchPhase(
     // Count passed obstacles
     const passedCount = obstacles.filter(o => o.passed).length;
 
+    // Play sound if progress increased (block passed)
+    if (passedCount > state.progress) {
+        playObstaclePass();
+    }
+
+    // Check for scheduled messages (time-based)
+    const elapsed = Date.now() - state.phaseStartTime;
+    const newScheduled = { ...state.scheduledMessagesShown };
+    let newMessage: TutorialMessage | null = null;
+    let soundToPlay: (() => void) | null = null;
+
+    // Msg 1: Warning before Stage 2 (Swap) - ~8000ms
+    if (elapsed > 8000 && elapsed < 11000 && !newScheduled['msg1']) {
+        newMessage = { text: "⚠️ DİKKAT: ZIT RENKLER!\nSiyah → Siyaha, Beyaz → Beyaza", duration: 3000, style: 'glitch', startTime: Date.now() };
+        newScheduled['msg1'] = true;
+        soundToPlay = playNearMiss;
+    }
+
+    // Msg 2: Warning before Stage 3 (Gates) - ~22000ms
+    else if (elapsed > 22000 && elapsed < 25000 && !newScheduled['msg2']) {
+        newMessage = { text: "🧱 SEVİYE 2: İKİLİ BLOKLAR\nHem Aşağı Hem Yukarı!", duration: 3000, style: 'normal', startTime: Date.now() };
+        newScheduled['msg2'] = true;
+        soundToPlay = playStreakBonus;
+    }
+
+    // Msg 3: Warning before Stage 4 (Midline) - ~36000ms
+    else if (elapsed > 36000 && elapsed < 39000 && !newScheduled['msg3']) {
+        newMessage = { text: "🔻 SEVİYE 3: DAR ALAN\nOrta Çizgiye Dikkat!", duration: 3000, style: 'glitch', startTime: Date.now() };
+        newScheduled['msg3'] = true;
+        soundToPlay = playGlitchSpawn;
+    }
+
+    // Apply updates
+    const overrides: Partial<TutorialState> = {};
+    if (newMessage) {
+        overrides.currentMessage = newMessage;
+        if (soundToPlay) soundToPlay();
+    }
+    if (Object.keys(newScheduled).length !== Object.keys(state.scheduledMessagesShown).length) {
+        overrides.scheduledMessagesShown = newScheduled;
+    }
+
     return {
         ...state,
         progress: passedCount,
+        ...overrides,
     };
 }
 

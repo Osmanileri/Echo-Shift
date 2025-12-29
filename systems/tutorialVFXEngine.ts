@@ -12,6 +12,7 @@
  * - Faz 7: Diamond Glow, Victory Explosion, Confetti
  */
 
+import { AudioSystem } from './audioSystem';
 import type { TutorialState } from './interactiveTutorialSystem';
 
 // ============================================================================
@@ -66,10 +67,16 @@ export interface TutorialVFXState {
         targetArea: Rect;
         alpha: number;
     };
+    // Ghost Hand - DISABLED (v4: user performs real interactions)
     ghostHand: {
         visible: boolean;
-        y: number;
-        phase: number;        // Sinusoidal phase
+    };
+    // Info Modal - Renk Uyumu Bilgilendirme Ekranı
+    infoModal: {
+        visible: boolean;
+        alpha: number;  // Fade in/out
+        showTime: number; // Timestamp when modal opened
+        playedSounds: Record<string, number>; // Track played sounds by cycle time
     };
     pulseCircle: {
         active: boolean;
@@ -182,8 +189,12 @@ export function createInitialState(): TutorialVFXState {
         },
         ghostHand: {
             visible: false,
-            y: 0.5,
-            phase: 0,
+        },
+        infoModal: {
+            visible: false,
+            alpha: 0,
+            showTime: 0,
+            playedSounds: {},
         },
         pulseCircle: {
             active: false,
@@ -291,6 +302,22 @@ export function update(
     // Update confetti
     updateConfetti(newState);
 
+    // Sync Info Modal state from tutorial state
+    if ((tutorialState as any).showInfoModal) {
+        // Track when modal first opened for staged reveal timing
+        if (!newState.infoModal.visible) {
+            newState.infoModal.showTime = newState.time;
+        }
+        newState.infoModal.visible = true;
+        newState.infoModal.alpha = Math.min(1, newState.infoModal.alpha + 0.08);
+    } else {
+        newState.infoModal.alpha = Math.max(0, newState.infoModal.alpha - 0.1);
+        if (newState.infoModal.alpha <= 0) {
+            newState.infoModal.visible = false;
+            newState.infoModal.showTime = 0;
+        }
+    }
+
     return newState;
 }
 
@@ -330,30 +357,21 @@ function updateNavigationVFX(
 
     const subPhase = tutorial.navigationSubPhase ?? 0;
 
-    // Ghost Hand Logic (Directional)
-    state.ghostHand.visible = (subPhase === 1 || subPhase === 2);
+    // Ghost Hand - DISABLED in v4
+    // User performs real swipes instead of watching an animation
+    state.ghostHand.visible = false;
 
-    if (state.ghostHand.visible) {
-        // Slower animation for clarity ("yavaş yavaş uygulayan")
-        state.ghostHand.phase += 0.005; // Reduced from 0.008
-        if (state.ghostHand.phase > 1) state.ghostHand.phase = 0;
-
-        const p = state.ghostHand.phase;
-        const startY = 0.5;
-        const targetY = subPhase === 1 ? 0.20 : 0.80; // Extended range for clear motion
-
-        // --- GHOST HAND ANIMATION ---
-        if (p < 0.2) {
-            state.ghostHand.y = startY;
-        } else if (p < 0.7) {
-            // Smooth slide (Cubic Ease Out)
-            const t = (p - 0.2) / 0.5;
-            const eased = 1 - Math.pow(1 - t, 3);
-            state.ghostHand.y = startY + (targetY - startY) * eased;
-        } else {
-            // Hold at target
-            state.ghostHand.y = targetY;
-        }
+    // --- SWIPE DIRECTION INDICATOR ---
+    // Show pulsing circle with arrow to indicate which way to swipe
+    if (subPhase === 1 || subPhase === 2) {
+        state.pulseCircle.active = true;
+        state.pulseCircle.x = canvasWidth * 0.5;
+        // Arrow position: UP for subPhase 1, DOWN for subPhase 2
+        state.pulseCircle.y = subPhase === 1 ? canvasHeight * 0.2 : canvasHeight * 0.8;
+        state.pulseCircle.radius = 50 + Math.sin(state.time * 0.008) * 10;
+        state.pulseCircle.alpha = 0.6 + Math.sin(state.time * 0.01) * 0.3;
+    } else {
+        state.pulseCircle.active = false;
     }
 
     // --- FOCUS MASK (Original Scaling Logic) ---
@@ -362,7 +380,8 @@ function updateNavigationVFX(
     const focusHeight = connectorLength + (orbRadius + padding) * 2;
 
     const scale = tutorial.focusMaskScale ?? 0;
-    state.focusMask.enabled = scale > 0;
+    const showMask = tutorial.showFocusMask !== undefined ? tutorial.showFocusMask : true;
+    state.focusMask.enabled = scale > 0 && showMask;
     state.focusMask.alpha = Math.min(0.85, scale * 0.85);
 
     const scaledWidth = focusWidth * scale;
@@ -601,7 +620,7 @@ export function render(
     renderMotionTrails(ctx, state);
     renderPulseCircle(ctx, state);
     renderGhostHand(ctx, state, canvasWidth, canvasHeight);
-    renderWarningBanners(ctx, state, canvasWidth, canvasHeight);
+    renderInfoModal(ctx, state, canvasWidth, canvasHeight);
     renderGlitchText(ctx, state, canvasWidth, canvasHeight);
     renderDiamondGlow(ctx, state, canvasWidth, canvasHeight);
     renderFlashOverlay(ctx, state, canvasWidth, canvasHeight);
@@ -653,119 +672,436 @@ function renderGhostHand(
     canvasWidth: number,
     canvasHeight: number
 ): void {
-    if (!state.ghostHand.visible) return;
-
-    const centerX = canvasWidth * 0.22; // Orb'ların sağında
-    const y = canvasHeight * state.ghostHand.y;
-    const phase = state.ghostHand.phase;
+    // Ghost Hand is DISABLED in v4
+    // User performs real interactions instead of watching an animation
+    // This function is kept for API compatibility but does nothing
+}
+/**
+ * INFO MODAL - Staged Reveal Tutorial
+ * Stage 1: Text appears first (0-2s) - user reads instructions
+ * Stage 2: Animation fades in (2s+) - visual demonstration
+ * Stage 3: Tap to close modal AND focus mask
+ */
+function renderInfoModal(
+    ctx: CanvasRenderingContext2D,
+    state: TutorialVFXState,
+    canvasWidth: number,
+    canvasHeight: number
+): void {
+    if (!state.infoModal.visible || state.infoModal.alpha <= 0) return;
 
     ctx.save();
+    ctx.globalAlpha = state.infoModal.alpha;
 
-    // --- TOUCH RIPPLE EFFECT (phase 0-0.25) ---
-    if (phase < 0.25) {
-        const rippleProgress = phase / 0.25;
-        const rippleRadius = 20 + rippleProgress * 40;
-        const rippleAlpha = 0.6 * (1 - rippleProgress);
+    // === STAGED REVEAL TIMING ===
+    const modalShowTime = state.time - state.infoModal.showTime; // Time since modal appeared
+    const textDelay = 0;        // Text appears immediately
+    const animDelay = 7500;     // Animation starts after text is fully revealed (4 lines * 1.5s + buffer)
+    const animFadeDuration = 1000; // Animation fade-in duration
+
+    // Calculate animation alpha (fades in after text is read)
+    const animAlpha = modalShowTime < animDelay
+        ? 0
+        : Math.min(1, (modalShowTime - animDelay) / animFadeDuration);
+
+    // === MODAL BACKGROUND ===
+    const modalWidth = Math.min(canvasWidth * 0.92, 360);
+    const modalHeight = Math.min(canvasHeight * 0.75, 400);
+    const modalX = (canvasWidth - modalWidth) / 2;
+    const modalY = (canvasHeight - modalHeight) / 2;
+
+    // Draw modal background - always cyan border
+    ctx.fillStyle = 'rgba(0, 10, 20, 0.96)';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 25;
+    ctx.beginPath();
+    ctx.roundRect(modalX, modalY, modalWidth, modalHeight, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // === STAGE 1: TEXT CONTENT (sequential reveal) ===
+
+    // Line timing (each line fades in 1500ms after previous - VERY SLOW)
+    const lineDelay = 1500;
+    const lineFadeDuration = 1800; // Slow fade-in for readability
+
+    const line0Alpha = Math.min(1, modalShowTime / lineFadeDuration);
+    const line1Alpha = Math.max(0, Math.min(1, (modalShowTime - lineDelay) / lineFadeDuration));
+    const line2Alpha = Math.max(0, Math.min(1, (modalShowTime - lineDelay * 2) / lineFadeDuration));
+    const line3Alpha = Math.max(0, Math.min(1, (modalShowTime - lineDelay * 3) / lineFadeDuration));
+
+    // Header
+    const headerY = modalY + 28;
+    ctx.globalAlpha = state.infoModal.alpha * line0Alpha;
+    ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 10;
+    ctx.fillText('⚠️ KRİTİK BİLGİ', canvasWidth / 2, headerY);
+    ctx.shadowBlur = 0;
+
+    // Line 1
+    const textY = headerY + 35;
+    ctx.globalAlpha = state.infoModal.alpha * line1Alpha;
+    ctx.font = '13px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillText('Yanlış renk bloğuna çarparsan ölürsün!', canvasWidth / 2, textY);
+
+    // Line 2
+    ctx.globalAlpha = state.infoModal.alpha * line2Alpha;
+    ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('ÇÖZÜM: Ekrana dokunarak topları döndür', canvasWidth / 2, textY + 22);
+
+    // Line 3
+    ctx.globalAlpha = state.infoModal.alpha * line3Alpha;
+    ctx.font = 'bold 14px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = '#4ade80';
+    ctx.fillText('Aynı renk top → Aynı renk blok = GEÇ!', canvasWidth / 2, textY + 46);
+
+    ctx.globalAlpha = state.infoModal.alpha; // Reset alpha
+
+    // === STAGE 2: ANIMATION AREA (fades in after 2 seconds) ===
+    const animX = modalX + 20;
+    const animY = modalY + 130; // Below text
+    const animW = modalWidth - 40;
+    const animH = 130;
+
+    // Only render animation if visible (after 2 second delay)
+    if (animAlpha > 0) {
+        ctx.globalAlpha = state.infoModal.alpha * animAlpha;
+
+        // Animation timing (14 second cycle - very slow)
+        // Reset cycle relative to when animation appears
+        const animRelativeTime = Math.max(0, modalShowTime - animDelay);
+        const cycle = animRelativeTime % 14000;
+        const isNormal = cycle < 3000;
+        const isWarning = cycle >= 3000 && cycle < 9000;
+        const isSwapping = cycle >= 7500 && cycle < 9500;
+        const isSuccess = cycle >= 9500;
+
+        // === AUDIO SYNC ===
+        // Reset sounds on new cycle
+        if (cycle < 100 && Object.keys(state.infoModal.playedSounds || {}).length > 0) {
+            state.infoModal.playedSounds = {};
+        }
+
+        // Warning Sound
+        if (cycle > 3000 && !state.infoModal.playedSounds?.['warning']) {
+            AudioSystem.playNearMiss();
+            if (!state.infoModal.playedSounds) state.infoModal.playedSounds = {};
+            state.infoModal.playedSounds['warning'] = state.time;
+        }
+
+        // Action Prompt (DOKUN!)
+        if (cycle > 5500 && !state.infoModal.playedSounds?.['prompt']) {
+            // Subtle beep for prompt
+            AudioSystem.playMenuSelect();
+            state.infoModal.playedSounds['prompt'] = state.time;
+        }
+
+        // Swap Sound
+        if (cycle > 7500 && !state.infoModal.playedSounds?.['swap']) {
+            AudioSystem.playSwap();
+            state.infoModal.playedSounds['swap'] = state.time;
+        }
+
+        // Success Sound
+        if (cycle > 9500 && !state.infoModal.playedSounds?.['success']) {
+            AudioSystem.playObstaclePass();
+            state.infoModal.playedSounds['success'] = state.time;
+        }
+
+        // Clip animation area
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(animX, animY, animW, animH, 10);
+        ctx.clip();
+
+        // Animation background
+        ctx.fillStyle = isWarning && !isSuccess
+            ? 'rgba(40, 15, 25, 0.9)'
+            : 'rgba(15, 20, 30, 0.9)';
+        ctx.fill();
+
+        // === ORB AND BLOCK ANIMATION ===
+        const cx = animX + animW / 2;
+        const orbY = animY + animH - 35;
+        const spacing = 55;
+        const orbRadius = 14;
+
+        // Block dimensions and movement
+        const blockW = 45;
+        const blockH = 28;
+
+        // Blocks move from top toward orbs
+        const blockStartY = animY - 10;
+        const blockEndY = orbY - 45;
+
+        // Block movement progress based on phase (very slow)
+        const blockMoveProgress = isNormal
+            ? Math.min(1, cycle / 3000)
+            : isSuccess
+                ? 1  // Stay at final position during success
+                : Math.min(1, (cycle - 3000) / 3000 + 0.5);
+
+        const blockY = blockStartY + (blockEndY - blockStartY) * blockMoveProgress;
+
+        // Swap rotation calculation (very slow - 2000ms)
+        const swapProgress = isSwapping
+            ? Math.min(1, (cycle - 7500) / 2000)
+            : isSuccess ? 1 : 0;
+        const rotation = swapProgress * Math.PI;
+
+        // CORRECT MATCHING after 180° swap:
+        // - Black orb rotates to LEFT side → should face BLACK block
+        // - White orb rotates to RIGHT side → should face WHITE block
+
+        // LEFT BLOCK = BLACK (after swap: black orb passes through ✓)
+        ctx.fillStyle = '#1a1a1a';
+        ctx.shadowColor = '#333333';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.roundRect(cx - spacing - blockW / 2, blockY, blockW, blockH, 4);
+        ctx.fill();
+        ctx.strokeStyle = '#444444';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // RIGHT BLOCK = WHITE (after swap: white orb passes through ✓)
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.beginPath();
+        ctx.roundRect(cx + spacing - blockW / 2, blockY, blockW, blockH, 4);
+        ctx.fill();
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Success phase: orbs move up through blocks and continue        // Success phase: orbs move up through blocks and continue (very slow)
+        let orbOffsetY = 0;
+        if (isSuccess) {
+            const passProgress = Math.min(1, (cycle - 9500) / 3000);
+            orbOffsetY = -passProgress * 100; // Move up through blocks
+        }
+
+        // === ROTATING ORBS ===
+        ctx.save();
+        ctx.translate(cx, orbY + orbOffsetY);
+        ctx.rotate(rotation);
+
+        // Motion blur trails during swap
+        if (isSwapping && swapProgress > 0.1 && swapProgress < 0.9) {
+            for (let i = 1; i <= 3; i++) {
+                const trailAlpha = 0.15 * (1 - i * 0.25);
+                const trailAngle = -rotation * 0.15 * i;
+                ctx.save();
+                ctx.rotate(trailAngle);
+                ctx.globalAlpha = state.infoModal.alpha * trailAlpha;
+
+                // Trail white orb
+                ctx.beginPath();
+                ctx.arc(-spacing, 0, orbRadius - 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                // Trail black orb
+                ctx.beginPath();
+                ctx.arc(spacing, 0, orbRadius - 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#222222';
+                ctx.fill();
+
+                ctx.restore();
+            }
+            ctx.globalAlpha = state.infoModal.alpha;
+        }
+
+        // Chromatic aberration during swap
+        if (isSwapping) {
+            const aberration = Math.sin(swapProgress * Math.PI) * 3;
+
+            // Red channel offset
+            ctx.globalAlpha = state.infoModal.alpha * 0.3;
+            ctx.beginPath();
+            ctx.arc(-spacing - aberration, 0, orbRadius, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff0000';
+            ctx.fill();
+
+            // Blue channel offset
+            ctx.beginPath();
+            ctx.arc(-spacing + aberration, 0, orbRadius, 0, Math.PI * 2);
+            ctx.fillStyle = '#0000ff';
+            ctx.fill();
+
+            ctx.globalAlpha = state.infoModal.alpha;
+        }
+
+        // White orb with cyan glow (LEFT initially, RIGHT after swap)
+        ctx.beginPath();
+        ctx.arc(-spacing, 0, orbRadius + 6, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 200, 255, 0.25)';
+        ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(centerX, canvasHeight * 0.5, rippleRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 240, 255, ${rippleAlpha})`;
+        ctx.arc(-spacing, 0, orbRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#00e5ff';
+        ctx.shadowBlur = 18;
+        ctx.fill();
+        ctx.strokeStyle = '#00e5ff';
         ctx.lineWidth = 3;
         ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        // Inner ripple
+        // Black orb (RIGHT initially, LEFT after swap)
         ctx.beginPath();
-        ctx.arc(centerX, canvasHeight * 0.5, rippleRadius * 0.5, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 240, 255, ${rippleAlpha * 0.7})`;
-        ctx.stroke();
-    }
-
-    // --- DRAG TRAIL (phase 0.25-0.75) ---
-    if (phase >= 0.25 && phase < 0.75) {
-        const startY = canvasHeight * 0.5;
-
-        // Gradient trail line
-        const gradient = ctx.createLinearGradient(centerX, startY, centerX, y);
-        gradient.addColorStop(0, 'rgba(0, 240, 255, 0.1)');
-        gradient.addColorStop(1, 'rgba(0, 240, 255, 0.5)');
-
-        ctx.beginPath();
-        ctx.moveTo(centerX, startY);
-        ctx.lineTo(centerX, y);
-        ctx.strokeStyle = gradient;
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        // Arrow indicators
-        const arrowSize = 8;
-        const arrowY = (startY + y) / 2;
-        const direction = y > startY ? 1 : -1;
-
-        ctx.fillStyle = 'rgba(0, 240, 255, 0.6)';
-        ctx.beginPath();
-        ctx.moveTo(centerX, arrowY + direction * arrowSize);
-        ctx.lineTo(centerX - arrowSize, arrowY - direction * arrowSize);
-        ctx.lineTo(centerX + arrowSize, arrowY - direction * arrowSize);
-        ctx.closePath();
+        ctx.arc(spacing, 0, orbRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#1a1a1a';
         ctx.fill();
-    }
+        ctx.strokeStyle = '#555555';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-    // --- FINGER ICON (always visible) ---
-    // Outer glow
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 20;
+        // Dashed connector
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.moveTo(-spacing + orbRadius + 4, 0);
+        ctx.lineTo(spacing - orbRadius - 4, 0);
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-    // Finger circle
-    ctx.beginPath();
-    ctx.arc(centerX, y, 24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fill();
+        ctx.restore(); // End orb rotation
 
-    // Inner gradient
-    const fingerGradient = ctx.createRadialGradient(centerX, y, 0, centerX, y, 20);
-    fingerGradient.addColorStop(0, 'rgba(0, 240, 255, 0.3)');
-    fingerGradient.addColorStop(1, 'rgba(0, 240, 255, 0)');
-    ctx.fillStyle = fingerGradient;
-    ctx.fill();
+        // === ACTION PROMPT ===
+        if (isWarning && !isSwapping && cycle < 7500) {
+            const promptPulse = 0.6 + Math.sin(state.time * 0.02) * 0.4;
+            ctx.globalAlpha = state.infoModal.alpha * promptPulse;
+            ctx.font = 'bold 14px "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#00f0ff';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 15;
+            ctx.fillText('DOKUN!', cx, orbY - 45);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = state.infoModal.alpha;
+        }
 
-    // Finger tip detail
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.arc(centerX, y, 12, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 180, 220, 0.8)';
-    ctx.fill();
+        // === WARNING TEXT ===
+        if (isWarning && !isSuccess) {
+            ctx.font = 'bold 11px Monospace';
+            ctx.fillStyle = '#ff4466';
+            ctx.textAlign = 'center';
+            const warningPulse = 0.7 + Math.sin(state.time * 0.015) * 0.3;
+            ctx.globalAlpha = state.infoModal.alpha * warningPulse;
+            ctx.fillText('⚠ MISMATCH DETECTED!', cx, animY + 18);
+            ctx.globalAlpha = state.infoModal.alpha;
+        }
 
-    // Touch indicator dot
-    ctx.beginPath();
-    ctx.arc(centerX, y, 5, 0, Math.PI * 2);
+        ctx.restore(); // End animation clip
+
+        // === SUCCESS FLASH ===
+        if (cycle >= 9500 && cycle < 10500) {
+            const flashAlpha = 1 - (cycle - 9500) / 1000;
+            ctx.fillStyle = `rgba(50, 255, 130, ${flashAlpha * 0.35})`;
+            ctx.fillRect(modalX, modalY, modalWidth, modalHeight);
+        }
+
+        // === PHASE STATUS TEXT ===
+        const statusY = animY + animH + 25;
+        ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+
+        if (isNormal) {
+            ctx.fillStyle = '#ffaa00';
+            ctx.fillText('⚠ BEYAZ TOP → SİYAH BLOK = ÖLÜM', canvasWidth / 2, statusY);
+        } else if (isWarning && !isSuccess) {
+            ctx.fillStyle = '#ff4466';
+            ctx.shadowColor = '#ff0000';
+            ctx.shadowBlur = 10;
+            ctx.fillText('⚠ TEHLİKE! SWAP YAP!', canvasWidth / 2, statusY);
+            ctx.shadowBlur = 0;
+        } else if (isSuccess) {
+            ctx.fillStyle = '#22dd55';
+            ctx.shadowColor = '#00ff44';
+            ctx.shadowBlur = 10;
+            ctx.fillText('✓ GÜVENLİ GEÇİŞ!', canvasWidth / 2, statusY);
+            ctx.shadowBlur = 0;
+        }
+    } // End animAlpha condition
+
+    // === STAGE 3: TAP TO CONTINUE (static, dim) ===
+    const continueY = modalY + modalHeight - 22;
+    ctx.globalAlpha = state.infoModal.alpha * 0.6; // Dimmed, no pulse
+    ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
     ctx.fillStyle = '#00f0ff';
-    ctx.fill();
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 5;
+    ctx.textAlign = 'center';
+    ctx.fillText('[ EKRANA DOKUN ]', canvasWidth / 2, continueY);
+    ctx.shadowBlur = 0;
 
     ctx.restore();
 }
+
+
+
 
 
 function renderPulseCircle(ctx: CanvasRenderingContext2D, state: TutorialVFXState): void {
     if (!state.pulseCircle.active) return;
 
     const { x, y, radius, alpha } = state.pulseCircle;
+    const isUp = y < 300; // Approximate check - if pulse is in upper half, show UP arrow
 
     ctx.save();
     ctx.globalAlpha = alpha;
+
+    // Pulsing circle
     ctx.strokeStyle = COLORS.pulseCircle;
     ctx.lineWidth = 3;
     ctx.shadowColor = COLORS.pulseCircle;
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 20;
 
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Inner glow
+    // === LARGE DIRECTION ARROW ===
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowBlur = 25;
+
+    const arrowSize = 40;
     ctx.beginPath();
-    ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
-    ctx.stroke();
+    if (isUp) {
+        // UP arrow: pointing upward
+        ctx.moveTo(x, y - arrowSize);       // Top point
+        ctx.lineTo(x - arrowSize * 0.6, y + arrowSize * 0.3);  // Bottom left
+        ctx.lineTo(x + arrowSize * 0.6, y + arrowSize * 0.3);  // Bottom right
+    } else {
+        // DOWN arrow: pointing downward
+        ctx.moveTo(x, y + arrowSize);       // Bottom point
+        ctx.lineTo(x - arrowSize * 0.6, y - arrowSize * 0.3);  // Top left
+        ctx.lineTo(x + arrowSize * 0.6, y - arrowSize * 0.3);  // Top right
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Text label
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 18px "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    const labelY = isUp ? y + 70 : y - 70;
+    ctx.fillText(isUp ? 'YUKARI KAYDIR' : 'AŞAĞI KAYDIR', x, labelY);
 
     ctx.restore();
 }
