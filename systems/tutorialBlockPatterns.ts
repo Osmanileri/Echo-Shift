@@ -67,63 +67,60 @@ const COLOR_MATCH_PATTERN: PhasePattern = {
     phase: 'COLOR_MATCH',
     blocks: [
         // STAGE 1: Simple Blocks (No Midline, Matching Color) - "Sıfır çizgisini geçmeyen"
-        { id: 'cm-1', delay: 1500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
-        { id: 'cm-2', delay: 3500, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
-        { id: 'cm-3', delay: 5500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
+        { id: 'cm-1', delay: 1500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
+        { id: 'cm-2', delay: 2800, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
+        { id: 'cm-3', delay: 4100, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
 
         // STAGE 2: Swap Required (No Midline, Mismatched Color) - "Döndürme gerektiren"
-        { id: 'cm-6', delay: 12000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
-        { id: 'cm-7', delay: 15000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
-        { id: 'cm-8', delay: 18000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
-        { id: 'cm-9', delay: 21000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
+        { id: 'cm-6', delay: 6500, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
+        { id: 'cm-7', delay: 7800, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
+        { id: 'cm-8', delay: 9100, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
+        { id: 'cm-9', delay: 10400, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
 
         // STAGE 3: Double Gates (Top + Bottom Layout) - "İkili Geçiş"
         // Gate 1: Safe (Matches default)
-        { id: 'cm-10a', delay: 25000, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
-        { id: 'cm-10b', delay: 25000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
+        { id: 'cm-10a', delay: 12500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
+        { id: 'cm-10b', delay: 12500, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
 
         // Gate 2: Swap Required
-        { id: 'cm-11a', delay: 28000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
-        { id: 'cm-11b', delay: 28000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
+        { id: 'cm-11a', delay: 14000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
+        { id: 'cm-11b', delay: 14000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
 
         // Gate 3: Safe
-        { id: 'cm-12a', delay: 31000, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
-        { id: 'cm-12b', delay: 31000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 30, height: 120 },
+        { id: 'cm-12a', delay: 15500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
+        { id: 'cm-12b', delay: 15500, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false, width: 20, height: 120 },
 
         // Gate 4: Swap Required
-        { id: 'cm-13a', delay: 34000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
-        { id: 'cm-13b', delay: 34000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 30, height: 120 },
+        { id: 'cm-13a', delay: 17000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
+        { id: 'cm-13b', delay: 17000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 20, height: 120 },
 
         // STAGE 4: Midline Crossing (Large Blocks) - "Orta Çizgiyi Geçen"
-        // Reduced height to 400 as requested
         // Block 1: Top Heavy (White) - Safe
-        { id: 'cm-14', delay: 39000, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: true, requiresSwap: false, width: 30, height: 400 },
+        { id: 'cm-14', delay: 19500, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: true, requiresSwap: false, width: 20, height: 320 },
 
         // Block 2: Bottom Heavy (Black) - Safe
-        { id: 'cm-15', delay: 42000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: true, requiresSwap: false, width: 30, height: 400 },
+        { id: 'cm-15', delay: 21000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: true, requiresSwap: false, width: 20, height: 320 },
 
         // Block 3: Top Heavy (Black) - Swap Required
-        { id: 'cm-16', delay: 45000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: true, requiresSwap: true, width: 30, height: 400 },
+        { id: 'cm-16', delay: 22500, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: true, requiresSwap: true, width: 20, height: 320 },
 
         // Block 4: Bottom Heavy (White) - Swap Required
-        { id: 'cm-17', delay: 48000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: true, requiresSwap: true, width: 30, height: 400 },
+        { id: 'cm-17', delay: 24000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: true, requiresSwap: true, width: 20, height: 320 },
     ],
     diamonds: [],
 };
 
 /**
  * Phase 3: SWAP_MECHANIC - Blocks positioned to force swapping
- * Player MUST swap to survive
+ * Player MUST swap to survive - only 2 blocks needed
  */
 const SWAP_MECHANIC_PATTERN: PhasePattern = {
     phase: 'SWAP_MECHANIC',
     blocks: [
-        // Block that matches current position - forces swap
-        { id: 'sm-1', delay: 3000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true },
-        // After swap, another block that matches new position
-        { id: 'sm-2', delay: 6000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true },
-        // Final swap test
-        { id: 'sm-3', delay: 9000, lane: 'top', polarity: 'black', y: 0.3, crossesCenter: false, requiresSwap: true },
+        // Block 1: Opposite color - forces first swap
+        { id: 'sm-1', delay: 4000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 35, height: 120 },
+        // Block 2: Opposite color again - forces second swap
+        { id: 'sm-2', delay: 10000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 35, height: 120 },
     ],
     diamonds: [],
 };

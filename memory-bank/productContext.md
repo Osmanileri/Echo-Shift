@@ -1,5 +1,10 @@
 # Product Context — Neden var, nasıl hissettirmeli?
 
+> [!IMPORTANT]
+> **PLATFORM: MOBILE ONLY**
+> Bu proje **sadece** mobil platformlar (iOS/Android PWA) için tasarlanmıştır. Tüm geliştirmeler, UI ölçeklendirmeleri ve kontroller mobil ekranlar baz alınarak yapılmalıdır. Responsive web tasarımı ikinci plandadır.
+
+
 ## Problem / İhtiyaç
 
 - Kısa süreli oturumlarda bile "flow" yakalatan, hızlı öğrenilen ama ustalaşması zor bir arcade deneyimi.

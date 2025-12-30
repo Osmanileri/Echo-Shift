@@ -153,6 +153,9 @@ import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
 import * as TutorialIntroRenderer from "../systems/tutorialIntroRenderer";
 import { TutorialOverlayRenderer } from "../systems/tutorialOverlayRenderer";
 import * as TutorialVFX from "../systems/tutorialVFXEngine";
+// Camera System - Cinematic zoom for tutorial SWAP_MECHANIC phase
+import * as CameraSystem from "../systems/CameraSystem";
+
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
 // Campaign Chapter System - Requirements: 4.1, 4.5, 1.5, 6.1, 6.2, 6.3
@@ -647,6 +650,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Track spawned blocks/diamonds for tutorial patterns
   const tutorialSpawnedBlockIds = useRef<Set<string>>(new Set());
   const tutorialSpawnedDiamondIds = useRef<Set<string>>(new Set());
+  // Camera state for cinematic zoom during SWAP_MECHANIC phase
+  const cameraState = useRef<CameraSystem.CameraState>(
+    CameraSystem.createCameraState()
+  );
+
 
   const resetGame = useCallback(() => {
     // Apply starting score from upgrades - Requirements 6.1
@@ -1300,6 +1308,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Input Handling
   const triggerSwap = useCallback(() => {
     if (gameState !== GameState.PLAYING) return;
+    // Tutorial: Check if swap is currently locked - Requirements: Tutorial flow control
+    if (tutorialState.current.isActive && tutorialState.current.swapLocked) return;
+
 
     const now = Date.now();
     if (now - lastSwapTime.current < INITIAL_CONFIG.swapCooldown) return;
@@ -3868,10 +3879,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Get dash speed multiplier for obstacle movement - makes obstacles fly faster during dash
       const dashSpeedMultiplier = PhaseDash.getSpeedMultiplier(phaseDashState.current);
 
+      // Tutorial speed multiplier (Matrix slow-mo)
+      const tutorialSpeedMultiplier = (tutorialMode?.enabled && tutorialState.current.isActive)
+        ? (tutorialState.current.speedMultiplier ?? 1.0)
+        : 1.0;
+
       obstacles.current.forEach((obs) => {
-        // Horizontal Movement - Apply slow motion, construct, and dash speed multipliers
+        // Horizontal Movement - Apply slow motion, construct, dash, and tutorial speed multipliers
         // Dash multiplier makes obstacles move faster = feels like player is warping through
-        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier;
+        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier * tutorialSpeedMultiplier;
+
 
         // Vertical Animation
         if (Math.abs(obs.y - obs.targetY) > 0.5) {
@@ -5012,6 +5029,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         shakeOffset.x * shakeMultiplier,
         shakeOffset.y * shakeMultiplier
       );
+
+      // --- CINEMATIC CAMERA TRANSFORM ---
+      // Apply camera zoom/pan for cinematic effects (e.g., tutorial swap focus)
+      // This affects the World Space (Background, Obstacles, Player)
+      CameraSystem.applyCameraTransform(ctx, cameraState.current, width, height);
+
 
       // Theme System Integration - Requirements 5.1, 5.2, 5.3
       // Backgrounds - Requirements 2.2, 4.3: Swap colors when gravity is flipped, use dynamic midline
@@ -6431,7 +6454,31 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- INTERACTIVE TUTORIAL SYSTEM UPDATE & RENDER ---
       // Level 0 Tutorial: Update state and render VFX
       if (tutorialMode?.enabled && tutorialState.current.isActive) {
+        // --- CAMERA SYSTEM UPDATE FOR SWAP_MECHANIC ZOOM ---
+        // Tutorial'dan kamera talebi var mı? (Zoom isteği)
+        if (tutorialState.current.swapBlockZoomActive) {
+          // Kamerayı oyuncuya odakla (1.5x Zoom)
+          const targetY = height * playerY.current;
+          cameraState.current = CameraSystem.setCameraTarget(
+            cameraState.current,
+            1.5, // 1.5x Zoom
+            width / 2,
+            targetY
+          );
+        } else {
+          // Normal kamera (Zoom yok)
+          cameraState.current = CameraSystem.setCameraTarget(
+            cameraState.current,
+            1.0,
+            width / 2,
+            height / 2
+          );
+        }
+        // Kamerayı güncelle (Lerp - Yumuşak geçiş)
+        cameraState.current = CameraSystem.updateCamera(cameraState.current);
+
         const tutorialInput: InteractiveTutorial.TutorialInputState = {
+
           isPressed: inputStateRef.current.isPressed,
           wasReleased: inputStateRef.current.isReleaseFrame,
           wasTapped: inputStateRef.current.isTapFrame,
@@ -6486,8 +6533,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         blocksToSpawn.forEach(block => {
           tutorialSpawnedBlockIds.current.add(block.id);
 
-          // Create obstacle at right edge of screen
-          const obsWidth = 50; // INITIAL_CONFIG.obstacleWidth
+          // Create obstacle at right edge of screen using pattern dimensions
+          const obsWidth = 35; // Thicker blocks for better visibility
+          // Use screen-relative height: 45% for normal, 55% for midline crossing
           const blockHeight = block.crossesCenter ? height * 0.55 : height * 0.45;
           const blockY = block.lane === 'top'
             ? 0
@@ -6546,9 +6594,78 @@ const GameEngine: React.FC<GameEngineProps> = ({
           activeShards.current.push(newShard);
         });
 
-        // Check for tutorial completion
+        // Check for tutorial completion - trigger finish mode
         if (tutorialState.current.isComplete && onTutorialComplete) {
-          onTutorialComplete();
+          // Start finish mode animation if not already in it
+          if (!tutorialState.current.inFinishMode) {
+            tutorialState.current = {
+              ...tutorialState.current,
+              inFinishMode: true,
+              finishModeStartTime: Date.now(),
+            };
+            // Victory sound
+            AudioSystem.playNewHighScore();
+            getHapticSystem().trigger('success');
+          }
+
+          // Finish mode animation
+          if (tutorialState.current.inFinishMode) {
+            const finishElapsed = Date.now() - tutorialState.current.finishModeStartTime;
+            const FINISH_DURATION = 1500; // 1.5 seconds
+
+            if (finishElapsed < FINISH_DURATION) {
+              // Forward rush animation - player accelerates to the right
+              const progress = finishElapsed / FINISH_DURATION;
+              const easeIn = progress * progress; // Accelerating
+
+              // Offset player position to the right
+              const rushOffset = easeIn * (width * 0.8);
+
+              // Draw rush effect (speed lines)
+              ctx.save();
+              ctx.globalAlpha = 0.3 * (1 - progress);
+              ctx.strokeStyle = '#00f0ff';
+              ctx.lineWidth = 2;
+              for (let i = 0; i < 10; i++) {
+                const lineY = Math.random() * height;
+                const lineLength = 50 + Math.random() * 100;
+                ctx.beginPath();
+                ctx.moveTo(rushOffset - lineLength, lineY);
+                ctx.lineTo(rushOffset, lineY);
+                ctx.stroke();
+              }
+              ctx.restore();
+
+              // Scale orbs smaller as they rush forward
+              const orbScale = 1 - (progress * 0.5);
+              ctx.save();
+              ctx.translate(rushOffset, 0);
+              ctx.scale(orbScale, orbScale);
+              ctx.restore();
+
+            } else {
+              // Burst effect complete - trigger tutorial complete callback
+              if (!tutorialState.current.isComplete) {
+                // Already handled below
+              }
+              // Add burst particles at center
+              const burstX = width * 0.9;
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, 1 - (finishElapsed - FINISH_DURATION) / 500);
+              ctx.fillStyle = '#00f0ff';
+              ctx.shadowColor = '#00f0ff';
+              ctx.shadowBlur = 30;
+              ctx.beginPath();
+              ctx.arc(burstX, height / 2, 30 * (1 + (finishElapsed - FINISH_DURATION) / 200), 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+
+              // Complete tutorial after burst
+              if (finishElapsed > FINISH_DURATION + 500) {
+                onTutorialComplete();
+              }
+            }
+          }
         }
 
         // Update VFX state
@@ -6599,10 +6716,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           } else {
             // ========================================
+            // SWAP MECHANIC: Cinematic Action Overlay
+            // Matrix-style "ŞİMDİ BIRAK" overlay during subPhase 2
+            // ========================================
+            TutorialOverlayRenderer.renderCinematicAction(ctx, tutorialState.current, width, height);
+
+            // ========================================
             // OTHER PHASES: Professional Overlay Renderer
             // ========================================
             TutorialOverlayRenderer.render(ctx, tutorialState.current, width, height);
           }
+
 
           ctx.restore();
         }

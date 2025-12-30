@@ -460,10 +460,11 @@ function updateSwapVFX(
         state.vibration.offsetY = 0;
     }
 
-    // Glitch text
-    state.glitchText.visible = tutorial.waitingForInput;
-    state.glitchText.text = 'ŞİMDİ BIRAK!';
-    state.glitchText.glitchOffset = Math.sin(state.time * 0.1) * 3;
+    // Glitch text - DISABLED (Using tutorialOverlayRenderer instead)
+    state.glitchText.visible = false;
+    // state.glitchText.text = 'ŞİMDİ DÖNDÜR!';
+    state.glitchText.glitchOffset = 0;
+
 }
 
 function updateConnectorVFX(

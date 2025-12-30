@@ -107,6 +107,16 @@ export interface TutorialState {
 
     // Scheduled messages tracking
     scheduledMessagesShown: Record<string, boolean>;
+
+    // Tutorial Finish Mode (forward rush animation)
+    inFinishMode: boolean;
+    finishModeStartTime: number;
+
+    // SWAP_MECHANIC sub-states
+    swapSubPhase: number;           // 0=waiting, 1=block approaching, 2=show prompt, 3=success
+    swapBlockZoomActive: boolean;   // Zoom effect on block
+    swapSuccessTime: number;        // When success was shown
+    swapLocked: boolean;
 }
 
 
@@ -140,6 +150,7 @@ export interface TutorialObstacle {
 // ============================================================================
 
 export const PHASE_CONFIGS: PhaseConfig[] = [
+    // Faz 1: Giriş
     {
         phase: 'INTRO',
         title: 'Echo Shift',
@@ -149,6 +160,7 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         waitForInput: true,
         inputType: 'tap',
     },
+    // Faz 2: Hareket
     {
         phase: 'NAVIGATION',
         title: 'Hareket',
@@ -157,53 +169,59 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         speedMultiplier: 0.5,
         waitForInput: false,
     },
-    {
-        phase: 'COLOR_MATCH',
-        title: 'Pratik Zamanı',
-        message: 'Şimdi öğrendiklerini test edelim!\nAynı Renk Top → Aynı Renk Blok',
-        targetGoal: 19,          // 19 bloktan geç (S1 reduced + Gates + Midline)
-        speedMultiplier: 0.75,
-        waitForInput: false,
-    },
+    // Faz 3: Yer Değiştirme (SWAP)
     {
         phase: 'SWAP_MECHANIC',
         title: 'Yer Değiştirme',
-        message: 'Yer değiştirmek için parmağını bırak!',
-        targetGoal: 3,          // 3 swap yap
-        speedMultiplier: 0.05,  // Neredeyse dondur
+        message: 'Ters renk blok geliyor!\nParmağını BIRAK = Yer Değiştir',
+        targetGoal: 2,           // 2 başarılı swap yeterli
+        speedMultiplier: 0.03,   // Çok yavaş - neredeyse durgun
         waitForInput: true,
         inputType: 'release',
     },
+    // Faz 4: Bağlantı Uzaması
     {
         phase: 'CONNECTOR',
         title: 'Bağlantı Uzaması',
         message: 'Dikkat: Çubuk uzuyor, mesafe artıyor. Kontrol zorlaşacak!',
-        targetGoal: 5,          // 5 saniye gözlemle
+        targetGoal: 5,
         speedMultiplier: 0.7,
         waitForInput: false,
     },
+    // Faz 5: Keskin Manevralar
     {
         phase: 'SHARP_MANEUVER',
         title: 'Keskin Manevralar',
         message: 'Biraz daha zorlaştıralım... Keskin manevralar yap!',
-        targetGoal: 5,          // 5 keskin manevradan geç
+        targetGoal: 5,
         speedMultiplier: 0.8,
         waitForInput: false,
     },
+    // Faz 6: Renk Eşleştirme (Ana Pratik)
     {
-        phase: 'SPEED_TEST',
-        title: 'Hız Testi',
-        message: 'Sistem hızlanıyor. Odaklan!',
-        targetGoal: 10,         // 10 bloktan geç
-        speedMultiplier: 1.2,   // %20 hız artışı
+        phase: 'COLOR_MATCH',
+        title: 'Pratik Zamanı',
+        message: 'Şimdi öğrendiklerini test edelim!\nAynı Renk Top → Aynı Renk Blok',
+        targetGoal: 19,
+        speedMultiplier: 0.55,
         waitForInput: false,
     },
+    // Faz 7: Elmas Toplama
     {
         phase: 'DIAMOND_COLLECTION',
-        title: 'Son Adım',
-        message: 'Bu arada... elmasları toplamayı unutma! Büyük sürprizler seni bekliyor! 💎',
-        targetGoal: 5,          // 5 elmas topla
+        title: 'Elmas Avı',
+        message: 'Elmasları toplamayı unutma! 💎\nBüyük sürprizler seni bekliyor!',
+        targetGoal: 5,
         speedMultiplier: 0.8,
+        waitForInput: false,
+    },
+    // Faz 8: Hız Testi (Final)
+    {
+        phase: 'SPEED_TEST',
+        title: 'Final: Hız Testi',
+        message: 'Sistem hızlanıyor. Odaklan!',
+        targetGoal: 10,
+        speedMultiplier: 1.2,
         waitForInput: false,
     },
 ];
@@ -263,6 +281,16 @@ export function createInitialState(): TutorialState {
         introStoryComplete: false,
 
         scheduledMessagesShown: {},
+
+        // Tutorial Finish Mode
+        inFinishMode: false,
+        finishModeStartTime: 0,
+
+        // SWAP_MECHANIC sub-states
+        swapSubPhase: 0,
+        swapBlockZoomActive: false,
+        swapSuccessTime: 0,
+        swapLocked: false,
     };
 }
 
@@ -534,7 +562,7 @@ export function update(
             newState = updateColorMatchPhase(newState, obstacles);
             break;
         case 'SWAP_MECHANIC':
-            newState = updateSwapPhase(newState, input);
+            newState = updateSwapPhase(newState, input, obstacles);
             break;
         case 'CONNECTOR':
             newState = updateConnectorPhase(newState, deltaTime);
@@ -816,22 +844,22 @@ function updateColorMatchPhase(
     let newMessage: TutorialMessage | null = null;
     let soundToPlay: (() => void) | null = null;
 
-    // Msg 1: Warning before Stage 2 (Swap) - ~8000ms
-    if (elapsed > 8000 && elapsed < 11000 && !newScheduled['msg1']) {
+    // Msg 1: Warning before Stage 2 (Swap) - ~5000ms (adjusted)
+    if (elapsed > 5000 && elapsed < 7000 && !newScheduled['msg1']) {
         newMessage = { text: "⚠️ DİKKAT: ZIT RENKLER!\nSiyah → Siyaha, Beyaz → Beyaza", duration: 3000, style: 'glitch', startTime: Date.now() };
         newScheduled['msg1'] = true;
         soundToPlay = playNearMiss;
     }
 
-    // Msg 2: Warning before Stage 3 (Gates) - ~22000ms
-    else if (elapsed > 22000 && elapsed < 25000 && !newScheduled['msg2']) {
+    // Msg 2: Warning before Stage 3 (Gates) - ~11000ms (adjusted)
+    else if (elapsed > 11000 && elapsed < 13000 && !newScheduled['msg2']) {
         newMessage = { text: "🧱 SEVİYE 2: İKİLİ BLOKLAR\nHem Aşağı Hem Yukarı!", duration: 3000, style: 'normal', startTime: Date.now() };
         newScheduled['msg2'] = true;
         soundToPlay = playStreakBonus;
     }
 
-    // Msg 3: Warning before Stage 4 (Midline) - ~36000ms
-    else if (elapsed > 36000 && elapsed < 39000 && !newScheduled['msg3']) {
+    // Msg 3: Warning before Stage 4 (Midline) - ~18000ms (adjusted)
+    else if (elapsed > 18000 && elapsed < 20000 && !newScheduled['msg3']) {
         newMessage = { text: "🔻 SEVİYE 3: DAR ALAN\nOrta Çizgiye Dikkat!", duration: 3000, style: 'glitch', startTime: Date.now() };
         newScheduled['msg3'] = true;
         soundToPlay = playGlitchSpawn;
@@ -847,31 +875,140 @@ function updateColorMatchPhase(
         overrides.scheduledMessagesShown = newScheduled;
     }
 
-    return {
+    // Create updated state
+    const updatedState: TutorialState = {
         ...state,
         progress: passedCount,
         ...overrides,
     };
+
+    // Check for phase completion - advance to next phase
+    if (passedCount >= state.targetGoal) {
+        console.log('[TUTORIAL] COLOR_MATCH phase complete! Passed:', passedCount, '/', state.targetGoal);
+        // Continue to next phase (SWAP_MECHANIC, etc.)
+        return advanceToNextPhase(updatedState);
+    }
+
+    return updatedState;
 }
 
 /**
- * Phase 3: Swap - wait for release input then swap
+ * Phase 3: Swap Mechanic - Cinematic "Matrix" Pause & Prompt
+ * Sub-phases:
+ * 0: WAITING - Normal hızda blok yaklaşır
+ * 1: FREEZE_FRAME - Blok tehlikeli mesafeye girince oyun donar, zoom başlar
+ * 2: ACTION_PROMPT - "ŞİMDİ BIRAK" yazısı ve slow-mo
+ * 3: SUCCESS_ANIM - Başarılı swap sonrası kutlama
  */
 function updateSwapPhase(
     state: TutorialState,
-    input: TutorialInputState
+    input: TutorialInputState,
+    obstacles: TutorialObstacle[]
 ): TutorialState {
-    // If waiting for release and player released
-    if (state.waitingForInput && input.wasReleased) {
-        return {
-            ...state,
-            progress: state.progress + 1,
-            waitingForInput: state.progress + 1 < state.targetGoal,
-        };
+    const now = Date.now();
+    let newState = { ...state };
+
+    // Hedeflenen "tehlikeli" blok (sm-1 veya sm-2 ID'li bloklar)
+    const targetBlock = obstacles.find(o =>
+        !o.passed && o.x > 0 && o.x < 800 &&
+        (o.id.startsWith('sm-') || o.id.includes('obs-'))
+    );
+
+    // === SUB-PHASE 0: WAITING (Normal Akış) ===
+    if (newState.swapSubPhase === 0) {
+        newState.swapLocked = true; // Swap başlangıçta kilitli
+
+        // Blok görüş alanına (Mobile: ~300px) girdiğinde uyarı ver
+        if (targetBlock && targetBlock.x < 300) {
+            newState.swapSubPhase = 1;
+            newState.currentMessage = {
+                text: "BU BLOK TERS RENK!\nDEĞERSEN ÖLÜRSÜN!",
+                duration: 4000,
+                style: 'glitch',
+                startTime: now,
+            };
+            playNearMiss(); // Warning beep
+        }
     }
 
-    return state;
+    // === SUB-PHASE 1: BLOCK VISIBLE (WARNING) ===
+    else if (newState.swapSubPhase === 1) {
+        newState.swapLocked = true; // Hala kilitli
+
+        // Blok çok yakın mesafeye (Mobile: 85px - Extreme close) girdiğinde -> Aksiyon fazına geç
+        if (targetBlock && targetBlock.x < 85) {
+            newState.swapSubPhase = 2;
+            newState.speedMultiplier = 0.05; // Matrix Slow-Mo
+            newState.swapBlockZoomActive = true; // Zoom yap
+            newState.swapLocked = false; // KİLİDİ AÇ!
+            newState.phaseStartTime = now;
+
+            // Mesajı güncelle - Overlay renderlayacak
+            newState.currentMessage = {
+                text: "FARKLI RENK!\nDÖNDÜREREK GEÇ!",
+                duration: 10000,
+                style: 'celebration',
+                startTime: now,
+            };
+            // Slow motion ses efekti KALDIRILDI
+        }
+    }
+
+    // === SUB-PHASE 2: CRITICAL MOMENT (ACTION) ===
+    else if (newState.swapSubPhase === 2) {
+        // Slow-mo ve Zoom aktif, Swap açık.
+
+        // Ensure message is correct
+        if (!newState.currentMessage || !newState.currentMessage.text.includes('DÖNDÜR')) {
+            newState.currentMessage = {
+                text: "ŞİMDİ DÖNDÜR!",
+                duration: 10000,
+                style: 'celebration',
+                startTime: now,
+            };
+        }
+
+        // Oyuncu swap yaptı mı?
+        if (input.wasTapped || input.wasReleased) {
+            newState.swapSubPhase = 3;
+            newState.swapSuccessTime = now;
+            newState.swapBlockZoomActive = false; // Zoom kapa
+            newState.speedMultiplier = 0.5; // Hızlan
+            newState.swapLocked = false;
+
+            newState.currentMessage = {
+                text: "MÜKEMMEL! 🎉",
+                duration: 1500,
+                style: 'celebration',
+                startTime: now,
+            };
+            playStreakBonus(); // Success sound
+
+            newState.progress = newState.progress + 1;
+        }
+    }
+
+    // === SUB-PHASE 3: SUCCESS & RESET (Başarı) ===
+    else if (newState.swapSubPhase === 3) {
+        const successElapsed = now - newState.swapSuccessTime;
+
+        // 1.5 saniye kutlama sonrası normal hıza dön
+        if (successElapsed > 1500) {
+            newState.swapSubPhase = 0; // Sıradaki blok için başa dön
+            newState.currentMessage = null;
+            newState.speedMultiplier = 0.8; // Normal eğitim hızına dön
+            newState.swapLocked = false;
+
+            // Eğer hedef sayıya ulaşıldıysa sonraki faza geç
+            if (newState.progress >= newState.targetGoal) {
+                return advanceToNextPhase(newState);
+            }
+        }
+    }
+
+    return newState;
 }
+
 
 /**
  * Phase 4: Connector - observe connector expansion over time
