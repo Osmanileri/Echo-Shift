@@ -60,6 +60,14 @@ interface LightningArc {
     time: number;
 }
 
+// Optimization: Gradient cache key
+let lastGradientWidth = 0;
+let lastGradientHeight = 0;
+let cachedVignette: CanvasGradient | null = null;
+
+
+
+
 export interface TutorialVFXState {
     // Faz 1: Focus Mask & Ghost Hand
     focusMask: {
@@ -444,10 +452,10 @@ function updateSwapVFX(
     state: TutorialVFXState,
     tutorial: TutorialState
 ): void {
-    // Time distortion overlay
+    // Time distortion overlay - Advanced Vignette & Aberration
     state.timeDistortion.active = true;
-    state.timeDistortion.intensity = 0.8;
-    state.timeDistortion.overlayAlpha = 0.15;
+    state.timeDistortion.intensity = (tutorial.speedMultiplier < 0.2) ? 0.9 : 0.6; // High intensity when slow
+    state.timeDistortion.overlayAlpha = 0.3; // Increased for vignette visibility
 
     // Vibration effect
     if (tutorial.waitingForInput) {
@@ -1116,9 +1124,40 @@ function renderTimeDistortion(
     if (!state.timeDistortion.active) return;
 
     ctx.save();
-    ctx.globalAlpha = state.timeDistortion.overlayAlpha;
-    ctx.fillStyle = COLORS.timeDistortion;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // 1. Vinyet Efekti (Vignette) - Optimize by caching gradient
+    // Only recreate if dimensions change significantly
+    if (!cachedVignette || Math.abs(lastGradientWidth - canvasWidth) > 10 || Math.abs(lastGradientHeight - canvasHeight) > 10) {
+        lastGradientWidth = canvasWidth;
+        lastGradientHeight = canvasHeight;
+        // Outer dark, inner transparent
+        cachedVignette = ctx.createRadialGradient(canvasWidth / 2, canvasHeight / 2, canvasWidth / 4, canvasWidth / 2, canvasHeight / 2, canvasWidth / 1.1);
+        cachedVignette.addColorStop(0, 'rgba(0, 150, 255, 0)'); // Center transparent
+        cachedVignette.addColorStop(1, `rgba(0, 30, 80, 0.8)`); // Edges dark blue
+    }
+
+    if (cachedVignette) {
+        ctx.fillStyle = cachedVignette;
+        ctx.globalAlpha = state.timeDistortion.overlayAlpha * 1.5; // Adjustable intensity
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+
+    // 2. Chromatic Aberration / Neo-Glow Edges
+    // Only visible when intensity is high (slow motion active)
+    if (state.timeDistortion.intensity > 0.5) {
+        const pulse = Math.sin(Date.now() / 150); // Faster pulse
+
+        // Aberration Border
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.3 + pulse * 0.2})`;
+        ctx.lineWidth = 15;
+        ctx.strokeRect(0, 0, canvasWidth, canvasHeight);
+
+        // Inner RGB shift simulation (simplified)
+        ctx.strokeStyle = `rgba(255, 0, 255, ${0.2 + pulse * 0.1})`;
+        ctx.lineWidth = 10;
+        ctx.strokeRect(5, 5, canvasWidth - 10, canvasHeight - 10);
+    }
+
     ctx.restore();
 }
 
@@ -1382,3 +1421,5 @@ export function addMotionTrail(state: TutorialVFXState, x: number, y: number): T
         motionTrails: trails.slice(-50), // Keep last 50 points
     };
 }
+
+

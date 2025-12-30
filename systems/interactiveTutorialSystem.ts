@@ -77,6 +77,7 @@ export interface TutorialState {
     showVictoryAnimation: boolean;
     showUnlockAnimation: boolean;
     showInfoModal: boolean;  // v4: Renk uyumu bilgilendirme ekranı
+    pausedForModal?: boolean; // NEW: Global pause when modal is open
 
     // Diamond collection (Phase 7)
     diamondsCollected: number;
@@ -143,6 +144,7 @@ export interface TutorialObstacle {
     lane: 'top' | 'bottom';
     polarity: 'white' | 'black';
     passed: boolean;
+    requiresSwap?: boolean; // Added to handle restricted interaction generically
 }
 
 // ============================================================================
@@ -175,7 +177,7 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         title: 'Yer Değiştirme',
         message: 'Ters renk blok geliyor!\nParmağını BIRAK = Yer Değiştir',
         targetGoal: 2,           // 2 başarılı swap yeterli
-        speedMultiplier: 0.03,   // Çok yavaş - neredeyse durgun
+        speedMultiplier: 0.8,    // Normal yaklaşım hızı
         waitForInput: true,
         inputType: 'release',
     },
@@ -290,7 +292,7 @@ export function createInitialState(): TutorialState {
         swapSubPhase: 0,
         swapBlockZoomActive: false,
         swapSuccessTime: 0,
-        swapLocked: false,
+        swapLocked: true, // Başlangıçta kilitli
     };
 }
 
@@ -372,6 +374,8 @@ export function advanceToNextPhase(state: TutorialState): TutorialState {
         showGhostHand: nextConfig.phase === 'NAVIGATION',
         showTimeDistortion: nextConfig.phase === 'SWAP_MECHANIC',
 
+        swapLocked: true, // Her faz başında swap kilitli (Sadece slow-mo'da açılacak)
+
         // Reset diamonds for phase 7
         diamondsCollected: nextConfig.phase === 'DIAMOND_COLLECTION' ? 0 : state.diamondsCollected,
     };
@@ -438,6 +442,7 @@ export function update(
     input: TutorialInputState,
     obstacles: TutorialObstacle[],
     deltaTime: number,
+    canvasWidth: number,
     canvasHeight: number
 ): TutorialState {
     if (!state.isActive || state.isComplete) {
@@ -559,10 +564,10 @@ export function update(
             break;
         }
         case 'COLOR_MATCH':
-            newState = updateColorMatchPhase(newState, obstacles);
+            newState = updateColorMatchPhase(newState, obstacles, canvasWidth);
             break;
         case 'SWAP_MECHANIC':
-            newState = updateSwapPhase(newState, input, obstacles);
+            newState = updateSwapPhase(newState, input, obstacles, canvasWidth);
             break;
         case 'CONNECTOR':
             newState = updateConnectorPhase(newState, deltaTime);
@@ -571,11 +576,10 @@ export function update(
             newState = updateSharpManeuverPhase(newState, obstacles);
             break;
         case 'SPEED_TEST':
-            newState = updateSpeedTestPhase(newState, obstacles);
+            newState = updateSpeedTestPhase(newState, obstacles, canvasWidth);
             break;
         case 'DIAMOND_COLLECTION':
-            newState = updateDiamondPhase(newState);
-            break;
+            return updateDiamondCollectionPhase(newState, obstacles, canvasWidth);
     }
 
     // Check phase completion
@@ -769,7 +773,7 @@ function updateNavigationPhase(
         }
     }
     // === SUB-PHASE 2: TEACH DOWN ===
-    else if (state.navigationSubPhase === 2) {
+    else if (newState.navigationSubPhase === 2) {
         // DEBUG: Log playerY to see actual values
         if (Math.random() < 0.02) {
             console.log('[Tutorial] SubPhase 2 - playerY:', input.playerY.toFixed(3));
@@ -786,7 +790,7 @@ function updateNavigationPhase(
         }
     }
     // === SUB-PHASE 4: INFO MODAL ===
-    else if (state.navigationSubPhase === 4) {
+    else if (newState.navigationSubPhase === 4) {
         // Wait for tap to dismiss
         if (input.wasTapped || input.wasReleased) {
             newState.navigationSubPhase = 3;
@@ -801,7 +805,7 @@ function updateNavigationPhase(
         }
     }
     // === SUB-PHASE 3: EXPLAIN GROWTH ===
-    else if (state.navigationSubPhase === 3) {
+    else if (newState.navigationSubPhase === 3) {
         const explainElapsed = now - state.phaseStartTime;
 
         // Wait for explanation
@@ -828,8 +832,13 @@ function updateNavigationPhase(
  */
 function updateColorMatchPhase(
     state: TutorialState,
-    obstacles: TutorialObstacle[]
+    obstacles: TutorialObstacle[],
+    canvasWidth: number
 ): TutorialState {
+    const now = Date.now();
+    let newState = { ...state };
+    const playerX = canvasWidth / 8;
+
     // Count passed obstacles
     const passedCount = obstacles.filter(o => o.passed).length;
 
@@ -838,9 +847,21 @@ function updateColorMatchPhase(
         playObstaclePass();
     }
 
+    // --- PROXIMITY-BASED SLOW MOTION & SWAP UNLOCK ---
+    const criticalBlock = obstacles.find(o => !o.passed && o.x > 0 && o.x < playerX + 150 && o.requiresSwap);
+
+    if (criticalBlock && criticalBlock.x < playerX + 50) {
+        newState.speedMultiplier = 0.05; // Ramak kala slow-mo
+        newState.swapLocked = false;    // Kilidi aç
+    } else {
+        newState.speedMultiplier = 0.55; // Faz hızı
+        newState.swapLocked = true;     // Kilitli kalsın
+    }
+    // --------------------------------------------------
+
     // Check for scheduled messages (time-based)
-    const elapsed = Date.now() - state.phaseStartTime;
-    const newScheduled = { ...state.scheduledMessagesShown };
+    const elapsed = now - state.phaseStartTime;
+    const newScheduled = { ...newState.scheduledMessagesShown };
     let newMessage: TutorialMessage | null = null;
     let soundToPlay: (() => void) | null = null;
 
@@ -877,7 +898,7 @@ function updateColorMatchPhase(
 
     // Create updated state
     const updatedState: TutorialState = {
-        ...state,
+        ...newState,
         progress: passedCount,
         ...overrides,
     };
@@ -903,30 +924,50 @@ function updateColorMatchPhase(
 function updateSwapPhase(
     state: TutorialState,
     input: TutorialInputState,
-    obstacles: TutorialObstacle[]
+    obstacles: TutorialObstacle[],
+    canvasWidth: number
 ): TutorialState {
     const now = Date.now();
     let newState = { ...state };
+    const playerX = canvasWidth / 8;
 
-    // Hedeflenen "tehlikeli" blok (sm-1 veya sm-2 ID'li bloklar)
-    const targetBlock = obstacles.find(o =>
-        !o.passed && o.x > 0 && o.x < 800 &&
-        (o.id.startsWith('sm-') || o.id.includes('obs-'))
-    );
+    // Hedeflenen "tehlikeli" blok
+    const targetBlock = obstacles.find(o => !o.passed && o.x > 0 && o.requiresSwap);
 
     // === SUB-PHASE 0: WAITING (Normal Akış) ===
     if (newState.swapSubPhase === 0) {
         newState.swapLocked = true; // Swap başlangıçta kilitli
 
+        // Initial Message Update: "Hold to start" context
+        if (newState.progress === 0 && (!newState.currentMessage || newState.currentMessage.text.includes('Ters renk') || newState.currentMessage.text.includes('HADİ'))) {
+            // Sadece ilk bloktan önce veya yanlış mesaj varsa göster
+            // "HADİ" mesajını override etme (ikinci turda)
+            if (newState.progress === 0 && (!newState.currentMessage || newState.currentMessage.text.includes('Ters renk'))) {
+                newState.currentMessage = {
+                    text: "Basılı tutarak oyuna başla...",
+                    duration: 4000,
+                    style: 'normal',
+                    startTime: now,
+                };
+            }
+        }
+
         // Blok görüş alanına (Mobile: ~300px) girdiğinde uyarı ver
         if (targetBlock && targetBlock.x < 300) {
+            // NEW: Trigger Info Modal for the first block ONLY
+            if (newState.progress === 0 && !newState.scheduledMessagesShown['swap_info_modal']) {
+                newState.showInfoModal = true;
+                newState.pausedForModal = true;
+                newState.scheduledMessagesShown['swap_info_modal'] = true;
+                return newState; // Stop update while modal is open
+            }
+
             newState.swapSubPhase = 1;
-            newState.currentMessage = {
-                text: "BU BLOK TERS RENK!\nDEĞERSEN ÖLÜRSÜN!",
-                duration: 4000,
-                style: 'glitch',
-                startTime: now,
-            };
+            // SECURITY: Ensure modal is closed
+            newState.showInfoModal = false;
+            newState.pausedForModal = false;
+
+            // Removed outdated message trigger here, relying on modal or proximity
             playNearMiss(); // Warning beep
         }
     }
@@ -935,41 +976,59 @@ function updateSwapPhase(
     else if (newState.swapSubPhase === 1) {
         newState.swapLocked = true; // Hala kilitli
 
-        // Blok çok yakın mesafeye (Mobile: 85px - Extreme close) girdiğinde -> Aksiyon fazına geç
-        if (targetBlock && targetBlock.x < 85) {
+        // Blok yaklaşırken ambient uyarısı ver
+        if (targetBlock && targetBlock.x < playerX + 150 && !newState.showTimeDistortion) {
+            newState.showTimeDistortion = true;
+            newState.currentMessage = {
+                text: "TERS RENK GELİYOR!\nHAZIR OL...",
+                duration: 2000,
+                style: 'glitch',
+                startTime: now,
+            };
+        }
+
+        // Blok çok yakın mesafeye (50px - Extreme close) girdiğinde -> Aksiyon fazına geç
+        if (targetBlock && targetBlock.x < playerX + 50) {
             newState.swapSubPhase = 2;
-            newState.speedMultiplier = 0.05; // Matrix Slow-Mo
+            newState.speedMultiplier = 0.15; // Matrix Slow-Mo (Faster: 0.05 -> 0.15)
             newState.swapBlockZoomActive = true; // Zoom yap
+            newState.swapLocked = false; // KİLİDİ AÇ!
             newState.swapLocked = false; // KİLİDİ AÇ!
             newState.phaseStartTime = now;
 
-            // Mesajı güncelle - Overlay renderlayacak
+            // SECURITY: Ensure modal is closed
+            newState.showInfoModal = false;
+            newState.pausedForModal = false;
+
+            // Mesajı güncelle
             newState.currentMessage = {
-                text: "FARKLI RENK!\nDÖNDÜREREK GEÇ!",
+                text: "DİKKAT! TERS RENK!\nŞİMDİ DÖNDÜR!",
                 duration: 10000,
                 style: 'celebration',
                 startTime: now,
             };
-            // Slow motion ses efekti KALDIRILDI
         }
     }
 
     // === SUB-PHASE 2: CRITICAL MOMENT (ACTION) ===
     else if (newState.swapSubPhase === 2) {
-        // Slow-mo ve Zoom aktif, Swap açık.
-
-        // Ensure message is correct
+        // Ensure message is correct based on platform
+        const actionText = "ŞİMDİ DÖNDÜR!\n(Ekrana TIKLA)";
         if (!newState.currentMessage || !newState.currentMessage.text.includes('DÖNDÜR')) {
             newState.currentMessage = {
-                text: "ŞİMDİ DÖNDÜR!",
+                text: actionText,
                 duration: 10000,
                 style: 'celebration',
                 startTime: now,
             };
         }
 
-        // Oyuncu swap yaptı mı?
-        if (input.wasTapped || input.wasReleased) {
+        // Oyuncu swap yaptı mı? VEYA block zaten geçildi mi? (Hayatta kaldıysa başarmıştır)
+        const isBlockPassed = !targetBlock || targetBlock.x < playerX - 50;
+
+        if (input.wasTapped || input.wasReleased || isBlockPassed) {
+            // Eğer block geçildiyse ve subPhase hala 2 ise, input kaçmış olabilir.
+            // Biz yine de başarı sayalım çünkü ölmedi.
             newState.swapSubPhase = 3;
             newState.swapSuccessTime = now;
             newState.swapBlockZoomActive = false; // Zoom kapa
@@ -977,8 +1036,8 @@ function updateSwapPhase(
             newState.swapLocked = false;
 
             newState.currentMessage = {
-                text: "MÜKEMMEL! 🎉",
-                duration: 1500,
+                text: "HARİKA! 🎉\nBAŞARDIN!",
+                duration: 2000,
                 style: 'celebration',
                 startTime: now,
             };
@@ -988,20 +1047,24 @@ function updateSwapPhase(
         }
     }
 
-    // === SUB-PHASE 3: SUCCESS & RESET (Başarı) ===
+    // === SUB-PHASE 3: POST SUCCESS ===
     else if (newState.swapSubPhase === 3) {
         const successElapsed = now - newState.swapSuccessTime;
 
-        // 1.5 saniye kutlama sonrası normal hıza dön
-        if (successElapsed > 1500) {
-            newState.swapSubPhase = 0; // Sıradaki blok için başa dön
-            newState.currentMessage = null;
-            newState.speedMultiplier = 0.8; // Normal eğitim hızına dön
-            newState.swapLocked = false;
+        if (successElapsed > 2500) {
+            newState.swapSubPhase = 0; // Reset for next block
+            newState.speedMultiplier = 0.8;
+            newState.swapLocked = true;
+            newState.showTimeDistortion = false;
 
-            // Eğer hedef sayıya ulaşıldıysa sonraki faza geç
-            if (newState.progress >= newState.targetGoal) {
-                return advanceToNextPhase(newState);
+            // Eğer daha yapılacak varsa devam et
+            if (newState.progress < newState.targetGoal) {
+                newState.currentMessage = {
+                    text: "HADİ BİR KEZ DAHA!",
+                    duration: 3000,
+                    style: 'celebration', // Make it pop!
+                    startTime: now,
+                };
             }
         }
     }
@@ -1047,12 +1110,28 @@ function updateSharpManeuverPhase(
  */
 function updateSpeedTestPhase(
     state: TutorialState,
-    obstacles: TutorialObstacle[]
+    obstacles: TutorialObstacle[],
+    canvasWidth: number
 ): TutorialState {
+    const now = Date.now();
+    let newState = { ...state };
+    const playerX = canvasWidth / 8;
     const passedCount = obstacles.filter(o => o.passed).length;
 
+    // --- PROXIMITY-BASED SLOW MOTION & SWAP UNLOCK ---
+    const criticalBlock = obstacles.find(o => !o.passed && o.x > 0 && o.x < playerX + 150 && o.requiresSwap);
+
+    if (criticalBlock && criticalBlock.x < playerX + 50) {
+        newState.speedMultiplier = 0.05; // Ramak kala slow-mo
+        newState.swapLocked = false;    // Kilidi aç
+    } else {
+        newState.speedMultiplier = 1.2; // Faz hızı (Speed Test: 1.2)
+        newState.swapLocked = true;
+    }
+    // --------------------------------------------------
+
     return {
-        ...state,
+        ...newState,
         progress: passedCount,
     };
 }
@@ -1060,11 +1139,31 @@ function updateSpeedTestPhase(
 /**
  * Phase 7: Diamond Collection - collect diamonds
  */
-function updateDiamondPhase(state: TutorialState): TutorialState {
-    // Progress is updated externally when diamonds are collected
+function updateDiamondCollectionPhase(
+    state: TutorialState,
+    obstacles: TutorialObstacle[],
+    canvasWidth: number
+): TutorialState {
+    const now = Date.now();
+    let newState = { ...state };
+    const playerX = canvasWidth / 8;
+
+    // --- PROXIMITY-BASED SLOW MOTION & SWAP UNLOCK ---
+    // Herhangi bir requiresSwap=true olan blok için
+    const criticalBlock = obstacles.find(o => !o.passed && o.x > 0 && o.x < playerX + 150 && o.requiresSwap);
+
+    if (criticalBlock && criticalBlock.x < playerX + 50) {
+        newState.speedMultiplier = 0.05; // Ramak kala slow-mo
+        newState.swapLocked = false;    // Kilidi aç
+    } else {
+        newState.speedMultiplier = 0.8; // Faz hızı
+        newState.swapLocked = true;
+    }
+    // --------------------------------------------------
+
     return {
-        ...state,
-        progress: state.diamondsCollected,
+        ...newState,
+        progress: newState.diamondsCollected,
     };
 }
 

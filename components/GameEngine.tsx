@@ -153,6 +153,7 @@ import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
 import * as TutorialIntroRenderer from "../systems/tutorialIntroRenderer";
 import { TutorialOverlayRenderer } from "../systems/tutorialOverlayRenderer";
 import * as TutorialVFX from "../systems/tutorialVFXEngine";
+import { TutorialInfoModal } from "./Tutorial/TutorialInfoModal";
 // Camera System - Cinematic zoom for tutorial SWAP_MECHANIC phase
 import * as CameraSystem from "../systems/CameraSystem";
 
@@ -2244,6 +2245,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const levelId = activeCampaign.levelConfig?.id || 1;
           speed.current = speedControllerRef.current.calculateSpeed(distState, levelId);
 
+          // Apply Tutorial Speed Multiplier - Requirements: Tutorial Slow-Motion
+          if (tutorialMode?.enabled && tutorialState.current.isActive) {
+            speed.current *= tutorialState.current.speedMultiplier;
+          }
+
           // Update distance based on current speed
           // Convert speed from pixels/frame to meters/second
           // Factor 0.8 gives good pacing (~45-60 seconds for level 1 with 100m target)
@@ -4161,8 +4167,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glitchInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current ||
-          isInFinishMode.current ||
-          tutorialState.current.isActive  // Tutorial invincibility
+          isInFinishMode.current  // Skip collision in finish mode
         )
           return;
 
@@ -4401,6 +4406,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
               }
 
               // Normal collision - game over
+
+              // Tutorial Mode Collision Handling
+              if (tutorialMode?.enabled && tutorialState.current.isActive) {
+                // Handle collision via tutorial system (e.g., restart phase)
+                tutorialState.current = InteractiveTutorial.handleCollision(tutorialState.current);
+
+                // Visual feedback for collision
+                createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
+                ScreenShake.triggerCollision();
+                getHapticSystem().trigger("heavy");
+                AudioSystem.playGlitchDamage();
+
+                // Remove obstacle to prevent re-hit
+                obs.passed = true;
+                obs.x = -1000;
+                return; // SKIP GAME OVER
+              }
+
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
 
@@ -4609,6 +4632,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
               }
 
               // Normal collision - game over
+
+              // Tutorial Mode Collision Handling
+              if (tutorialMode?.enabled && tutorialState.current.isActive) {
+                // Handle collision via tutorial system (e.g., restart phase)
+                tutorialState.current = InteractiveTutorial.handleCollision(tutorialState.current);
+
+                // Visual feedback for collision
+                createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
+                ScreenShake.triggerCollision();
+                getHapticSystem().trigger("heavy");
+                AudioSystem.playGlitchDamage();
+
+                // Remove obstacle to prevent re-hit
+                obs.passed = true;
+                obs.x = -1000;
+                return; // SKIP GAME OVER
+              }
+
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
               collisionDetected = true;
 
@@ -6401,6 +6442,26 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // This must be applied after ctx.restore() to affect the entire frame
       ChromaticAberration.applyEffect(ctx, canvas);
 
+      // --- TUTORIAL VISUAL EFFECTS ---
+      // Time Distortion Overlay (Slow Motion Effect)
+      if (tutorialMode?.enabled && tutorialState.current.isActive && tutorialState.current.showTimeDistortion) {
+        ctx.save();
+        // Subtle blue/cyan tint for time distortion
+        const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width);
+        gradient.addColorStop(0, "rgba(0, 240, 255, 0.0)");
+        gradient.addColorStop(1, "rgba(0, 240, 255, 0.15)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+
+        // Vignette effect
+        const vignette = ctx.createRadialGradient(width / 2, height / 2, height * 0.3, width / 2, height / 2, height * 0.8);
+        vignette.addColorStop(0, "rgba(0,0,0,0)");
+        vignette.addColorStop(1, "rgba(0,0,0,0.3)");
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      }
+
       // Apply Glitch Artifact post-process effect - Requirements 14.3
       // This creates a digital distortion effect when damage is taken
       const envEffectsState = EnvironmentalEffects.getEnvironmentalEffectsState();
@@ -6458,11 +6519,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Tutorial'dan kamera talebi var mı? (Zoom isteği)
         if (tutorialState.current.swapBlockZoomActive) {
           // Kamerayı oyuncuya odakla (1.5x Zoom)
+          // Fix: Focus closer to player (width/8) so they don't go off-screen.
+          // Target X = width * 0.3 allows seeing player (left) and block (right)
           const targetY = height * playerY.current;
           cameraState.current = CameraSystem.setCameraTarget(
             cameraState.current,
             1.5, // 1.5x Zoom
-            width / 2,
+            width * 0.3, // Focus closer to left side (Player is at width/8)
             targetY
           );
         } else {
@@ -6492,8 +6555,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           x: obs.x,
           y: obs.y,
           lane: obs.y < height / 2 ? 'top' : 'bottom',
-          polarity: obs.polarity === 'white' ? 'white' : 'black',
+          polarity: (obs as any).polarity === 'white' ? 'white' : 'black',
           passed: obs.x < width / 8,
+          requiresSwap: (obs as any).requiresSwap, // Pass the flag from the pattern
         }));
 
         // Get previous phase for phase change detection
@@ -6506,6 +6570,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           tutorialInput,
           tutorialObstacles,
           16, // deltaTime ~60fps
+          width,
           height
         );
 
@@ -6554,6 +6619,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             shouldOscillate: false,
             oscillationIntensity: 0,
             oscillationPhase: 0,
+            requiresSwap: block.requiresSwap, // Critical for tutorial logic
           };
 
           obstacles.current.push(newObstacle);
@@ -6735,6 +6801,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Render progress indicator
         const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
+
+        // --- TUTORIAL INFO MODAL ---
+        {
+          tutorialState.current.showInfoModal && (
+            <TutorialInfoModal
+              isVisible={true}
+              title={tutorialState.current.currentPhase === 'SWAP_MECHANIC' ? "TERS RENK UYARISI!" : "TEBRİKLER!"}
+              description={tutorialState.current.currentPhase === 'SWAP_MECHANIC'
+                ? "Bu bloktan dönerek geçmemiz gerekiyor. Hazır mısın?"
+                : "Hareket kontrollerini başarıyla tamamladın! Hazır mısın?"}
+              showVisuals={tutorialState.current.currentPhase === 'SWAP_MECHANIC'}
+              onClose={() => {
+                // Resume tutorial flow
+                tutorialState.current.showInfoModal = false;
+                tutorialState.current.pausedForModal = false;
+              }}
+            />
+          )
+        }
         ctx.save();
         ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
         ctx.fillRect(0, height - 10, (width * progress) / 100, 10);

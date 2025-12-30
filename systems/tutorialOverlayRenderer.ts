@@ -185,16 +185,17 @@ export class TutorialOverlayRenderer {
 
         ctx.save();
 
-        // 1. Sinematik Karartma (Focus Mask'ten daha koyu)
-        // Alttaki "ŞİMDİ BIRAK" yazısı hariç her yer kararır
-        const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, "rgba(0, 0, 0, 0.85)");
-        gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.85)"); // Yazının olduğu yer
-        gradient.addColorStop(1, "rgba(0, 0, 0, 0.95)");
+        // 1. Sinematik Karartma (Hafif Vignette - Oyun görünür kalsın)
+        // Merkez şeffaf, kenarlar hafif karanlık
+        const gradient = ctx.createRadialGradient(width / 2, height / 2, height * 0.2, width / 2, height / 2, height * 0.8);
+        gradient.addColorStop(0, "rgba(0, 0, 0, 0)"); // Merkez tamamen şeffaf
+        gradient.addColorStop(0.7, "rgba(0, 0, 0, 0.2)");
+        gradient.addColorStop(1, "rgba(0, 0, 0, 0.6)"); // Kenarlar hafif karanlık
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
 
         // 2. "ŞİMDİ BIRAK!" Yazısı (Ekranın Altında)
+        // Yazı okunabilirliği için arkasına hafif bir glow/gölge paneli ekleyelim
         const textY = height * 0.75;
         const scale = 1.0 + (pulse * 0.05); // Hafif büyüme/küçülme
 
