@@ -140,7 +140,7 @@ import * as SpiritRenderer from "../systems/spiritRenderer";
 // Spirit VFX Systems - Trailing Soul, Elemental Styles, Enhanced Particles
 import { SpriteManager } from "../systems/spriteManager";
 import * as TrailingSoul from "../systems/trailingSoul";
-import type { GlitchModeState, GlitchShard } from "../types";
+import type { GlitchModeState, GlitchPhase, GlitchShard } from "../types";
 // Enemy Manager System - Glitch Dart attacks
 import * as EnemyManager from "../systems/EnemyManager";
 import * as EnemySpriteCache from "../systems/EnemySpriteCache";
@@ -157,6 +157,8 @@ import * as TutorialVFX from "../systems/tutorialVFXEngine";
 import { TutorialInfoModal } from "./Tutorial/TutorialInfoModal";
 // Camera System - Cinematic zoom for tutorial SWAP_MECHANIC phase
 import * as CameraSystem from "../systems/CameraSystem";
+// Start Sequence System - Cinematic 3-2-1-GO countdown
+import * as StartSequence from "../systems/startSequenceSystem";
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -235,7 +237,7 @@ interface GameEngineProps {
   // Phase Dash System - Energy bar updates
   onDashStateUpdate?: (energy: number, active: boolean, remainingPercent?: number) => void;
   // Quantum Lock updates - Requirements 7.5
-  onQuantumLockStateUpdate?: (isActive: boolean) => void;
+  onQuantumLockStateUpdate?: (isActive: boolean, phase?: GlitchPhase) => void;
   // Campaign Mode - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
   campaignMode?: CampaignModeConfig;
   // Daily Challenge Mode - Requirements 8.1, 8.2, 8.3
@@ -548,6 +550,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Mobile Controls State
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHint, setShowMobileHint] = useState(true);
+  // Countdown display state - triggers React re-renders for smooth animation
+  const [countdownDisplay, setCountdownDisplay] = useState<{ value: number; active: boolean }>({ value: 3, active: true });
   const joystickRef = useRef<{
     active: boolean;
     startY: number;
@@ -670,6 +674,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const cameraState = useRef<CameraSystem.CameraState>(
     CameraSystem.createCameraState()
   );
+  // Start Sequence State - Cinematic 3-2-1-GO countdown
+  // Start Sequence State - Cinematic 3-2-1-GO countdown
+  const startSequenceState = useRef<StartSequence.StartSequenceState>(
+    StartSequence.createInitialState()
+  );
+
+  // Grace Period State - Track when special abilities end
+  const lastSpecialAbilityEndTime = useRef<number>(0);
 
 
   const resetGame = useCallback(() => {
@@ -969,6 +981,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Reset Flux Overload State - Yasaklı Hat Mekaniği
     fluxOverloadState.current = FluxOverload.createInitialState();
+
+    // Reset Start Sequence State - Cinematic 3-2-1-GO countdown
+    startSequenceState.current = StartSequence.createInitialState();
+    setCountdownDisplay({ value: 3, active: true });
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -1333,6 +1349,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Tutorial: Check if swap is currently locked - Requirements: Tutorial flow control
     if (tutorialState.current.isActive && tutorialState.current.swapLocked) return;
 
+    // Countdown: Disable swap during countdown - Requirements User Feedback
+    if (startSequenceState.current.isActive) return;
+
 
     const now = Date.now();
     if (now - lastSwapTime.current < INITIAL_CONFIG.swapCooldown) return;
@@ -1401,6 +1420,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const handleJoystickStartNative = useCallback(
     (e: TouchEvent | MouseEvent) => {
       if (gameState !== GameState.PLAYING) return;
+      if (startSequenceState.current.isActive) return; // Block input during countdown
       e.preventDefault();
       e.stopPropagation();
 
@@ -1489,6 +1509,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const handleTouchControlStart = useCallback(
     (e: TouchEvent) => {
       if (gameState !== GameState.PLAYING) return;
+      if (startSequenceState.current.isActive) return; // Block input during countdown
       if (!isMobile) return;
 
       const touch = e.touches[0];
@@ -2096,6 +2117,145 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- SLOW MOTION UPDATE - Requirements 6.4 ---
       const gameTime = Date.now();
 
+      // --- START SEQUENCE UPDATE - Cinematic 3-2-1-GO countdown ---
+      // --- START SEQUENCE UPDATE - Cinematic 3-2-1-GO countdown ---
+      if (startSequenceState.current.isActive) {
+        // Skip countdown if in Tutorial Mode - Requirements 17.5
+        if (tutorialMode?.enabled) {
+          // Force complete immediately
+          startSequenceState.current = {
+            ...startSequenceState.current,
+            isActive: false,
+            countdownValue: -1,
+            inGracePeriod: false,
+            gracePeriodEndTime: 0
+          };
+          lastDistanceUpdateTime.current = gameTime;
+
+          // Ensure display is hidden
+          if (countdownDisplay.active) {
+            setCountdownDisplay({ value: -1, active: false });
+          }
+        } else {
+          // Normal countdown update
+          const { state: newSeqState, newTick } = StartSequence.updateStartSequence(
+            startSequenceState.current,
+            gameTime
+          );
+          startSequenceState.current = newSeqState;
+
+          // Update React state for smooth re-renders
+          if (newSeqState.countdownValue !== countdownDisplay.value || newSeqState.isActive !== countdownDisplay.active) {
+            setCountdownDisplay({ value: newSeqState.countdownValue, active: newSeqState.isActive });
+          }
+
+          // Play audio for countdown ticks
+          if (newTick !== null) {
+            if (newTick > 0) {
+              AudioSystem.playCountdown(newTick);
+            } else if (newTick === 0) {
+              AudioSystem.playCountdownGo();
+              // Start game start sound too
+              AudioSystem.playGameStart();
+            }
+          }
+        }
+      } else if (countdownDisplay.active) {
+        // Countdown just ended - update state to hide overlay
+        setCountdownDisplay({ value: -1, active: false });
+      }
+
+      // --- GRACE PERIOD UPDATE - Allow game rendering but delay obstacles ---
+      if (startSequenceState.current.inGracePeriod) {
+        startSequenceState.current = StartSequence.updateGracePeriod(
+          startSequenceState.current,
+          gameTime
+        );
+      }
+
+      // Check if we should skip obstacle spawning (during countdown OR grace period)
+      const skipObstacleSpawning = startSequenceState.current.isActive ||
+        StartSequence.isInGracePeriod(startSequenceState.current, gameTime);
+
+      // --- FREEZE GAME DURING START SEQUENCE ---
+      // When countdown is active, skip all game logic and only render static scene
+      if (startSequenceState.current.isActive) {
+        // Calculate player slide-in X position
+        const slideX = StartSequence.getPlayerSlideX(startSequenceState.current, width, gameTime);
+
+        // Render frozen frame with player at slide position
+        // Get theme colors
+        const topBgColor = getColor('topBg');
+        const bottomBgColor = getColor('bottomBg');
+        const connectorColor = getColor('connector');
+        const accentColor = getColor('accent');
+
+        // Clear canvas with bottom bg
+        ctx.fillStyle = bottomBgColor;
+        ctx.fillRect(0, 0, width, height);
+
+        // Render background (static, no parallax movement)
+        const screenHeight = height;
+        const screenWidth = width;
+
+        // Draw zones (top half = topBg, bottom half = bottomBg)
+        ctx.fillStyle = topBgColor;
+        ctx.fillRect(0, 0, screenWidth, screenHeight / 2);
+        ctx.fillStyle = bottomBgColor;
+        ctx.fillRect(0, screenHeight / 2, screenWidth, screenHeight / 2);
+
+        // Draw midline with accent color
+        const midY = screenHeight / 2;
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(screenWidth, midY);
+        ctx.stroke();
+
+        // Render player at slide-in position (connector + orbs)
+        const orbRadius = INITIAL_CONFIG.orbRadius;
+        const connectorLen = INITIAL_CONFIG.minConnectorLength;
+        const playerYPos = 0.5 * screenHeight; // Center of screen
+
+        // Calculate orb positions
+        const whiteOrbY = playerYPos - connectorLen / 2;
+        const blackOrbY = playerYPos + connectorLen / 2;
+
+        // Draw connector
+        ctx.strokeStyle = connectorColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(slideX, whiteOrbY);
+        ctx.lineTo(slideX, blackOrbY);
+        ctx.stroke();
+
+        // Draw white orb (top) - using bottomBg color (visible on top zone)
+        ctx.fillStyle = bottomBgColor;
+        ctx.shadowColor = bottomBgColor;
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(slideX, whiteOrbY, orbRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Draw black orb (bottom) - using topBg color (visible on bottom zone)
+        ctx.fillStyle = topBgColor;
+        ctx.strokeStyle = bottomBgColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(slideX, blackOrbY, orbRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Mark canvas as ready
+        if (!canvasReady) setCanvasReady(true);
+
+        // Continue animation loop but skip game logic
+        frameId.current = requestAnimationFrame(loop);
+        return;
+      }
+
       // Handle slow motion activation from props
       if (
         slowMotionActive &&
@@ -2435,10 +2595,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const isQuantumLockActive = GlitchSystem.shouldBlockObstacleSpawn(glitchModeState.current);
         // Tutorial Mode: Completely disable random spawning - use predefined patterns
         const isTutorialModeActive = tutorialMode?.enabled && tutorialState.current.isActive;
+
+        // Grace Period Check - Post-Special Ability Safety Window
+        const timeSinceSpecialEnd = Date.now() - (lastSpecialAbilityEndTime.current || 0);
+        const isInGracePeriod = timeSinceSpecialEnd < 1000;
+
         const shouldStopSpawning = isInFinishMode.current ||
           isInPostDashCooldown ||
           isQuantumLockActive ||
           isTutorialModeActive || // Disable spawning during tutorial
+          isInGracePeriod || // Stop spawning immediately after special abilities
+          // Delay initial obstacles: 3 meters for distance mode, 1.8s for endless
+          (campaignModeRef.current?.useDistanceMode
+            ? distanceStateRef.current.currentDistance < 3
+            : (Date.now() - gameStartTime.current < 1800)) ||
           (distanceStateRef.current.targetDistance > 0 &&
             distanceStateRef.current.progressPercent >= 98);
 
@@ -2484,7 +2654,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const dashPatternMultiplier = PhaseDash.getObstacleSpawnMultiplier(phaseDashState.current);
           const baselineSpeed = 5.0;
           const timeScale = Math.max(
-            0.75,
+            0.2, // Requirements 7.3: Allow faster spawning at high speeds (was 0.75)
             Math.min(1.35, baselineSpeed / Math.max(0.1, speed.current))
           ) / dashPatternMultiplier; // Faster patterns during dash
           const scaledPattern = {
@@ -2829,7 +2999,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // ALSO DISABLED during tutorial mode - Level 0 has no enemies
       const isInSpecialAbility = PhaseDash.isDashActive(phaseDashState.current) || glitchModeState.current.isActive;
       const isTutorialActive = tutorialMode?.enabled && tutorialState.current.isActive;
-      if (enemyManagerState.current && !isInSpecialAbility && !isTutorialActive) {
+
+      // Grace Period Check - Requirements: 2 second delay after special ability ends
+      // This prevents players from being immediately swarmed
+      const gracePeriodDuration = 2000;
+      const timeSinceSpecialEnd = Date.now() - (lastSpecialAbilityEndTime.current || 0);
+      const isInGracePeriod = timeSinceSpecialEnd < gracePeriodDuration;
+
+      if (enemyManagerState.current && !isInSpecialAbility && !isTutorialActive && !isInGracePeriod) {
         // Get current distance for spawn threshold check
         const currentDistance = distanceStateRef.current.currentDistance || 0;
 
@@ -3283,50 +3460,38 @@ const GameEngine: React.FC<GameEngineProps> = ({
             }
 
             // Trigger screen flash - Requirements 8.3
-            glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('enter');
+            // DELAYED to active phase
+            // glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('enter');
 
             // Start connector animation - Requirements 4.2
-            connectorAnimationStartTime.current = Date.now();
+            // DELAYED to active phase
+            // connectorAnimationStartTime.current = Date.now();
 
             // Generate wave path shards - Requirements 5.6, 6.4
+            // DELAYED to active phase
+            /*
             wavePathShards.current = GlitchSystem.generateWavePathShards(
               glitchModeState.current.waveOffset,
               width,
               height / 2,
               120 // Wave amplitude
             );
+            */
 
-            // Pause Overdrive if active - Requirements 6.7, 10.1
-            if (shiftState.current.overdriveActive) {
-              const pauseResult = GlitchSystem.pauseOverdrive(
-                glitchModeState.current,
-                shiftState.current
-              );
-              glitchModeState.current = pauseResult.glitchState;
-              shiftState.current = pauseResult.overdriveState;
-            }
-
-            // Pause Resonance if active - Requirements 10.2
-            if (resonanceState.current.isActive && !resonanceState.current.isPaused) {
-              const pauseResult = GlitchSystem.pauseResonance(
-                glitchModeState.current,
-                resonanceState.current
-              );
-              glitchModeState.current = pauseResult.glitchState;
-              resonanceState.current = pauseResult.resonanceState;
-            }
+            // Pause Overdrive/Resonance - DELAYED to active phase
 
             // Apply low-pass filter to music - Requirements 9.3
+            // Keep this immediate for audio feedback that something happened
             AudioSystem.applyGlitchMusicFilter();
 
             // Haptic feedback
             getHapticSystem().trigger("heavy");
 
-            // Score popup
+            // Score popup - Show Charging
             scorePopups.current.push({
               x: playerX,
               y: playerY.current * height - 40,
-              text: "⚡ QUANTUM LOCK ⚡",
+              text: "⚡ CHARGING... ⚡",
               color: "#00FF00",
               life: 2.0,
               vy: -2,
@@ -3355,6 +3520,62 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Check for phase transitions
         const currentPhase = glitchModeState.current.phase;
+
+        // Notify UI of state update (including phase)
+        onQuantumLockStateUpdate?.(glitchModeState.current.isActive, currentPhase);
+
+        // Handle transition from CHARGING to ACTIVE
+        if (previousPhase === 'charging' && currentPhase === 'active') {
+          // NOW trigger the activation effects
+
+          // Trigger screen flash
+          glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('enter');
+
+          // Start connector animation
+          connectorAnimationStartTime.current = Date.now();
+
+          // Generate wave path shards
+          wavePathShards.current = GlitchSystem.generateWavePathShards(
+            glitchModeState.current.waveOffset,
+            width,
+            height / 2,
+            120 // Wave amplitude
+          );
+
+          // Pause Overdrive if active
+          if (shiftState.current.overdriveActive) {
+            const pauseResult = GlitchSystem.pauseOverdrive(
+              glitchModeState.current,
+              shiftState.current
+            );
+            glitchModeState.current = pauseResult.glitchState;
+            shiftState.current = pauseResult.overdriveState;
+          }
+
+          // Pause Resonance if active
+          if (resonanceState.current.isActive && !resonanceState.current.isPaused) {
+            const pauseResult = GlitchSystem.pauseResonance(
+              glitchModeState.current,
+              resonanceState.current
+            );
+            glitchModeState.current = pauseResult.glitchState;
+            resonanceState.current = pauseResult.resonanceState;
+          }
+
+          // Visual popup for activation
+          scorePopups.current.push({
+            x: width / 2,
+            y: height / 2,
+            text: "⚡ QUANTUM LOCK ACTIVATED ⚡",
+            color: "#00FF00",
+            life: 2.0,
+            vy: -1,
+          });
+
+          // Haptic
+          getHapticSystem().trigger("heavy");
+        }
+
 
         // Handle transition to warning phase - Requirements 7.2
         if (previousPhase === 'active' && currentPhase === 'warning') {
@@ -3422,6 +3643,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Handle ghost mode ending - Requirements 7.7
         if (previousPhase === 'ghost' && currentPhase === 'inactive') {
           // Normal gameplay restored
+          // BUG FIX: Reset spawn timer to prevent immediate "burst" of obstacles
+          framesSinceSpawn.current = 0;
+          // BUG FIX: Ensure no invisible obstacles are lingering
+          obstacles.current = [];
+
+          // Grace Period Tracker
+          lastSpecialAbilityEndTime.current = Date.now();
+
           scorePopups.current.push({
             x: width / 2,
             y: height / 2 - 40,
@@ -3447,6 +3676,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
             16.67,
             animationProgress
           );
+
+          // SAFETY: Force valid connector length during exiting to prevent shrinking death
+          if (glitchModeState.current.phase === 'exiting') {
+            currentConnectorLength.current = Math.max(
+              currentConnectorLength.current,
+              glitchModeState.current.originalConnectorLength || 200
+            );
+          }
         }
 
         // Update wave path shards positions - Requirements 5.6
@@ -3467,61 +3704,64 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // --- MIDLINE COLLISION DETECTION ---
           // Check if orbs are touching the wave (zero line)
-          const whiteOrbWaveY = GlitchSystem.calculateWaveY(
-            whiteOrbX,
-            glitchModeState.current.waveOffset,
-            waveAmplitude,
-            height / 2
-          );
-          const blackOrbWaveY = GlitchSystem.calculateWaveY(
-            blackOrbX,
-            glitchModeState.current.waveOffset,
-            waveAmplitude,
-            height / 2
-          );
+          // SAFETY: Disable collision during 'exiting' phase (Snake Out) to prevent unavoidable death
+          if (glitchModeState.current.phase !== 'exiting') {
+            const whiteOrbWaveY = GlitchSystem.calculateWaveY(
+              whiteOrbX,
+              glitchModeState.current.waveOffset,
+              waveAmplitude,
+              height / 2
+            );
+            const blackOrbWaveY = GlitchSystem.calculateWaveY(
+              blackOrbX,
+              glitchModeState.current.waveOffset,
+              waveAmplitude,
+              height / 2
+            );
 
-          const whiteHit = GlitchSystem.checkMidlineCollision(whiteOrbY, whiteOrbWaveY, 20);
-          const blackHit = GlitchSystem.checkMidlineCollision(blackOrbY, blackOrbWaveY, 20);
+            const whiteHit = GlitchSystem.checkMidlineCollision(whiteOrbY, whiteOrbWaveY, 20);
+            const blackHit = GlitchSystem.checkMidlineCollision(blackOrbY, blackOrbWaveY, 20);
 
-          if (whiteHit || blackHit) {
-            const collisionResult = GlitchSystem.registerMidlineHit(glitchModeState.current);
+            if (whiteHit || blackHit) {
+              const collisionResult = GlitchSystem.registerMidlineHit(glitchModeState.current);
 
-            if (collisionResult.hit) {
-              glitchModeState.current = collisionResult.updatedState;
+              if (collisionResult.hit) {
+                glitchModeState.current = collisionResult.updatedState;
 
-              // Visual/audio feedback for hit
-              const hitX = whiteHit ? whiteOrbX : blackOrbX;
-              const hitY = whiteHit ? whiteOrbY : blackOrbY;
-              ParticleSystem.emitBurst(hitX, hitY, activeCharacter?.types[0] || 'normal');
-              ScreenShake.triggerNearMiss();
+                // Visual/audio feedback for hit
+                const hitX = whiteHit ? whiteOrbX : blackOrbX;
+                const hitY = whiteHit ? whiteOrbY : blackOrbY;
+                ParticleSystem.emitBurst(hitX, hitY, activeCharacter?.types[0] || 'normal');
+                ScreenShake.triggerNearMiss();
 
-              // Show hit counter
-              scorePopups.current.push({
-                x: hitX,
-                y: hitY - 30,
-                text: `⚠️ HIT ${collisionResult.updatedState.midlineHits}/${GLITCH_CONFIG.midlineCollision.maxHits}`,
-                color: "#FF4444",
-                life: 0.8,
-                vy: -2,
-              });
-
-              // Check if Quantum Lock should end
-              if (collisionResult.shouldEndQuantumLock) {
-                glitchModeState.current = GlitchSystem.forceEndQuantumLock(glitchModeState.current);
-                burnEffectState.current = GlitchVFX.triggerBurnEffect();
-
-                // Failure popup
+                // Show hit counter
                 scorePopups.current.push({
-                  x: width / 2,
-                  y: height / 2,
-                  text: "🔥 QUANTUM LOCK FAILED 🔥",
-                  color: "#FF0000",
-                  life: 2.0,
-                  vy: -1,
+                  x: hitX,
+                  y: hitY - 30,
+                  text: `⚠️ HIT ${collisionResult.updatedState.midlineHits}/${GLITCH_CONFIG.midlineCollision.maxHits}`,
+                  color: "#FF4444",
+                  life: 0.8,
+                  vy: -2,
                 });
 
-                ScreenShake.triggerCollision();
-                wavePathShards.current = [];
+                // Check if Quantum Lock should end
+                if (collisionResult.shouldEndQuantumLock) {
+                  glitchModeState.current = GlitchSystem.forceEndQuantumLock(glitchModeState.current);
+                  burnEffectState.current = GlitchVFX.triggerBurnEffect();
+
+                  // Failure popup
+                  scorePopups.current.push({
+                    x: width / 2,
+                    y: height / 2,
+                    text: "🔥 QUANTUM LOCK FAILED 🔥",
+                    color: "#FF0000",
+                    life: 2.0,
+                    vy: -1,
+                  });
+
+                  ScreenShake.triggerCollision();
+                  wavePathShards.current = [];
+                }
               }
             }
           }
@@ -5344,6 +5584,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.shadowColor = accentColor;
         ctx.shadowBlur = 10;
         ctx.stroke();
+      } else if (glitchModeState.current.phase === 'charging') {
+        // Requirements: Midline Warning during charging
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#FF0000';
+        ctx.shadowBlur = 15 + Math.sin(Date.now() * 0.02) * 5; // Pulsing glow
+        ctx.stroke();
+
+        // Add "DO NOT TOUCH" warning text near midline
+        if (framesSinceSpawn.current % 60 < 40) { // Blink
+          ctx.font = "bold 12px Arial";
+          ctx.fillStyle = "#FF0000";
+          ctx.textAlign = "center";
+          ctx.fillText("⚠ TEHLİKE", width / 2, currentMidlineY - 10);
+        }
       } else {
         ctx.strokeStyle = getColor("connector");
         ctx.lineWidth = 2;
@@ -5363,7 +5618,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.font = "bold 14px Arial";
         ctx.fillStyle = "#FF6600";
         ctx.textAlign = "center";
-        ctx.fillText("⚠ CRITICAL SPACE", width / 2, 100);
+        ctx.fillText("⚠ KRİTİK ALAN", width / 2, 100);
       }
 
       // Requirements 4.14: Forecasting hint - directional shadow on horizon
@@ -5404,7 +5659,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.font = "bold 24px Arial";
         ctx.fillStyle = `rgba(255, 0, 0, ${0.5 + pulseIntensity * 0.5})`;
         ctx.textAlign = "center";
-        ctx.fillText("⚠ GRAVITY FLIP ⚠", width / 2, 60);
+        ctx.fillText("⚠ YERÇEKİMİ TERS ⚠", width / 2, 60);
 
         // Draw countdown bar
         const barWidth = 200;
@@ -5424,7 +5679,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Theme System Integration - Requirements 5.1, 5.2, 5.3
         ctx.fillStyle = getColor("accent");
         ctx.textAlign = "right";
-        ctx.fillText("🔄 FLIPPED", width - 20, 30);
+        ctx.fillText("🔄 TERS", width - 20, 30);
       }
 
       // Resonance Mode Timer Indicator - Requirements 1.7
@@ -5458,7 +5713,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillStyle = "#00F0FF";
         ctx.textAlign = "center";
         ctx.fillText(
-          `⚡ HARMONIC RESONANCE ⚡ ${remainingSeconds}s`,
+          `⚡ HARMONİK REZONANS ⚡ ${remainingSeconds}s`,
           width / 2,
           barY - 10
         );
@@ -5467,7 +5722,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         if (resonanceState.current.obstaclesDestroyed > 0) {
           ctx.font = "bold 12px Arial";
           ctx.fillText(
-            `💥 ${resonanceState.current.obstaclesDestroyed} destroyed (+${resonanceState.current.bonusScore})`,
+            `💥 ${resonanceState.current.obstaclesDestroyed} yok edildi (+${resonanceState.current.bonusScore})`,
             width / 2,
             barY + 25
           );
@@ -5584,6 +5839,94 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- GLITCH TOKEN RENDERING - Requirements 1.2 ---
       const tokenTime = Date.now() * 0.001;
+
+      // ==================================================================================
+      // CINEMATIC QUANTUM LOCK VISUALS - 4 Phase Flow (Ultrathink)
+      // ==================================================================================
+      const glitchState = glitchModeState.current;
+      const progress = Math.min(1.0, Math.max(0.0, (Date.now() - glitchState.startTime) / glitchState.duration));
+
+      // 1. WARNING PHASE (0-20% of charging)
+      // - Midline jitters and glows red to warn player
+      // - OBSTACLES ARE CLEARED
+      if (glitchState.phase === 'charging') {
+        // IMMEDIATE OBSTACLE CLEARING (User Request)
+        obstacles.current = []; // Clear all active obstacles
+
+        let displayMidlineY = currentMidlineY;
+
+        // EXTENDED WARNING PHASE (0-40% of charging)
+        // User requested a slower, smoother slide for preparedness
+        if (progress < 0.4) {
+          // Intensity ramps up over 40% of duration (slower)
+          const intensity = progress * 2.5; // 0.0 to 1.0 scaling
+
+          // Requirements 7.2 - Smooth Slide Down (Preparedness)
+          // Simulate midline "descending" into position for Quantum Lock
+          // Moves from (Y - 50) to Y
+          const slideOffset = 50 * (1.0 - intensity);
+          displayMidlineY = currentMidlineY - slideOffset;
+
+          GlitchVFX.renderFieryMidline(ctx, width, displayMidlineY, intensity);
+
+          // Warning Text
+          if (framesSinceSpawn.current % 30 < 20) {
+            ctx.font = "bold 16px Arial";
+            ctx.fillStyle = `rgba(255, 0, 80, ${intensity})`;
+            ctx.textAlign = "center";
+            ctx.fillText("⚠ KUANTUM AKIŞI ALGILANDI", width / 2, displayMidlineY - 25);
+          }
+        }
+        // 2. SNAKE IN PHASE (40% - 100% of charging)
+        // - Green wave snakes in from RIGHT to LEFT
+        else {
+          const snakeProgress = (progress - 0.4) / 0.6; // 0.0 to 1.0
+
+          // Head moves from Width to 0
+          const headX = width - (width * snakeProgress);
+          const tailX = width;
+
+          GlitchVFX.renderDynamicWave(ctx, headX, tailX, width, height, glitchState);
+          GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0); // Full fire
+        }
+      }
+
+      // 3. ACTIVE PHASE
+      // - Full wave visible (Head at 0, Tail at Width)
+      // - Midline is dangerous (Fire)
+      else if (glitchState.phase === 'active') {
+        const activeElapsed = Date.now() - glitchState.startTime;
+        const activeDuration = glitchState.duration;
+
+        // Render Full Wave
+        GlitchVFX.renderDynamicWave(ctx, 0, width, width, height, glitchState);
+        GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0);
+      }
+
+      // 4. SNAKE OUT PHASE (Exiting)
+      // - Tail follows head off-screen (Width -> 0)
+      else if (glitchState.phase === 'exiting') {
+        // Determine progress within the exiting phase
+        // The exiting phase is triggered by GlitchSystem (e.g. at >80% progress)
+        // We need to map global progress (0.8 -> 1.0) to local exit progress (0.0 -> 1.0)
+
+        // If GlitchSystem doesn't provide explicit exiting start time, we derive from duration
+        // Assuming exiting starts at 80% mark (defined in constants as flattenThreshold)
+        const exitThreshold = 0.8;
+        const exitProgress = Math.max(0, (progress - exitThreshold) / (1.0 - exitThreshold));
+
+        // Tail moves: Width -> 0
+        const tailX = width - (width * exitProgress);
+
+        // Head is already at 0 (or technically further left)
+        const headX = 0;
+
+        GlitchVFX.renderDynamicWave(ctx, headX, tailX, width, height, glitchState);
+
+        // Fade out fire intensity as it leaves
+        GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0 - exitProgress);
+      }
+
       glitchTokens.current.forEach((token) => {
         if (token.collected) return;
 
@@ -5656,6 +5999,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (glitchModeState.current.isActive || glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting') {
         const glitchProgress = GlitchSystem.getGlitchProgress(glitchModeState.current);
 
+        // Determine active visual width (for Snake Out effect)
+        let activeVisualWidth = width;
+        if (glitchModeState.current.phase === 'exiting') {
+          const exitThreshold = 0.8;
+          const progress = Math.min(1.0, Math.max(0.0, (Date.now() - glitchModeState.current.startTime) / glitchModeState.current.duration));
+          const exitProgress = Math.max(0, (progress - exitThreshold) / (1.0 - exitThreshold));
+          activeVisualWidth = width - (width * exitProgress);
+        }
+
         // Render sinus tunnel - Requirements 5.3, 5.4, 5.5
         const waveAmplitude = GlitchSystem.getWaveAmplitudeForPhase(
           glitchModeState.current.phase,
@@ -5663,13 +6015,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ) * 120; // Base amplitude
 
         if (waveAmplitude > 0) {
-          GlitchVFX.renderSinusTunnel(
-            ctx,
-            width,
-            height,
-            glitchModeState.current.waveOffset,
-            waveAmplitude
-          );
+          // Clip tunnel to active width (for entry/warning phases)
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, activeVisualWidth, height);
+          ctx.clip();
+
+          // HIDE TUNNEL ENTIRELY during 'exiting' to prevent "Double Snake" ghosting
+          // User wants ONLY the main snake visible during exit
+          if (glitchModeState.current.phase !== 'exiting') {
+            GlitchVFX.renderSinusTunnel(
+              ctx,
+              width,
+              height,
+              glitchModeState.current.waveOffset,
+              waveAmplitude
+            );
+          }
+          ctx.restore();
         }
 
         // Render static noise - Requirements 8.1, 8.6
@@ -5687,6 +6050,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Render wave path shards - Requirements 5.6, 6.4
         wavePathShards.current.forEach((shard) => {
           if (shard.collected) return;
+
+          // Hide shards that are "left behind" by the exiting snake
+          if (glitchModeState.current.phase === 'exiting' && shard.x > activeVisualWidth) return;
 
           const shardTime = Date.now() * 0.003;
           const pulseScale = 1 + Math.sin(shardTime * 2) * 0.15;
@@ -5751,7 +6117,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillStyle = "#00FF00";
         ctx.textAlign = "center";
         ctx.fillText(
-          `⚡ QUANTUM LOCK ⚡ ${remainingSeconds}s`,
+          `⚡ KUANTUM KİLİDİ ⚡ ${remainingSeconds}s`,
           width / 2,
           barY - 10
         );
@@ -5768,7 +6134,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillStyle = `rgba(0, 255, 0, ${0.5 + (1 - ghostProgress) * 0.5})`;
         ctx.textAlign = "center";
         ctx.fillText(
-          `👻 GHOST MODE 👻 ${remainingSeconds}s`,
+          `👻 HAYALET MODU 👻 ${remainingSeconds}s`,
           width / 2,
           90
         );
@@ -5880,7 +6246,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.textAlign = "center";
         ctx.shadowColor = "#FF00FF";
         ctx.shadowBlur = 8;
-        ctx.fillText(`⚡ OVERDRIVE ${remainingSeconds}s ⚡`, hudX, barY + 14);
+        ctx.fillText(`⚡ AŞIRI YÜKLEME ${remainingSeconds}s ⚡`, hudX, barY + 14);
         ctx.shadowBlur = 0;
       }
 
@@ -6724,7 +7090,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Create obstacle at right edge of screen using pattern dimensions
           const obsWidth = 35; // Thicker blocks for better visibility
           // Use screen-relative height: 45% for normal, 55% for midline crossing
-          const blockHeight = block.crossesCenter ? height * 0.55 : height * 0.45;
+          const blockHeight = block.height ?? (block.crossesCenter ? height * 0.55 : height * 0.45);
           const blockY = block.lane === 'top'
             ? 0
             : height - blockHeight;
@@ -7441,6 +7807,73 @@ const GameEngine: React.FC<GameEngineProps> = ({
           </div>
         </div>
       )}
+
+      {/* Start Sequence Countdown Overlay - 3-2-1-GO! */}
+      {gameState === GameState.PLAYING && countdownDisplay.active && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+          style={{
+            backdropFilter: countdownDisplay.value > 0 ? 'blur(10px)' : 'none',
+            transition: 'backdrop-filter 0.15s ease-out',
+          }}
+        >
+          {countdownDisplay.value >= 0 && (
+            <div
+              key={countdownDisplay.value}
+              className="flex items-center justify-center"
+              style={{
+                width: '140px',
+                height: '140px',
+                borderRadius: '50%',
+                border: countdownDisplay.value > 0
+                  ? '4px solid #FF00FF'
+                  : '4px solid #00FF88',
+                boxShadow: countdownDisplay.value > 0
+                  ? '0 0 20px #FF00FF, 0 0 40px #FF00FF, inset 0 0 30px rgba(255,0,255,0.2)'
+                  : '0 0 20px #00FF88, 0 0 40px #00FF88, inset 0 0 30px rgba(0,255,136,0.2)',
+                background: 'rgba(0, 0, 0, 0.6)',
+                animation: 'countdownPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: countdownDisplay.value > 0 ? '72px' : '48px',
+                  fontWeight: 900,
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  color: countdownDisplay.value > 0 ? '#00F0FF' : '#00FF88',
+                  textShadow: countdownDisplay.value > 0
+                    ? '0 0 15px #00F0FF, 0 0 30px #00F0FF'
+                    : '0 0 15px #00FF88, 0 0 30px #00FF88',
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                {countdownDisplay.value > 0 ? countdownDisplay.value : 'BAŞLA!'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Countdown animation keyframes */}
+      <style>{`
+        @keyframes countdownPop {
+          0% {
+            transform: scale(0.3);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.1);
+            opacity: 1;
+          }
+          70% {
+            transform: scale(0.95);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 };

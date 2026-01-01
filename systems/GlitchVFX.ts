@@ -7,6 +7,7 @@
  * - Static noise overlay
  * - Screen flash effects
  * - Connector visual effects during Quantum Lock and Ghost Mode
+ * - Cinematic Tech Snake & Plasma Fire
  * 
  * Requirements: 1.1-1.5, 4.5, 4.6, 5.3-5.5, 7.5, 8.1, 8.3, 8.4, 8.6
  */
@@ -490,7 +491,7 @@ export function renderStaticNoise(
 
 /**
  * Gets the noise intensity based on current phase and progress
- * Requirements 8.6: Reduce intensity during exit warning
+ * Requirements 8.6: Reduce intensity gradually during exit warning
  * 
  * @param phase - Current glitch mode phase
  * @param progress - Progress through Quantum Lock (0.0 to 1.0)
@@ -798,239 +799,273 @@ export function renderGlitchVFX(
 function getWaveAmplitudeMultiplier(phase: GlitchPhase, progress: number): number {
   switch (phase) {
     case 'active':
+      return 1.0;
     case 'warning':
+      // Flatten wave during warning
+      // Only flattened for consistency, user wants "Snake" movement for entry instead
       return 1.0;
     case 'exiting':
-      // Flatten from 80% to 100%
-      const flattenProgress = (progress - 0.80) / 0.20;
-      return Math.max(0, 1.0 - flattenProgress);
+      // Flatten wave during exit
+      const exitProgress = (progress - 0.80) / 0.20; // 0.80 to 1.0
+      return 1.0 - exitProgress;
+    case 'ghost':
+      return 0.0; // No wave in ghost mode
+    case 'inactive':
     default:
       return 0.0;
   }
 }
 
 // ============================================================================
-// Quantum Lock Ambiance VFX - Atmospheric Effects
+// Cinematic Quantum Lock Visuals - Snake Wave & Fiery Midline (ULTRATHINK)
 // ============================================================================
 
 /**
- * Renders edge vignette during Quantum Lock for dangerous atmosphere
- * Creates dark green tinted corners that pulse with the wave
- * 
- * @param ctx - Canvas 2D rendering context
+ * Renders the "Snake Wave" animation with a professional "Tech Snake" head.
+ * The wave is rendered only between tailX and headX, creating a slithering effect.
+ *
+ * @param ctx - Canvas context
+ * @param headX - The leading edge of the snake (in screen X coordinates)
+ * @param tailX - The trailing edge of the snake (in screen X coordinates)
  * @param width - Canvas width
  * @param height - Canvas height
- * @param intensity - Effect intensity (0.0 to 1.0)
- * @param pulse - Pulse value (0.0 to 1.0) synchronized with wave
+ * @param state - Current glitch state
  */
-export function renderQuantumLockVignette(
+export function renderDynamicWave(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  intensity: number,
-  pulse: number = 0.5
-): void {
-  if (intensity <= 0) return;
-
-  const config = GLITCH_CONFIG.ambiance;
-  const pulseIntensity = intensity * (0.85 + 0.15 * pulse);
-
-  ctx.save();
-
-  // Create radial gradient for vignette from edges
-  const gradient = ctx.createRadialGradient(
-    width / 2, height / 2, height * 0.25,  // Inner circle (clear)
-    width / 2, height / 2, Math.max(width, height) * 0.85  // Outer circle (dark)
-  );
-
-  const [r, g, b] = config.vignetteColor;
-  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, ${pulseIntensity * 0.3})`);
-  gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${pulseIntensity * config.vignetteIntensity})`);
-
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.restore();
-}
-
-/**
- * Renders CRT scanlines for retro/digital atmosphere
- * 
- * @param ctx - Canvas 2D rendering context
- * @param width - Canvas width
- * @param height - Canvas height
- * @param intensity - Effect intensity (0.0 to 1.0)
- */
-export function renderQuantumLockScanlines(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  intensity: number
-): void {
-  if (intensity <= 0) return;
-
-  const config = GLITCH_CONFIG.ambiance;
-  const opacity = config.scanlineOpacity * intensity;
-
-  ctx.save();
-  ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
-
-  // Draw horizontal scanlines
-  for (let y = 0; y < height; y += config.scanlineSpacing) {
-    ctx.fillRect(0, y, width, 1);
-  }
-
-  ctx.restore();
-}
-
-/**
- * Renders danger pulse overlay - subtle red pulse for tension
- * 
- * @param ctx - Canvas 2D rendering context
- * @param width - Canvas width
- * @param height - Canvas height
- * @param intensity - Effect intensity (0.0 to 1.0)
- * @param pulse - Pulse value (0.0 to 1.0)
- */
-export function renderQuantumLockDangerPulse(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  intensity: number,
-  pulse: number
-): void {
-  if (intensity <= 0) return;
-
-  const config = GLITCH_CONFIG.ambiance;
-  const pulseOpacity = config.dangerPulseIntensity * intensity * pulse;
-
-  if (pulseOpacity <= 0.01) return;
-
-  ctx.save();
-
-  // Edge glow effect - danger from the edges
-  const gradient = ctx.createRadialGradient(
-    width / 2, height / 2, height * 0.4,
-    width / 2, height / 2, Math.max(width, height)
-  );
-  gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
-  gradient.addColorStop(0.6, 'rgba(255, 0, 0, 0)');
-  gradient.addColorStop(1, `rgba(255, 42, 42, ${pulseOpacity})`);
-
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.restore();
-}
-
-/**
- * Renders all Quantum Lock ambiance effects
- * Combines vignette, scanlines, and danger pulse for full atmosphere
- * 
- * @param ctx - Canvas 2D rendering context
- * @param width - Canvas width
- * @param height - Canvas height
- * @param state - Current glitch mode state
- */
-export function renderQuantumLockAmbiance(
-  ctx: CanvasRenderingContext2D,
+  headX: number,
+  tailX: number,
   width: number,
   height: number,
   state: GlitchModeState
 ): void {
-  if (!state.isActive && state.phase !== 'warning' && state.phase !== 'exiting') {
-    return;
-  }
+  // If snake is fully off-screen, don't draw
+  if (headX > width + 200 && tailX > width) return; // Allow head to be slightly offscreen
+  if (headX < -200 && tailX < 0) return;
 
-  const progress = getGlitchProgress(state);
-  const config = GLITCH_CONFIG.ambiance;
+  const waveAmplitude = 120; // Full amplitude
+  const waveColor = '#00FF00'; // Matrix Green
 
-  // Calculate intensity based on phase
-  let intensity = 1.0;
-  if (state.phase === 'exiting') {
-    intensity = 1.0 - ((progress - 0.80) / 0.20);
-  }
-
-  // Sync pulse with wave offset for cohesive feel
-  const pulse = (Math.sin(state.waveOffset * 2) + 1) / 2;
-
-  // Background darkening overlay - creates the distinct atmosphere
   ctx.save();
-  const darkenAmount = (config.backgroundDarken || 0.3) * intensity;
-  ctx.fillStyle = `rgba(0, 0, 0, ${darkenAmount})`;
-  ctx.fillRect(0, 0, width, height);
-  ctx.restore();
+  ctx.beginPath();
 
-  // Electric glow border around screen edges
-  ctx.save();
-  const glowColor = config.glowColor || [0, 255, 200];
-  const glowIntensity = 0.3 * intensity * (0.7 + 0.3 * pulse);
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${glowIntensity})`);
-  gradient.addColorStop(0.1, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(0.9, 'rgba(0, 0, 0, 0)');
-  gradient.addColorStop(1, `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${glowIntensity})`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-  ctx.restore();
+  // Create clipping region for the snake body
+  const startX = Math.max(0, Math.min(headX, tailX));
+  const endX = Math.min(width, Math.max(headX, tailX));
 
-  // Render all ambiance layers
-  renderQuantumLockVignette(ctx, width, height, intensity, pulse);
-  renderQuantumLockScanlines(ctx, width, height, intensity);
-
-  // Danger pulse in warning/exiting phases AND subtle pulse always for atmosphere
-  if (state.phase === 'warning' || state.phase === 'exiting') {
-    const dangerPulse = (Math.sin(Date.now() * 0.01) + 1) / 2;
-    renderQuantumLockDangerPulse(ctx, width, height, intensity, dangerPulse);
-  } else {
-    // Subtle cyan pulse for active phase
-    const subtlePulse = (Math.sin(Date.now() * 0.005) + 1) / 2;
-    ctx.save();
-    ctx.fillStyle = `rgba(${glowColor[0]}, ${glowColor[1]}, ${glowColor[2]}, ${0.03 * subtlePulse * intensity})`;
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
+  if (endX - startX <= 0 && headX > width) {
+    // Setup for potential offscreen head rendering if needed, 
+    // but if segment is invisible and head is far, return.
+    // Special handling: if head is just arriving, we might need to draw it even if path is short
   }
+
+  // === 1. Draw The Wave Body (The "Snake") ===
+  // We'll use a path for the sine wave
+  for (let x = startX; x <= endX; x += 5) { // Higher resolution for smoothness
+    const y = calculateWaveY(
+      x,
+      state.waveOffset,
+      waveAmplitude,
+      height / 2
+    );
+    if (x === startX) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+
+  // Visual Styling: Neon Green "Laser" look
+  ctx.strokeStyle = waveColor;
+  ctx.lineWidth = 8;
+  ctx.shadowColor = waveColor;
+  ctx.shadowBlur = 25;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Inner core (white/bright green)
+  ctx.strokeStyle = '#CCFFCC';
+  ctx.lineWidth = 3;
+  ctx.shadowBlur = 5;
+  ctx.stroke();
+
+  // === 2. Draw The "Tech Snake" Head ===
+  // Only draw if head is within reasonable bounds (even slightly offscreen for entry)
+  if (headX >= -100 && headX <= width + 100) {
+    const centerY = height / 2;
+    const headY = calculateWaveY(headX, state.waveOffset, waveAmplitude, centerY);
+
+    // Calculate Wave Derivative/Slope to rotate the head
+    // y = A * sin(kx + w) -> y' = A * k * cos(kx + w)
+    // Or simple numeric derivative:
+    const prevX = headX - 5;
+    const prevY = calculateWaveY(prevX, state.waveOffset, waveAmplitude, centerY);
+    const angle = Math.atan2(headY - prevY, headX - prevX);
+
+    ctx.translate(headX, headY);
+    ctx.rotate(angle);
+
+    // --- Geometric Tech Head ---
+    const headSize = 25;
+
+    // Outer Shield/Carapace (Diamond Shape)
+    ctx.beginPath();
+    ctx.moveTo(10, 0); // Nose tip
+    ctx.lineTo(-headSize, headSize * 0.6); // Top back
+    ctx.lineTo(-headSize * 0.8, 0); // Center back notch
+    ctx.lineTo(-headSize, -headSize * 0.6); // Bottom back
+    ctx.closePath();
+
+    ctx.fillStyle = '#003300';
+    ctx.fill();
+    ctx.strokeStyle = '#00FF00';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00FF00';
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+
+    // Inner Reactor / Eye (Glowing Core)
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-15, 6);
+    ctx.lineTo(-15, -6);
+    ctx.closePath();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = '#FFFFFF';
+    ctx.shadowBlur = 20;
+    ctx.fill();
+
+    // Scanner Beams (Cosmetic lines trails)
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#AAFFAA';
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    ctx.moveTo(-10, 10);
+    ctx.lineTo(-40, 15); // Trail line 1
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-10, -10);
+    ctx.lineTo(-40, -15); // Trail line 2
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Renders the "Fiery Midline" warning effect - PROFESSIONAL VERSION.
+ * Uses layered sine waves to create a "Plasma Fire" look instead of simple jitter.
+ *
+ * @param ctx - Canvas context
+ * @param width - Canvas width
+ * @param y - Midline Y position
+ * @param intensity - 0.0 to 1.0 (how "strong" the fire is)
+ */
+export function renderFieryMidline(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  y: number,
+  intensity: number
+): void {
+  if (intensity <= 0.01) return;
+
+  const time = Date.now() * 0.01; // Slower, smoother time base
+
+  ctx.save();
+
+  // Create a "Plasma" look by summing sine waves
+  // We want a line that ripples dangerously
+
+  // Layer 1: The Core (Hot White/Yellow) - Fast, tight ripples
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  for (let x = 0; x <= width; x += 10) {
+    // Mix of 3 sine waves for "noise" look
+    const noise = Math.sin(x * 0.05 + time * 5) * Math.sin(x * 0.01 - time * 2) * 2;
+    const ripples = Math.sin(x * 0.2 + time * 10) * 3;
+    const offset = (noise + ripples) * intensity;
+    ctx.lineTo(x, y + offset);
+  }
+  ctx.lineWidth = 2 + intensity * 2;
+  ctx.strokeStyle = `rgba(255, 255, 200, ${intensity})`; // Bright yellow/white
+  ctx.shadowColor = '#FF4400';
+  ctx.shadowBlur = 10 * intensity;
+  ctx.stroke();
+
+  // Layer 2: The Outer Flame (Red/Magenta) - Slower, wider swells
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  for (let x = 0; x <= width; x += 20) {
+    // Wider waves
+    const swell = Math.sin(x * 0.02 + time * 2) * 10 * intensity; // Large slow swell
+    const jitter = (Math.random() - 0.5) * 4 * intensity; // Slight static
+    ctx.lineTo(x, y + swell + jitter);
+  }
+  ctx.lineWidth = 4 + intensity * 6; // Much thicker
+  ctx.strokeStyle = `rgba(255, 0, 60, ${intensity * 0.6})`; // Deep Neon Red
+  ctx.shadowColor = '#FF0000';
+  ctx.shadowBlur = 30 * intensity; // Massive glow
+  // Use 'screen' blend mode for fiery addition if possible, but standard alpha is safer for consistency
+  ctx.stroke();
+
+  // Layer 3: Warning Particles (Embers)
+  if (intensity > 0.3) {
+    const emberCount = Math.floor(width / 30 * intensity);
+    ctx.fillStyle = '#FFDD00';
+    for (let i = 0; i < emberCount; i++) {
+      // Deterministic pseudo-random positions based on time slices to avoid "shimmering" too much
+      // Actually, random is fine for embers
+      if (Math.random() > 0.92) {
+        const ex = Math.random() * width;
+        const ey = y + (Math.random() - 0.5) * 60 * intensity;
+        const size = Math.random() * 3 * intensity;
+        ctx.globalAlpha = Math.random() * intensity;
+
+        ctx.beginPath();
+        ctx.arc(ex, ey, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  ctx.restore();
 }
 
 // ============================================================================
-// Burn Effect - Midline Collision Failure
+// Burn Effect State - Restored & Render Ambiance
 // ============================================================================
 
-/**
- * Burn effect state for tracking animation
- */
 export interface BurnEffectState {
   isActive: boolean;
   startTime: number;
   duration: number;
 }
 
-/**
- * Creates initial burn effect state
- */
 export function createBurnEffectState(): BurnEffectState {
   return {
     isActive: false,
     startTime: 0,
-    duration: 300,
+    duration: 0
   };
 }
 
 /**
- * Triggers burn effect when Quantum Lock ends from too many hits
+ * Triggers a burn effect (screen distortion/red tint)
+ * Used when player hits the yasakli hat (midline) during flux overload
+ * 
+ * @param duration - Duration of the effect in ms
  */
-export function triggerBurnEffect(): BurnEffectState {
+export function triggerBurnEffect(duration: number = 500): BurnEffectState {
   return {
     isActive: true,
     startTime: Date.now(),
-    duration: GLITCH_CONFIG.midlineCollision.burnEffectDuration,
+    duration
   };
 }
 
 /**
- * Updates burn effect state
+ * Updates the burn effect state
+ * 
+ * @param state - Current burn effect state
  */
 export function updateBurnEffect(state: BurnEffectState): BurnEffectState {
   if (!state.isActive) return state;
@@ -1044,12 +1079,12 @@ export function updateBurnEffect(state: BurnEffectState): BurnEffectState {
 }
 
 /**
- * Renders burn effect - red/orange flash when Quantum Lock fails
+ * Renders the burn effect overlay
  * 
- * @param ctx - Canvas 2D rendering context
+ * @param ctx - Canvas context
  * @param width - Canvas width
  * @param height - Canvas height
- * @param state - Burn effect state
+ * @param state - Current burn effect state
  */
 export function renderBurnEffect(
   ctx: CanvasRenderingContext2D,
@@ -1060,70 +1095,73 @@ export function renderBurnEffect(
   if (!state.isActive) return;
 
   const elapsed = Date.now() - state.startTime;
-  const progress = Math.min(1, elapsed / state.duration);
-
-  // Peak intensity at 30%, then fade out
-  let intensity: number;
-  if (progress < 0.3) {
-    intensity = progress / 0.3;
-  } else {
-    intensity = (1 - progress) / 0.7;
-  }
+  const progress = Math.min(1.0, elapsed / state.duration);
+  const intensity = 1.0 - progress; // Fade out
 
   ctx.save();
 
-  // Red/orange gradient from center
-  const gradient = ctx.createRadialGradient(
-    width / 2, height / 2, 0,
-    width / 2, height / 2, Math.max(width, height) * 0.8
-  );
-  gradient.addColorStop(0, `rgba(255, 100, 0, ${intensity * 0.6})`);
-  gradient.addColorStop(0.3, `rgba(255, 50, 0, ${intensity * 0.4})`);
-  gradient.addColorStop(0.7, `rgba(255, 0, 0, ${intensity * 0.2})`);
-  gradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
-
-  ctx.fillStyle = gradient;
+  // Red tint overlay
+  ctx.fillStyle = `rgba(255, 50, 0, ${intensity * 0.3})`;
   ctx.fillRect(0, 0, width, height);
+
+  // Random noise/burn lines
+  if (Math.random() < 0.5) {
+    const lineCount = Math.floor(10 * intensity);
+    ctx.strokeStyle = `rgba(255, 100, 0, ${intensity * 0.8})`;
+    ctx.lineWidth = 2;
+
+    for (let i = 0; i < lineCount; i++) {
+      const y = Math.random() * height;
+      const x = Math.random() * width;
+      const len = Math.random() * 100;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + len, y);
+      ctx.stroke();
+    }
+  }
 
   ctx.restore();
 }
 
 /**
- * Renders midline hit indicator - flash when orb touches wave
+ * Renders the Quantum Lock Ambiance (Vignette, Pulse, etc.)
  * 
- * @param ctx - Canvas 2D rendering context
- * @param x - Hit X position
- * @param y - Hit Y position
- * @param hitCount - Current hit count
- * @param maxHits - Maximum hits allowed
+ * @param ctx - Canvas context
+ * @param width - Canvas width
+ * @param height - Canvas height
+ * @param state - Current glitch mode state
  */
-export function renderMidlineHitIndicator(
+export function renderQuantumLockAmbiance(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  hitCount: number,
-  maxHits: number
+  width: number,
+  height: number,
+  state: GlitchModeState
 ): void {
+  if (!state.isActive && state.phase !== 'charging') return;
+
   ctx.save();
 
-  // Red spark at hit location
-  const pulseSize = 30 + Math.sin(Date.now() * 0.02) * 10;
-  const gradient = ctx.createRadialGradient(x, y, 0, x, y, pulseSize);
-  gradient.addColorStop(0, 'rgba(255, 100, 0, 0.8)');
-  gradient.addColorStop(0.5, 'rgba(255, 50, 0, 0.4)');
-  gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+  // Vignette Effect
+  // Darkens the corners to focus attention
+  const gradient = ctx.createRadialGradient(
+    width / 2, height / 2, Math.max(width, height) * 0.4,
+    width / 2, height / 2, Math.max(width, height) * 0.9
+  );
+
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(1, 'rgba(0, 50, 0, 0.4)'); // Dark Green Vignette
 
   ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(x, y, pulseSize, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillRect(0, 0, width, height);
 
-  // Hit counter text
-  ctx.font = 'bold 14px Arial';
-  ctx.fillStyle = '#FF4444';
-  ctx.textAlign = 'center';
-  ctx.fillText(`${hitCount}/${maxHits}`, x, y - 40);
+  // Scanlines (Subtle)
+  if (state.isActive) {
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.05)';
+    for (let y = 0; y < height; y += 4) {
+      ctx.fillRect(0, y, width, 1);
+    }
+  }
 
   ctx.restore();
 }
-

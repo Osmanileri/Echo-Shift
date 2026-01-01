@@ -473,7 +473,7 @@ export interface MissionEvent {
  * Phase type for Glitch Protocol state machine
  * Requirements 7.1, 7.2, 7.3, 7.4: Define phase transitions
  */
-export type GlitchPhase = 'inactive' | 'active' | 'warning' | 'exiting' | 'ghost';
+export type GlitchPhase = 'inactive' | 'charging' | 'active' | 'warning' | 'exiting' | 'ghost';
 
 /**
  * Glitch Shard interface - the collectible that triggers Quantum Lock

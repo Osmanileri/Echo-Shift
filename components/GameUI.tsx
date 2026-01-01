@@ -23,7 +23,7 @@ import {
 import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
 import { getHapticSystem } from "../systems/hapticSystem";
-import { GameState } from "../types";
+import { GameState, GlitchPhase } from "../types";
 
 interface GameUIProps {
   gameState: GameState;
@@ -71,6 +71,7 @@ interface GameUIProps {
   dashRemainingPercent?: number; // Remaining dash time (100 = full, 0 = empty)
   // Quantum Lock - Requirements 7.5
   isQuantumLockActive?: boolean;
+  glitchPhase?: GlitchPhase;
   // Tutorial Mode - Level 0 interactive tutorial
   tutorialMode?: boolean;
 }
@@ -120,6 +121,7 @@ const GameUI: React.FC<GameUIProps> = ({
   dashActive = false,
   dashRemainingPercent = 100,
   isQuantumLockActive = false,
+  glitchPhase,
   // Tutorial Mode - hide all HUD during tutorial
   tutorialMode = false,
 }) => {
@@ -261,7 +263,7 @@ const GameUI: React.FC<GameUIProps> = ({
                 className={`text-[10px] md:text-xs font-bold mt-1 uppercase tracking-widest transition-all duration-300 ${dashActive ? 'text-cyan-400' : 'text-gray-300'}`}
                 style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.7)' }}
               >
-                {dashActive ? 'WARP!' : 'Mesafe'}
+                {dashActive ? 'IŞINLAN!' : 'Mesafe'}
               </span>
             </div>
           ) : (
@@ -531,6 +533,23 @@ const GameUI: React.FC<GameUIProps> = ({
         {/* Phase Dash Active Border */}
         {dashActive && (
           <div className="absolute inset-0 pointer-events-none z-5 border-4 border-cyan-500/50 animate-pulse" />
+        )}
+        {/* Quantum Lock Status Indicator */}
+        {/* Quantum Lock Status Indicator - Active Phase Only */}
+        {isQuantumLockActive && glitchPhase === 'active' && (
+          <div className="absolute bottom-28 right-5 pointer-events-none z-10 flex flex-col items-center gap-2">
+            <div className="relative w-16 h-16 flex items-center justify-center rounded-full border-2 backdrop-blur-sm transition-all duration-300 border-green-400 bg-green-500/20 shadow-[0_0_20px_rgba(74,222,128,0.5)] animate-pulse">
+              {/* Icon */}
+              <div className="z-10 text-white font-black text-2xl tracking-tighter">
+                🔒
+              </div>
+            </div>
+
+            {/* Label */}
+            <span className="text-[10px] font-bold uppercase tracking-widest transition-all duration-300 text-green-400 animate-pulse">
+              KUANTUM KİLİDİ
+            </span>
+          </div>
         )}
       </>
     );

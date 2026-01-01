@@ -153,6 +153,21 @@ export interface TutorialVFXState {
         progress: number;     // 0-1
     };
 
+    // DIAMOND COLLECTION PHASE - Dash Meter & Overlay
+    dashMeter: {
+        visible: boolean;
+        progress: number;           // 0-100
+        pulseIntensity: number;     // 0-1
+        lastCollectionFlash: number; // 0-1 (decay)
+    };
+    diamondTutorialOverlay: {
+        active: boolean;
+        phase: 'intro' | 'collect' | 'dash_explain' | 'store_explain' | 'none';
+        textAlpha: number;
+        zoomProgress: number;       // 0-1 zoom animasyonu
+        particleTimer: number;
+    };
+
     // General timing
     time: number;
     deltaTime: number;
@@ -253,6 +268,20 @@ export function createInitialState(): TutorialVFXState {
             active: false,
             progress: 0,
         },
+        // DIAMOND COLLECTION PHASE
+        dashMeter: {
+            visible: false,
+            progress: 0,
+            pulseIntensity: 0,
+            lastCollectionFlash: 0,
+        },
+        diamondTutorialOverlay: {
+            active: false,
+            phase: 'none',
+            textAlpha: 0,
+            zoomProgress: 0,
+            particleTimer: 0,
+        },
         time: 0,
         deltaTime: 0,
     };
@@ -287,9 +316,6 @@ export function update(
             break;
         case 'SWAP_MECHANIC':
             updateSwapVFX(newState, tutorialState);
-            break;
-        case 'CONNECTOR':
-            updateConnectorVFX(newState, tutorialState, canvasHeight);
             break;
         case 'SHARP_MANEUVER':
             updateSharpManeuverVFX(newState, tutorialState);
@@ -382,13 +408,22 @@ function updateNavigationVFX(
         state.pulseCircle.active = false;
     }
 
-    // --- FOCUS MASK (Original Scaling Logic) ---
+    // --- FOCUS MASK (Dynamic Tracking) ---
     // "Gelen karakter ile aynı şekilde büyüyen ve sabit duran"
     const focusWidth = (orbRadius + padding) * 2;
     const focusHeight = connectorLength + (orbRadius + padding) * 2;
 
     const scale = tutorial.focusMaskScale ?? 0;
     const showMask = tutorial.showFocusMask !== undefined ? tutorial.showFocusMask : true;
+
+    // Calculate current player X based on slide progress
+    // SYNC FIX: Match GameEngine rendering logic exactly
+    // Slide from left (-50) to target (width / 8)
+    const slideProgress = tutorial.playerSlideInProgress ?? 1;
+    const targetX = canvasWidth / 8;
+    const startX = -50;
+    const currentOrbX = startX + (targetX - startX) * slideProgress;
+
     state.focusMask.enabled = scale > 0 && showMask;
     state.focusMask.alpha = Math.min(0.85, scale * 0.85);
 
@@ -396,7 +431,7 @@ function updateNavigationVFX(
     const scaledHeight = focusHeight * scale;
 
     state.focusMask.targetArea = {
-        x: orbX - scaledWidth / 2,
+        x: currentOrbX - scaledWidth / 2,
         y: canvasHeight / 2 - scaledHeight / 2,
         width: scaledWidth,
         height: scaledHeight,
@@ -475,34 +510,7 @@ function updateSwapVFX(
 
 }
 
-function updateConnectorVFX(
-    state: TutorialVFXState,
-    tutorial: TutorialState,
-    canvasHeight: number
-): void {
-    // Disable time distortion
-    state.timeDistortion.active = false;
-    state.glitchText.visible = false;
 
-    // Generate lightning arcs on connector
-    if (Math.random() < 0.1) {
-        const arc: LightningArc = {
-            points: generateLightningPoints(5, canvasHeight * 0.4, canvasHeight * 0.6),
-            alpha: 1,
-            time: state.time,
-        };
-        state.lightningArcs.push(arc);
-    }
-
-    // Fade out old arcs
-    state.lightningArcs = state.lightningArcs
-        .map(arc => ({ ...arc, alpha: arc.alpha - 0.05 }))
-        .filter(arc => arc.alpha > 0);
-
-    // Warning banners
-    state.warningBanners.visible = true;
-    state.warningBanners.alpha = 0.5 + Math.sin(state.time * 0.01) * 0.3;
-}
 
 function updateSharpManeuverVFX(
     state: TutorialVFXState,
@@ -553,6 +561,52 @@ function updateDiamondVFX(
     // Diamond glow pulsing
     state.diamondGlow.active = true;
     state.diamondGlow.intensity = 0.7 + Math.sin(state.time * 0.008) * 0.3;
+
+    // === DASH METER ===
+    state.dashMeter.visible = true;
+
+    // Calculate progress based on collected diamonds (8 total)
+    const targetProgress = (tutorial.diamondsCollected / 8) * 100;
+
+    // Smooth interpolation toward target
+    state.dashMeter.progress += (targetProgress - state.dashMeter.progress) * 0.1;
+
+    // Pulse effect (continuous)
+    state.dashMeter.pulseIntensity = 0.5 + Math.sin(state.time * 0.01) * 0.5;
+
+    // Flash decay on collection
+    if (state.dashMeter.lastCollectionFlash > 0) {
+        state.dashMeter.lastCollectionFlash = Math.max(0, state.dashMeter.lastCollectionFlash - 0.05);
+    }
+
+    // === DIAMOND TUTORIAL OVERLAY ===
+    const elapsed = Date.now() - tutorial.phaseStartTime;
+
+    // INTRO phase (0-3s): Big diamond icon + "ELMASLARI TOPLA!"
+    if (elapsed < 3000) {
+        state.diamondTutorialOverlay.active = true;
+        state.diamondTutorialOverlay.phase = 'intro';
+        state.diamondTutorialOverlay.textAlpha = Math.min(1, elapsed / 500);
+        state.diamondTutorialOverlay.particleTimer += state.deltaTime;
+    }
+    // COLLECT phase (3s-6s): Normal collection with dash explanation
+    else if (elapsed < 6000 && tutorial.diamondsCollected < 3) {
+        state.diamondTutorialOverlay.active = true;
+        state.diamondTutorialOverlay.phase = 'collect';
+        state.diamondTutorialOverlay.textAlpha = 1;
+    }
+    // DASH EXPLAIN phase: After 3 center diamonds (zoom to dash meter)
+    else if (tutorial.diamondsCollected === 3 && elapsed < 9000) {
+        state.diamondTutorialOverlay.active = true;
+        state.diamondTutorialOverlay.phase = 'dash_explain';
+        state.diamondTutorialOverlay.zoomProgress = Math.min(1, (elapsed - 6000) / 1500);
+    }
+    // Hide overlay during normal collection
+    else {
+        state.diamondTutorialOverlay.active = false;
+        state.diamondTutorialOverlay.phase = 'none';
+        state.diamondTutorialOverlay.zoomProgress = 0;
+    }
 }
 
 function updateVictoryVFX(
@@ -632,6 +686,8 @@ export function render(
     renderInfoModal(ctx, state, canvasWidth, canvasHeight);
     renderGlitchText(ctx, state, canvasWidth, canvasHeight);
     renderDiamondGlow(ctx, state, canvasWidth, canvasHeight);
+    renderDashMeter(ctx, state, canvasWidth, canvasHeight);  // Diamond phase
+    renderDiamondTutorialOverlay(ctx, state, canvasWidth, canvasHeight);  // Diamond phase overlay
     renderFlashOverlay(ctx, state, canvasWidth, canvasHeight);
     renderVictoryFlash(ctx, state, canvasWidth, canvasHeight);
     renderConfetti(ctx, state);
@@ -1302,6 +1358,213 @@ function renderDiamondGlow(
     ctx.save();
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.restore();
+}
+
+/**
+ * DASH METER - Circular progress with zoom animation
+ * Shows charging progress for dash ability
+ */
+function renderDashMeter(
+    ctx: CanvasRenderingContext2D,
+    state: TutorialVFXState,
+    canvasWidth: number,
+    canvasHeight: number
+): void {
+    if (!state.dashMeter.visible) return;
+
+    const x = canvasWidth - 70;
+    const y = canvasHeight - 100;
+    const baseRadius = 40;
+
+    // Zoom/Scale animation (on diamond collection)
+    const zoomBoost = state.dashMeter.lastCollectionFlash > 0 ?
+        Math.sin(state.dashMeter.lastCollectionFlash * Math.PI) * 0.3 : 0;
+    const radius = baseRadius * (1 + zoomBoost);
+
+    ctx.save();
+
+    // Glow aura
+    const glowIntensity = state.dashMeter.pulseIntensity;
+    ctx.shadowColor = '#00dcff';
+    ctx.shadowBlur = 20 + glowIntensity * 30;
+
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 20, 40, 0.85)';
+    ctx.fill();
+    ctx.strokeStyle = '#00dcff';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Progress arc (animated)
+    const progress = state.dashMeter.progress / 100;
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + progress * Math.PI * 2;
+
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 8, startAngle, endAngle);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Electric sparks around the arc end
+    if (zoomBoost > 0.1) {
+        for (let i = 0; i < 5; i++) {
+            const sparkAngle = endAngle + (Math.random() - 0.5) * 0.5;
+            const sparkDist = radius - 8 + (Math.random() - 0.5) * 15;
+            const sx = x + Math.cos(sparkAngle) * sparkDist;
+            const sy = y + Math.sin(sparkAngle) * sparkDist;
+
+            ctx.beginPath();
+            ctx.arc(sx, sy, 2 + Math.random() * 3, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + Math.random() * 0.5})`;
+            ctx.fill();
+        }
+    }
+
+    // Center icon
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 20px Arial';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⚡', x, y - 6);
+
+    // DASH label
+    ctx.font = 'bold 11px Arial';
+    ctx.fillText('DASH', x, y + 14);
+
+    // Progress percentage
+    ctx.font = 'bold 9px Arial';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText(`${Math.floor(state.dashMeter.progress)}%`, x, y + 28);
+
+    ctx.restore();
+}
+
+/**
+ * DIAMOND TUTORIAL OVERLAY - Animated explanations
+ * Phases: intro, collect, dash_explain
+ */
+function renderDiamondTutorialOverlay(
+    ctx: CanvasRenderingContext2D,
+    state: TutorialVFXState,
+    canvasWidth: number,
+    canvasHeight: number
+): void {
+    const overlay = state.diamondTutorialOverlay;
+    if (!overlay.active) return;
+
+    ctx.save();
+
+    // === PHASE: INTRO ===
+    if (overlay.phase === 'intro') {
+        // Vignette background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Big diamond icon with bounce animation
+        const scale = 1 + Math.sin(state.time * 0.01) * 0.15;
+        ctx.save();
+        ctx.translate(canvasWidth / 2, canvasHeight * 0.35);
+        ctx.scale(scale, scale);
+        ctx.font = 'bold 72px Arial';
+        ctx.fillStyle = '#00dcff';
+        ctx.shadowColor = '#00dcff';
+        ctx.shadowBlur = 40;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💎', 0, 0);
+        ctx.restore();
+
+        // Animated sparkle particles
+        for (let i = 0; i < 8; i++) {
+            const angle = (state.time * 0.002 + i * 0.785) % (Math.PI * 2);
+            const dist = 80 + Math.sin(state.time * 0.005 + i) * 20;
+            const px = canvasWidth / 2 + Math.cos(angle) * dist;
+            const py = canvasHeight * 0.35 + Math.sin(angle) * dist * 0.6;
+            const pAlpha = 0.5 + Math.sin(state.time * 0.01 + i * 2) * 0.5;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 220, 255, ${pAlpha})`;
+            ctx.fill();
+        }
+
+        // Typewriter text animation
+        const text = 'ELMASLARI TOPLA!';
+        const visibleChars = Math.min(text.length, Math.floor((state.time % 3000) / 120));
+        ctx.globalAlpha = overlay.textAlpha;
+        ctx.font = 'bold 28px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#00dcff';
+        ctx.shadowBlur = 15;
+        ctx.textAlign = 'center';
+        ctx.fillText(text.substring(0, visibleChars), canvasWidth / 2, canvasHeight * 0.55);
+
+        // Sub-text
+        if (visibleChars >= text.length) {
+            ctx.font = 'bold 16px Arial';
+            ctx.fillStyle = '#ffd700';
+            ctx.fillText('⚡ DASH & 🏪 STORE için önemli!', canvasWidth / 2, canvasHeight * 0.62);
+        }
+    }
+
+    // === PHASE: COLLECT ===
+    if (overlay.phase === 'collect') {
+        // Small hint text at top
+        ctx.globalAlpha = 0.9;
+        ctx.font = 'bold 18px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 8;
+        ctx.fillText('💎 Elmasları topla!', canvasWidth / 2, 60);
+    }
+
+    // === PHASE: DASH EXPLAIN ===
+    if (overlay.phase === 'dash_explain') {
+        const zoom = overlay.zoomProgress;
+
+        // Darkened vignette focusing on dash meter
+        const gradient = ctx.createRadialGradient(
+            canvasWidth - 70, canvasHeight - 100, 80,
+            canvasWidth - 70, canvasHeight - 100, 350
+        );
+        gradient.addColorStop(0, 'transparent');
+        gradient.addColorStop(0.3, 'transparent');
+        gradient.addColorStop(1, `rgba(0, 0, 0, ${0.7 * zoom})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Arrow pointing to dash meter
+        if (zoom > 0.5) {
+            const arrowX = canvasWidth - 150;
+            const arrowY = canvasHeight - 100;
+            const arrowAlpha = (zoom - 0.5) * 2;
+
+            ctx.globalAlpha = arrowAlpha;
+            ctx.font = 'bold 32px Arial';
+            ctx.fillStyle = '#ffd700';
+            ctx.textAlign = 'center';
+            ctx.fillText('👉', arrowX, arrowY);
+
+            // Explanation text
+            ctx.font = 'bold 18px Arial';
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#00dcff';
+            ctx.shadowBlur = 10;
+            ctx.textAlign = 'center';
+            ctx.fillText('⚡ DASH İÇİN ŞARJ!', canvasWidth / 2, canvasHeight * 0.25);
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00f0ff';
+            ctx.fillText('Elmaslar topladıkça Dash dolacak!', canvasWidth / 2, canvasHeight * 0.32);
+        }
+    }
+
     ctx.restore();
 }
 

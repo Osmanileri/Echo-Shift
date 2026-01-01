@@ -1,9 +1,9 @@
 /**
  * Property-Based Tests for Progressive Speed Controller
- * Jetpack Joyride Style - Square root-based asymptotic acceleration
+ * Hybrid Curve Style - progress^1.5 based acceleration
  * 
  * Tests for:
- * - Property 7: Speed Formula Correctness (sqrt-based)
+ * - Property 7: Speed Formula Correctness (progress^1.5-based)
  * - Property 8: Climax Speed Multiplier
  * 
  * **Validates: Requirements 4.2, 4.3, 4.4**
@@ -27,15 +27,15 @@ import { INITIAL_CONFIG } from '../constants';
 const DEFAULT_BASE_SPEED = INITIAL_CONFIG.baseSpeed;
 const DEFAULT_CLIMAX_MULTIPLIER = 1.2;
 
-describe('Speed Controller Properties - Jetpack Joyride Style', () => {
+describe('Speed Controller Properties - Hybrid Curve Style', () => {
   /**
-   * **Feature: jetpack-joyride-speed, Property 7: Speed Formula Correctness**
+   * **Feature: hybrid-curve-speed, Property 7: Speed Formula Correctness**
    * **Validates: Requirements 4.2**
    * 
    * For any progress value, the calculated speed SHALL equal
-   * `baseSpeed + (baseSpeed × 0.5 × √(progress))`
+   * `baseSpeed + (baseSpeed × 0.7 × progress^1.5)`
    */
-  test('Property 7: Sqrt Speed Formula Correctness', () => {
+  test('Property 7: Hybrid Curve (p^1.5) Speed Formula Correctness', () => {
     fc.assert(
       fc.property(
         // Base speed (positive)
@@ -47,9 +47,9 @@ describe('Speed Controller Properties - Jetpack Joyride Style', () => {
         (baseSpeed, targetDistance, progressRatio) => {
           const currentDistance = targetDistance * progressRatio;
 
-          // Calculate expected speed using Jetpack Joyride formula
-          const maxBonus = baseSpeed * 0.5;
-          const expectedSpeed = baseSpeed + maxBonus * Math.sqrt(progressRatio);
+          // Calculate expected speed using Hybrid Curve formula (progress^1.5)
+          const maxBonus = baseSpeed * 0.7;
+          const expectedSpeed = baseSpeed + maxBonus * (progressRatio * Math.sqrt(progressRatio));
 
           // Calculate using the pure function
           const actualSpeed = calculateDynamicSpeed(currentDistance, targetDistance, baseSpeed);
@@ -66,7 +66,7 @@ describe('Speed Controller Properties - Jetpack Joyride Style', () => {
 
 
   /**
-   * **Feature: jetpack-joyride-speed, Property 7: Speed increases with distance**
+   * **Feature: hybrid-curve-speed, Property 7: Speed increases with distance**
    * **Validates: Requirements 4.3**
    * 
    * Speed should monotonically increase as distance increases.
@@ -100,10 +100,10 @@ describe('Speed Controller Properties - Jetpack Joyride Style', () => {
   });
 
   /**
-   * **Feature: jetpack-joyride-speed, Property 7: Speed at zero distance equals base speed**
+   * **Feature: hybrid-curve-speed, Property 7: Speed at zero distance equals base speed**
    * **Validates: Requirements 4.1, 4.2**
    * 
-   * At 0 distance, sqrt(0) = 0, so speed = baseSpeed.
+   * At 0 distance, 0^1.5 = 0, so speed = baseSpeed.
    */
   test('Property 7: Speed at zero distance equals base speed', () => {
     fc.assert(
@@ -241,11 +241,11 @@ describe('Speed Controller Properties - Jetpack Joyride Style', () => {
   });
 });
 
-describe('Speed Controller Integration - Jetpack Joyride Style', () => {
+describe('Speed Controller Integration - Hybrid Curve Style', () => {
   /**
-   * Test SpeedController class with DistanceState using sqrt formula
+   * Test SpeedController class with DistanceState using progress^1.5 formula
    */
-  test('SpeedController calculates correct speed with sqrt formula', () => {
+  test('SpeedController calculates correct speed with progress^1.5 formula', () => {
     fc.assert(
       fc.property(
         // Target distance
@@ -266,9 +266,9 @@ describe('Speed Controller Integration - Jetpack Joyride Style', () => {
 
           const speed = controller.calculateSpeed(distanceState);
 
-          // Expected: baseSpeed + (baseSpeed × 0.5 × √progress)
-          const maxBonus = DEFAULT_BASE_SPEED * 0.5;
-          const expectedSpeed = DEFAULT_BASE_SPEED + maxBonus * Math.sqrt(progressRatio);
+          // Expected: baseSpeed + (baseSpeed × 0.7 × progress^1.5)
+          const maxBonus = DEFAULT_BASE_SPEED * 0.7;
+          const expectedSpeed = DEFAULT_BASE_SPEED + maxBonus * (progressRatio * Math.sqrt(progressRatio));
 
           expect(speed).toBeCloseTo(expectedSpeed, 4);
 
@@ -306,10 +306,10 @@ describe('Speed Controller Integration - Jetpack Joyride Style', () => {
 
           const speed = controller.calculateSpeed(distanceState);
 
-          // Expected: (baseSpeed + maxBonus × √progress) × 1.2
-          const maxBonus = DEFAULT_BASE_SPEED * 0.5;
-          const sqrtSpeed = DEFAULT_BASE_SPEED + maxBonus * Math.sqrt(progressRatio);
-          const expectedSpeed = sqrtSpeed * DEFAULT_CLIMAX_MULTIPLIER;
+          // Expected: (baseSpeed + maxBonus × progress^1.5) × 1.2
+          const maxBonus = DEFAULT_BASE_SPEED * 0.7;
+          const progressSpeed = DEFAULT_BASE_SPEED + maxBonus * (progressRatio * Math.sqrt(progressRatio));
+          const expectedSpeed = progressSpeed * DEFAULT_CLIMAX_MULTIPLIER;
 
           expect(speed).toBeCloseTo(expectedSpeed, 4);
 
@@ -336,7 +336,7 @@ describe('Speed Controller Integration - Jetpack Joyride Style', () => {
   });
 
   /**
-   * Test getConfig returns correct state with sqrt multiplier
+   * Test getConfig returns correct state with progress^1.5 multiplier
    */
   test('SpeedController getConfig returns correct state', () => {
     const controller = createSpeedController();
@@ -353,9 +353,10 @@ describe('Speed Controller Integration - Jetpack Joyride Style', () => {
 
     expect(config.baseSpeed).toBe(DEFAULT_BASE_SPEED);
     // progress = 100/500 = 0.2
-    // sqrtMultiplier = 1 + 0.5 * sqrt(0.2) ≈ 1 + 0.5 * 0.447 ≈ 1.224
-    const expectedMultiplier = 1 + 0.5 * Math.sqrt(100 / 500);
-    expect(config.sqrtMultiplier).toBeCloseTo(expectedMultiplier, 5);
+    // progressMultiplier = 1 + 0.7 * 0.2^1.5 = 1 + 0.7 * 0.0894 = 1.0626
+    const progress = 100 / 500;
+    const expectedMultiplier = 1 + 0.7 * (progress * Math.sqrt(progress));
+    expect(config.progressMultiplier).toBeCloseTo(expectedMultiplier, 5);
     expect(config.climaxMultiplier).toBe(1.0);
     expect(config.isInClimaxZone).toBe(false);
   });

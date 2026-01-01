@@ -1318,7 +1318,95 @@ export function playFluxOverloadStrike() {
   setTimeout(() => playNoise(0.1, 200, 'lowpass', 0.15), 50);
 }
 
+// ============ START SEQUENCE SOUNDS ============
+
+/**
+ * Countdown tick - deep resonant beat for 3, 2, 1
+ * Creates anticipation with a heavy, impactful tick
+ */
+export function playCountdown(value: number) {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Base frequency increases as countdown approaches GO
+  const baseFreq = 80 + (3 - value) * 20; // 80, 100, 120 for 3, 2, 1
+
+  // Heavy kick-style oscillator
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(baseFreq * 2, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(baseFreq, ctx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.4, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+  osc.connect(gain);
+  gain.connect(master);
+
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.3);
+
+  // Add a metallic click layer
+  setTimeout(() => {
+    playTone(800 + value * 100, 0.08, 'square', 0.1, 0.005, 0.02);
+  }, 10);
+
+  // Low rumble
+  playNoise(0.15, 150, 'lowpass', 0.15);
+}
+
+/**
+ * Countdown GO - rising energetic sweep with impact
+ * Signals game start with a powerful, exciting sound
+ */
+export function playCountdownGo() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Rising sweep
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc1.type = 'sawtooth';
+  osc2.type = 'square';
+
+  osc1.frequency.setValueAtTime(150, ctx.currentTime);
+  osc1.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
+
+  osc2.frequency.setValueAtTime(100, ctx.currentTime);
+  osc2.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.2);
+
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.1);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.35);
+  osc2.stop(ctx.currentTime + 0.35);
+
+  // Impact burst
+  playNoise(0.2, 2000, 'bandpass', 0.2);
+
+  // Harmonic chime
+  setTimeout(() => {
+    playTone(1047, 0.15, 'sine', 0.25, 0.01, 0.04); // C6
+    setTimeout(() => playTone(1319, 0.12, 'sine', 0.2, 0.01, 0.03), 50); // E6
+    setTimeout(() => playTone(1568, 0.2, 'sine', 0.25, 0.01, 0.05), 100); // G6
+  }, 150);
+}
+
 // ============ SETTINGS CONTROL ============
+
 
 /**
  * Set master volume (0-1)
@@ -1443,6 +1531,10 @@ export const AudioSystem = {
   // Flux Overload Sounds - Yasaklı Hat Mekaniği
   playFluxOverloadWarning,
   playFluxOverloadStrike,
+
+  // Start Sequence - Countdown sounds
+  playCountdown,
+  playCountdownGo,
 };
 
 export default AudioSystem;

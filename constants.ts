@@ -13,11 +13,11 @@ export const COLORS = {
 };
 
 export const INITIAL_CONFIG = {
-  // Speed - starts at 5 km/h (0.5), SUPER SLOW start for mobile
-  baseSpeed: 2.5,  // 5km/h starting speed (mobil için süper yavaş)
-  maxSpeed: 4,     // 40km/h max speed (çok düşük)
-  speedIncreaseInterval: 6000, // SÜPER YAVAŞ artış (was 5000)
-  speedIncreaseAmount: 0.01, // SÜPER KÜÇÜK artış (was 0.015)
+  // Speed - starts at 4.2 km/h (2.1), comfortable start for mobile
+  baseSpeed: 2.1,  // 2.5 was too fast (User Feedback) - Reduced by ~16%
+  maxSpeed: 4,     // 40km/h max speed (unchanged)
+  speedIncreaseInterval: 5000, // Faster interval to compensate for slower start (was 6000)
+  speedIncreaseAmount: 0.01, // Constant increase
 
   // Spawn rate - SUPER slow obstacle spawning for mobile-friendly gameplay
   spawnRate: 350,  // Süper yavaş spawn - çok daha fazla zaman (was 280)
@@ -155,13 +155,17 @@ export const SHIFT_CONFIG = {
 export const GLITCH_CONFIG = {
   // Duration - Requirements 7.1
   duration: 8000,                // Quantum Lock duration (8 seconds)
+  chargingDuration: 3000, // Cinematic slow entry (3 seconds)
 
   // Connector - Requirements 4.2
   idealConnectorLength: 80,       // Target connector length during Quantum Lock (minimal growth)
 
-  // Wave Animation - Requirements 5.2
   waveSpeed: 0.05,                // Wave offset increment per frame (smoother, faster animation)
   waveAmplitude: 120,             // Sinusoidal wave amplitude (pixels)
+
+  // Phase Thresholds
+  warningThreshold: 0.75,         // Start warning at 75%
+  flattenThreshold: 0.80,         // Start exiting (Snake Out) at 80%
 
   // Ghost Mode - Requirements 7.4
   ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)

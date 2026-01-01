@@ -22,10 +22,9 @@ export type TutorialPhase =
     | 'NAVIGATION'         // Faz 1: Dikey hareket
     | 'COLOR_MATCH'        // Faz 2: Renk uyumu
     | 'SWAP_MECHANIC'      // Faz 3: Swap mekaniği
-    | 'CONNECTOR'          // Faz 4: Bağlantı uzaması
-    | 'SHARP_MANEUVER'     // Faz 5: Keskin manevralar
-    | 'SPEED_TEST'         // Faz 6: Hız testi
-    | 'DIAMOND_COLLECTION'; // Faz 7: Elmas toplama finali
+    | 'SHARP_MANEUVER'     // Faz 4: Keskin manevralar (Was 5)
+    | 'SPEED_TEST'         // Faz 5: Hız testi (Was 6)
+    | 'DIAMOND_COLLECTION'; // Faz 6: Elmas toplama finali (Was 7)
 
 /**
  * Tutorial message for display
@@ -181,16 +180,7 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         waitForInput: true,
         inputType: 'release',
     },
-    // Faz 4: Bağlantı Uzaması
-    {
-        phase: 'CONNECTOR',
-        title: 'Bağlantı Uzaması',
-        message: 'Dikkat: Çubuk uzuyor, mesafe artıyor. Kontrol zorlaşacak!',
-        targetGoal: 5,
-        speedMultiplier: 0.7,
-        waitForInput: false,
-    },
-    // Faz 5: Keskin Manevralar
+    // Faz 4: Keskin Manevralar
     {
         phase: 'SHARP_MANEUVER',
         title: 'Keskin Manevralar',
@@ -208,13 +198,13 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         speedMultiplier: 0.55,
         waitForInput: false,
     },
-    // Faz 7: Elmas Toplama
+    // Faz 5: Elmas Toplama (SPEED_TEST'ten önce)
     {
         phase: 'DIAMOND_COLLECTION',
-        title: 'Elmas Avı',
-        message: 'Elmasları toplamayı unutma! 💎\nBüyük sürprizler seni bekliyor!',
-        targetGoal: 5,
-        speedMultiplier: 0.8,
+        title: '💎 Elmas Avı',
+        message: '💎 ELMASLARI TOPLA!\n⚡ DASH & 🏪 STORE için çok önemli!',
+        targetGoal: 8,  // 3 center + 5 reachable
+        speedMultiplier: 0.65,  // Orta hız (öğretici)
         waitForInput: false,
     },
     // Faz 8: Hız Testi (Final)
@@ -261,7 +251,7 @@ export function createInitialState(): TutorialState {
         showInfoModal: false,
 
         diamondsCollected: 0,
-        diamondsToCollect: 5,
+        diamondsToCollect: 8,  // 3 center + 5 reachable
 
         phaseStartTime: 0,
         lastUpdateTime: 0,
@@ -569,9 +559,6 @@ export function update(
         case 'SWAP_MECHANIC':
             newState = updateSwapPhase(newState, input, obstacles, canvasWidth);
             break;
-        case 'CONNECTOR':
-            newState = updateConnectorPhase(newState, deltaTime);
-            break;
         case 'SHARP_MANEUVER':
             newState = updateSharpManeuverPhase(newState, obstacles);
             break;
@@ -852,11 +839,12 @@ function updateColorMatchPhase(
 
     if (criticalBlock && criticalBlock.x < playerX + 50) {
         newState.speedMultiplier = 0.05; // Ramak kala slow-mo
-        newState.swapLocked = false;    // Kilidi aç
     } else {
         newState.speedMultiplier = 0.55; // Faz hızı
-        newState.swapLocked = true;     // Kilitli kalsın
     }
+
+    // Her zaman swap açık olsun (Kullanıcı isteği: "blokların geldiği yerde aktif etmen gerekiyor")
+    newState.swapLocked = false;
     // --------------------------------------------------
 
     // Check for scheduled messages (time-based)
@@ -939,18 +927,9 @@ function updateSwapPhase(
         newState.swapLocked = true; // Swap başlangıçta kilitli
 
         // Initial Message Update: "Hold to start" context
-        if (newState.progress === 0 && (!newState.currentMessage || newState.currentMessage.text.includes('Ters renk') || newState.currentMessage.text.includes('HADİ'))) {
-            // Sadece ilk bloktan önce veya yanlış mesaj varsa göster
-            // "HADİ" mesajını override etme (ikinci turda)
-            if (newState.progress === 0 && (!newState.currentMessage || newState.currentMessage.text.includes('Ters renk'))) {
-                newState.currentMessage = {
-                    text: "Basılı tutarak oyuna başla...",
-                    duration: 4000,
-                    style: 'normal',
-                    startTime: now,
-                };
-            }
-        }
+        // Initial Message Update: "Hold to start" context
+        // REMOVED DUPLICATE MESSAGE OVERRIDE HERE
+        // Logic moved to phase initialization or relied on default phase message
 
         // Blok görüş alanına (Mobile: ~300px) girdiğinde uyarı ver
         if (targetBlock && targetBlock.x < 300) {
@@ -987,8 +966,8 @@ function updateSwapPhase(
             };
         }
 
-        // Blok çok yakın mesafeye (50px - Extreme close) girdiğinde -> Aksiyon fazına geç
-        if (targetBlock && targetBlock.x < playerX + 50) {
+        // Blok çok yakın mesafeye (35px - Extreme close) girdiğinde -> Aksiyon fazına geç
+        if (targetBlock && targetBlock.x < playerX + 35) {
             newState.swapSubPhase = 2;
             newState.speedMultiplier = 0.15; // Matrix Slow-Mo (Faster: 0.05 -> 0.15)
             newState.swapBlockZoomActive = true; // Zoom yap
@@ -1049,14 +1028,13 @@ function updateSwapPhase(
 
     // === SUB-PHASE 3: POST SUCCESS ===
     else if (newState.swapSubPhase === 3) {
+        // Wait for 1.5 seconds (reduced from 2.5s) then continue
         const successElapsed = now - newState.swapSuccessTime;
-
-        if (successElapsed > 2500) {
+        if (successElapsed > 1500) {
             newState.swapSubPhase = 0; // Reset for next block
             newState.speedMultiplier = 0.8;
             newState.swapLocked = true;
             newState.showTimeDistortion = false;
-
             // Eğer daha yapılacak varsa devam et
             if (newState.progress < newState.targetGoal) {
                 newState.currentMessage = {
@@ -1073,21 +1051,7 @@ function updateSwapPhase(
 }
 
 
-/**
- * Phase 4: Connector - observe connector expansion over time
- */
-function updateConnectorPhase(
-    state: TutorialState,
-    deltaTime: number
-): TutorialState {
-    // Progress is time-based (5 seconds)
-    const elapsedSeconds = (Date.now() - state.phaseStartTime) / 1000;
 
-    return {
-        ...state,
-        progress: Math.floor(elapsedSeconds),
-    };
-}
 
 /**
  * Phase 5: Sharp Maneuver - pass through center-crossing blocks
@@ -1099,8 +1063,17 @@ function updateSharpManeuverPhase(
     // Count passed obstacles that crossed center
     const passedCount = obstacles.filter(o => o.passed).length;
 
+    // DEBUG: Log progress
+    if (Math.random() < 0.02) {
+        console.log('[SHARP_MANEUVER] obstacles:', obstacles.length, 'passed:', passedCount, 'target:', state.targetGoal);
+    }
+
+    // S.H.I.F.T. mekaniği aktif (Keskin manevralar için swap gerekli olabilir)
+    const swapLocked = false;
+
     return {
         ...state,
+        swapLocked,
         progress: passedCount,
     };
 }
@@ -1123,11 +1096,12 @@ function updateSpeedTestPhase(
 
     if (criticalBlock && criticalBlock.x < playerX + 50) {
         newState.speedMultiplier = 0.05; // Ramak kala slow-mo
-        newState.swapLocked = false;    // Kilidi aç
     } else {
         newState.speedMultiplier = 1.2; // Faz hızı (Speed Test: 1.2)
-        newState.swapLocked = true;
     }
+
+    // Her zaman swap açık
+    newState.swapLocked = false;
     // --------------------------------------------------
 
     return {
@@ -1154,11 +1128,12 @@ function updateDiamondCollectionPhase(
 
     if (criticalBlock && criticalBlock.x < playerX + 50) {
         newState.speedMultiplier = 0.05; // Ramak kala slow-mo
-        newState.swapLocked = false;    // Kilidi aç
     } else {
         newState.speedMultiplier = 0.8; // Faz hızı
-        newState.swapLocked = true;
     }
+
+    // Her zaman swap açık
+    newState.swapLocked = false;
     // --------------------------------------------------
 
     return {

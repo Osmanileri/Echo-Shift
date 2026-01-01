@@ -118,26 +118,14 @@ const SWAP_MECHANIC_PATTERN: PhasePattern = {
     phase: 'SWAP_MECHANIC',
     blocks: [
         // Block 1: Opposite color - forces first swap
-        { id: 'sm-1', delay: 4000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, width: 35, height: 120 },
+        { id: 'sm-1', delay: 4000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true },
         // Block 2: Opposite color again - forces second swap
-        { id: 'sm-2', delay: 10000, lane: 'bottom', polarity: 'white', y: 0.75, crossesCenter: false, requiresSwap: true, width: 35, height: 120 },
+        // Reduced delay (10000 -> 6500) and changed polarity to BLACK to force swap against White Bottom Orb
+        { id: 'sm-2', delay: 6500, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: true },
     ],
     diamonds: [],
 };
 
-/**
- * Phase 4: CONNECTOR - Normal blocks while connector expands
- */
-const CONNECTOR_PATTERN: PhasePattern = {
-    phase: 'CONNECTOR',
-    blocks: [
-        { id: 'cn-1', delay: 1000, lane: 'top', polarity: 'white', y: 0.2, crossesCenter: false, requiresSwap: false },
-        { id: 'cn-2', delay: 2000, lane: 'bottom', polarity: 'black', y: 0.8, crossesCenter: false, requiresSwap: false },
-        { id: 'cn-3', delay: 3000, lane: 'top', polarity: 'white', y: 0.25, crossesCenter: false, requiresSwap: false },
-        { id: 'cn-4', delay: 4000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: false },
-    ],
-    diamonds: [],
-};
 
 /**
  * Phase 5: SHARP_MANEUVER - Blocks that cross the center line
@@ -147,11 +135,12 @@ const SHARP_MANEUVER_PATTERN: PhasePattern = {
     phase: 'SHARP_MANEUVER',
     blocks: [
         // Blocks that cross center - player must dodge quickly
-        { id: 'sh-1', delay: 1000, lane: 'top', polarity: 'white', y: 0.45, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-2', delay: 2500, lane: 'bottom', polarity: 'black', y: 0.55, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-3', delay: 4000, lane: 'top', polarity: 'white', y: 0.48, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-4', delay: 5500, lane: 'bottom', polarity: 'black', y: 0.52, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-5', delay: 7000, lane: 'top', polarity: 'white', y: 0.42, crossesCenter: true, requiresSwap: false },
+        // Reduced height (80px) to allow passing through midline gaps
+        { id: 'sh-1', delay: 1000, lane: 'top', polarity: 'white', y: 0.45, crossesCenter: true, requiresSwap: false, height: 470 },
+        { id: 'sh-2', delay: 2500, lane: 'bottom', polarity: 'black', y: 0.55, crossesCenter: true, requiresSwap: false, height: 475 },
+        { id: 'sh-3', delay: 4000, lane: 'top', polarity: 'white', y: 0.48, crossesCenter: true, requiresSwap: false, height: 480 },
+        { id: 'sh-4', delay: 5500, lane: 'bottom', polarity: 'black', y: 0.52, crossesCenter: true, requiresSwap: false, height: 470 },
+        { id: 'sh-5', delay: 7000, lane: 'top', polarity: 'white', y: 0.42, crossesCenter: true, requiresSwap: false, height: 485 },
     ],
     diamonds: [],
 };
@@ -177,17 +166,24 @@ const SPEED_TEST_PATTERN: PhasePattern = {
 };
 
 /**
- * Phase 7: DIAMOND_COLLECTION - No blocks, only diamonds to collect
+ * Phase 5: DIAMOND_COLLECTION - Elmas toplama öğretici
+ * İlk 3 elmas merkez çizgide (y=0.5), sonraki 5 çubuğun ulaşabileceği yerlerde
  */
 const DIAMOND_COLLECTION_PATTERN: PhasePattern = {
     phase: 'DIAMOND_COLLECTION',
-    blocks: [],  // No blocks in diamond phase
+    blocks: [],  // Engel yok, sadece elmas
     diamonds: [
-        { id: 'dm-1', delay: 1000, y: 0.3 },
-        { id: 'dm-2', delay: 2000, y: 0.7 },
-        { id: 'dm-3', delay: 3000, y: 0.5 },
-        { id: 'dm-4', delay: 4000, y: 0.25 },
-        { id: 'dm-5', delay: 5000, y: 0.75 },
+        // STAGE 1: Merkez (Sıfır Çizgisi) - 3 elmas
+        { id: 'dc-1', delay: 1500, y: 0.5 },    // Tam ortada
+        { id: 'dc-2', delay: 3000, y: 0.5 },    // Tam ortada
+        { id: 'dc-3', delay: 4500, y: 0.5 },    // Tam ortada
+
+        // STAGE 2: Çubuğun Ulaşabileceği Yerler - 5 elmas
+        { id: 'dc-4', delay: 7000, y: 0.35 },   // Üst yarı
+        { id: 'dc-5', delay: 8500, y: 0.65 },   // Alt yarı
+        { id: 'dc-6', delay: 10000, y: 0.3 },   // Üst (sınıra yakın)
+        { id: 'dc-7', delay: 11500, y: 0.7 },   // Alt (sınıra yakın)
+        { id: 'dc-8', delay: 13000, y: 0.5 },   // Final: Tekrar merkez
     ],
 };
 
@@ -200,7 +196,6 @@ export const PHASE_PATTERNS: Record<TutorialPhase, PhasePattern> = {
     'NAVIGATION': NAVIGATION_PATTERN,
     'COLOR_MATCH': COLOR_MATCH_PATTERN,
     'SWAP_MECHANIC': SWAP_MECHANIC_PATTERN,
-    'CONNECTOR': CONNECTOR_PATTERN,
     'SHARP_MANEUVER': SHARP_MANEUVER_PATTERN,
     'SPEED_TEST': SPEED_TEST_PATTERN,
     'DIAMOND_COLLECTION': DIAMOND_COLLECTION_PATTERN,
@@ -283,32 +278,4 @@ export function phaseHasDiamonds(phase: TutorialPhase): boolean {
     return PHASE_PATTERNS[phase].diamonds.length > 0;
 }
 
-// ============================================================================
-// CONNECTOR EXPANSION CONFIG
-// ============================================================================
 
-/**
- * Connector expansion settings for Phase 4
- */
-export const CONNECTOR_EXPANSION = {
-    startLength: 100,        // Starting connector length (px)
-    endLength: 200,          // End connector length (px)
-    duration: 5000,          // Duration of expansion (ms)
-
-    /**
-     * Calculate connector length at given time
-     */
-    getLengthAtTime: (elapsedTime: number): number => {
-        const progress = Math.min(1, elapsedTime / CONNECTOR_EXPANSION.duration);
-        const eased = easeOutQuad(progress);
-        return CONNECTOR_EXPANSION.startLength +
-            (CONNECTOR_EXPANSION.endLength - CONNECTOR_EXPANSION.startLength) * eased;
-    },
-};
-
-/**
- * Easing function for smooth expansion
- */
-function easeOutQuad(t: number): number {
-    return t * (2 - t);
-}

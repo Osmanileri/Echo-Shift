@@ -1,7 +1,8 @@
 /**
  * Progressive Speed Controller for Campaign Mode
- * Jetpack Joyride Style - Square root-based asymptotic acceleration
- * Formula: v = v_min + (v_max - v_min) × √(progress)
+ * Exponential Escalation Style - Squared-based acceleration
+ * Formula: v = v_min + (v_max - v_min) × progress²
+ * "Slow start, fast finish" - gives players warm-up time
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 
@@ -13,10 +14,10 @@ import { DistanceState } from './distanceTracker';
  * Centralized for easy tuning during game balance iterations
  */
 export const SPEED_CONSTANTS = {
-  /** Speed bonus percentage per level (5% = 0.05) */
-  LEVEL_INCREMENT_RATE: 0.05,
-  /** Maximum speed bonus ratio at target distance (50% = 0.5) */
-  MAX_BONUS_RATIO: 0.5,
+  /** Speed bonus percentage per level (4% = 0.04) */
+  LEVEL_INCREMENT_RATE: 0.04,
+  /** Maximum speed bonus ratio at target distance (70% = 0.7) */
+  MAX_BONUS_RATIO: 0.7,
   /** Speed multiplier in climax zone (final 20%) */
   CLIMAX_MULTIPLIER: 1.2,
   /** Progress threshold for climax zone (80% = 0.8) */
@@ -29,11 +30,11 @@ export const SPEED_CONSTANTS = {
 
 /**
  * Speed configuration state
- * Jetpack Joyride Style - Square root-based progression
+ * Exponential Escalation Style - Squared-based progression
  */
 export interface SpeedConfig {
   baseSpeed: number;              // Fixed base speed at chapter start
-  sqrtMultiplier: number;         // Current sqrt-based multiplier (1.0 - 1.5)
+  progressMultiplier: number;     // Current progress-based multiplier (1.0 - 1.5)
   climaxMultiplier: number;       // Climax zone multiplier (1.0 or 1.2)
   isInClimaxZone: boolean;        // Whether in final 20%
   climaxTransitionProgress: number; // 0-1 for smooth transition
@@ -61,7 +62,7 @@ const DEFAULT_DISTANCE_DIVISOR = 50;
 
 /**
  * Speed Controller class for managing progressive speed in campaign mode
- * Jetpack Joyride Style - DRY refactored version
+ * Hybrid Curve Style - progress^1.5 for mid-game boost
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 export class SpeedController {
@@ -128,7 +129,8 @@ export class SpeedController {
 
   /**
    * Calculate the current speed based on distance state
-   * Jetpack Joyride Style: v = baseSpeed + (maxBonus × √progress)
+   * Hybrid Curve: v = baseSpeed + (maxBonus × progress^1.5)
+   * "Soft start, Strong finish" - balances warm-up with mid-game tempo
    * Includes speed cap to prevent frame-skipping at high levels
    * 
    * @param distanceState - Current distance tracking state
@@ -144,12 +146,13 @@ export class SpeedController {
       ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
       : 0;
 
-    // Jetpack Joyride Formula: maxBonus from constants
+    // Exponential Escalation: maxBonus from constants
     const maxBonus = effectiveBaseSpeed * SPEED_CONSTANTS.MAX_BONUS_RATIO;
 
-    // Square root-based acceleration: fast initial, gradual stabilization
-    const currentBonus = maxBonus * Math.sqrt(progress);
-    const sqrtSpeed = effectiveBaseSpeed + currentBonus;
+    // Hybrid Curve: slow initial, stronger mid-game (progress^1.5)
+    // Formula: progress * sqrt(progress)
+    const currentBonus = maxBonus * (progress * Math.sqrt(progress));
+    const progressSpeed = effectiveBaseSpeed + currentBonus;
 
     // Apply climax multiplier with smooth transition
     let effectiveClimaxMultiplier = 1.0;
@@ -159,13 +162,13 @@ export class SpeedController {
     }
 
     // Calculate final speed with speed cap to prevent frame-skipping
-    const finalSpeed = sqrtSpeed * effectiveClimaxMultiplier;
+    const finalSpeed = progressSpeed * effectiveClimaxMultiplier;
     return Math.min(finalSpeed, this.maxAllowedSpeed);
   }
 
   /**
    * Get the current speed configuration state
-   * Jetpack Joyride Style - Returns sqrt-based speed info
+   * Hybrid Curve - Returns progress^1.5-based speed info
    * @param distanceState - Current distance tracking state
    * @param level - Level number (used to scale base speed)
    * @returns SpeedConfig with all speed information
@@ -174,7 +177,7 @@ export class SpeedController {
     const currentLevel = level ?? 1;
 
     // Scale base speed based on level
-    const baseSpeedMultiplier = 1 + (currentLevel - 1) * 0.05;
+    const baseSpeedMultiplier = 1 + (currentLevel - 1) * 0.04;
     const effectiveBaseSpeed = this.baseSpeed * baseSpeedMultiplier;
 
     // Calculate progress (0.0 - 1.0)
@@ -182,8 +185,8 @@ export class SpeedController {
       ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
       : 0;
 
-    // Sqrt multiplier: 1.0 at start, up to 1.5 at target (50% max bonus)
-    const sqrtMultiplier = 1 + 0.5 * Math.sqrt(progress);
+    // Progress multiplier: 1.0 at start, up to 1.7 at target (70% max bonus with p^1.5)
+    const progressMultiplier = 1 + 0.7 * (progress * Math.sqrt(progress));
 
     let effectiveClimaxMultiplier = 1.0;
     if (distanceState.isInClimaxZone) {
@@ -193,11 +196,11 @@ export class SpeedController {
 
     return {
       baseSpeed: effectiveBaseSpeed,
-      sqrtMultiplier,
+      progressMultiplier,
       climaxMultiplier: effectiveClimaxMultiplier,
       isInClimaxZone: distanceState.isInClimaxZone,
       climaxTransitionProgress: this.climaxTransitionProgress,
-      finalSpeed: effectiveBaseSpeed * sqrtMultiplier * effectiveClimaxMultiplier,
+      finalSpeed: effectiveBaseSpeed * progressMultiplier * effectiveClimaxMultiplier,
       progressPercent: progress * 100,
     };
   }
@@ -236,13 +239,14 @@ export function createSpeedController(
 }
 
 /**
- * Calculate dynamic speed using Jetpack Joyride sqrt formula
+ * Calculate dynamic speed using Hybrid Curve (progress^1.5) formula
  * Pure function for testing - used by SpeedController.calculateSpeed internally
- * Formula: v = baseSpeed + (maxBonus × √(progress))
+ * Formula: v = baseSpeed + (maxBonus × progress^1.5)
+ * "Soft start, Strong finish"
  * @param currentMeters - Current distance traveled
  * @param chapterTarget - Chapter's target distance
  * @param baseSpeed - Base speed at chapter start
- * @returns Speed value using sqrt formula
+ * @returns Speed value using progress^1.5 formula
  */
 export function calculateDynamicSpeed(
   currentMeters: number,
@@ -254,11 +258,11 @@ export function calculateDynamicSpeed(
     ? Math.min(currentMeters / chapterTarget, 1.0)
     : 0;
 
-  // 2. Maximum speed bonus (50% of base speed)
-  const maxBonus = baseSpeed * 0.5;
+  // 2. Maximum speed bonus (70% of base speed)
+  const maxBonus = baseSpeed * 0.7;
 
-  // 3. Square root-based acceleration (Jetpack Joyride feel)
-  const currentBonus = maxBonus * Math.sqrt(progress);
+  // 3. Hybrid Curve acceleration (progress^1.5)
+  const currentBonus = maxBonus * (progress * Math.sqrt(progress));
 
   return baseSpeed + currentBonus;
 }

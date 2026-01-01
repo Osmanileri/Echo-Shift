@@ -14,7 +14,7 @@ import TutorialOverlay from "./components/Tutorial/TutorialOverlay";
 import { STORAGE_KEYS } from "./constants";
 import { useGameStore } from "./store/gameStore";
 import { getActiveUpgradeEffects } from "./systems/upgradeSystem";
-import { GameState, Mission, MissionEvent } from "./types";
+import { GameState, GlitchPhase, Mission, MissionEvent } from "./types";
 import { calculateEchoShards } from "./utils/echoShards";
 // Daily Challenge System - Requirements 8.1, 8.2, 8.3
 import {
@@ -125,6 +125,7 @@ const App: React.FC = () => {
   const [dashRemainingPercent, setDashRemainingPercent] = useState<number>(100); // Remaining dash time (100 = full, 0 = empty)
   // Quantum Lock UI State - Requirements 7.5
   const [isQuantumLockActive, setIsQuantumLockActive] = useState<boolean>(false);
+  const [glitchPhase, setGlitchPhase] = useState<GlitchPhase>('inactive');
 
   // Tutorial state - Requirements 17.1, 17.3, 17.4, 17.5
   const [showTutorial, setShowTutorial] = useState<boolean>(false);
@@ -620,8 +621,9 @@ const App: React.FC = () => {
   }, []);
 
   // Quantum Lock state update handler - Requirements 7.5
-  const handleQuantumLockStateUpdate = useCallback((isActive: boolean) => {
+  const handleQuantumLockStateUpdate = useCallback((isActive: boolean, phase?: GlitchPhase) => {
     setIsQuantumLockActive(isActive);
+    if (phase) setGlitchPhase(phase);
   }, []);
 
   // Restore System handlers - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
@@ -724,6 +726,10 @@ const App: React.FC = () => {
     // Start the game with campaign config
     AudioSystem.initialize();
     AudioSystem.playGameStart();
+
+    // Fix bug: Ensure tutorial mode is disabled when starting a normal level
+    setInteractiveTutorialMode(false);
+    setShowTutorial(false);
 
     // Force game state to MENU first to ensure GameEngine resets
     // This triggers wasPlayingRef to become false
@@ -1236,6 +1242,7 @@ const App: React.FC = () => {
         dashActive={dashActive}
         dashRemainingPercent={dashRemainingPercent}
         isQuantumLockActive={isQuantumLockActive}
+        glitchPhase={glitchPhase}
         // Tutorial Mode - Level 0
         tutorialMode={interactiveTutorialMode}
       />
