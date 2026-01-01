@@ -143,6 +143,7 @@ import * as TrailingSoul from "../systems/trailingSoul";
 import type { GlitchModeState, GlitchShard } from "../types";
 // Enemy Manager System - Glitch Dart attacks
 import * as EnemyManager from "../systems/EnemyManager";
+import * as EnemySpriteCache from "../systems/EnemySpriteCache";
 // Enemy Death VFX System - Explosion, shatter, and element-based death effects
 import * as EnemyDeathVFX from "../systems/enemyDeathVFX";
 // Flux Overload System - Yasaklı Hat Mekaniği (2-Strike damage system)
@@ -283,6 +284,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Canvas visibility state - hide until first proper frame is rendered
+  // This prevents the flash of partial background during level transitions
+  const [canvasReady, setCanvasReady] = useState(false);
 
   // Theme System Integration - Requirements 5.1, 5.2, 5.3
   const equippedTheme = useGameStore((state) => state.equippedTheme);
@@ -507,6 +512,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const restoreState = useRef<RestoreSystem.RestoreState>(
     RestoreSystem.createInitialRestoreState()
   );
+
+  // Game State Ref - Track gameState changes inside animation loop
+  // Needed because animation loop closure captures initial gameState
+  const gameStateRef = useRef(gameState);
+
+  // Pause Time Tracking - Track pause duration to offset all time-based systems
+  // Without this, abilities like dash would expire during pause because Date.now() continues
+  const pauseStartTime = useRef<number>(0);
+  const totalPausedTime = useRef<number>(0);
+
   const pendingRestore = useRef<boolean>(false);
   const scoreAtDeath = useRef<number>(0);
 
@@ -945,6 +960,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
       window.innerHeight
     );
     counterAttackActive.current = false;
+
+    // Initialize Enemy Sprite Cache for performance
+    // Pre-renders enemy sprites to off-screen canvas
+    if (!EnemySpriteCache.isReady()) {
+      EnemySpriteCache.initSpriteCaches(EnemyManager.ENEMY_CONFIG.SPRITE_SIZE);
+    }
 
     // Reset Flux Overload State - Yasaklı Hat Mekaniği
     fluxOverloadState.current = FluxOverload.createInitialState();
@@ -1720,6 +1741,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
     };
   }, [gameState, triggerSwap, isMobile]);
 
+  // Sync gameStateRef with gameState prop for animation loop
+  // This allows the loop to check current state without re-creating
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
   // Main Loop
   useEffect(() => {
     // GAME_OVER or VICTORY state - stop the game loop completely
@@ -1734,12 +1761,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     if (gameState === GameState.MENU) {
       wasPlayingRef.current = false; // Reset flag when returning to menu
+      setCanvasReady(false); // Hide canvas during MENU to prevent flash
       resetGame();
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (canvas && ctx) {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+
+        // BUGFIX: Fill entire canvas black first to prevent flash
+        // This ensures no partial render is visible during state transitions
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Now draw both background halves immediately after
         // Theme System Integration - Requirements 5.1, 5.2, 5.3
         ctx.fillStyle = getColor("topBg");
         ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
@@ -1768,7 +1803,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
     }
 
     if (gameState === GameState.PAUSED) {
-      // Paused - mark that we were playing, don't reset
+      // CRITICAL: Cancel the animation frame to actually stop the loop
+      if (frameId.current) {
+        cancelAnimationFrame(frameId.current);
+        frameId.current = 0;
+        console.log('[GAME] Paused - animation frame cancelled');
+      }
+      // Record when pause started for time offset calculation
+      if (pauseStartTime.current === 0) {
+        pauseStartTime.current = Date.now();
+        console.log('[GAME] Pause time recorded:', pauseStartTime.current);
+      }
+      // Mark that we were playing, don't reset on resume
       wasPlayingRef.current = true;
       return;
     }
@@ -1781,12 +1827,86 @@ const GameEngine: React.FC<GameEngineProps> = ({
       resetGame();
     } else {
       console.log("[GAME] Resuming from pause, NOT resetting");
+
+      // CRITICAL: Calculate pause duration and offset all time-based states
+      // This preserves ability progress (like dash) during pause
+      if (pauseStartTime.current > 0) {
+        const pauseDuration = Date.now() - pauseStartTime.current;
+        totalPausedTime.current += pauseDuration;
+        console.log('[GAME] Pause duration:', pauseDuration, 'ms, total paused:', totalPausedTime.current, 'ms');
+
+        // Offset all time-based state startTimes forward by pause duration
+        // This makes Date.now() - startTime give correct elapsed time
+
+        // 1. Phase Dash - preserve dash progress
+        if (phaseDashState.current.isActive && phaseDashState.current.startTime > 0) {
+          phaseDashState.current.startTime += pauseDuration;
+          console.log('[GAME] Dash startTime offset by', pauseDuration);
+        }
+        if (phaseDashState.current.isReturning && phaseDashState.current.returnStartTime > 0) {
+          phaseDashState.current.returnStartTime += pauseDuration;
+        }
+        if (phaseDashState.current.dashEndTime > 0) {
+          phaseDashState.current.dashEndTime += pauseDuration;
+        }
+
+        // 2. Pattern Manager - preserve spawn timing
+        if (patternStartTime.current > 0) {
+          patternStartTime.current += pauseDuration;
+        }
+        if (patternManagerState.current.patternStartTime > 0) {
+          patternManagerState.current = {
+            ...patternManagerState.current,
+            patternStartTime: patternManagerState.current.patternStartTime + pauseDuration
+          };
+        }
+
+        // 3. Distance update time - prevent time accumulation
+        if (lastDistanceUpdateTime.current > 0) {
+          lastDistanceUpdateTime.current += pauseDuration;
+        }
+
+        // 4. Glitch Mode - preserve quantum lock progress
+        if (glitchModeState.current.startTime > 0) {
+          glitchModeState.current = {
+            ...glitchModeState.current,
+            startTime: glitchModeState.current.startTime + pauseDuration
+          };
+        }
+
+        // 5. Resonance - preserve resonance progress
+        if (resonanceState.current.activationTime > 0) {
+          resonanceState.current = {
+            ...resonanceState.current,
+            activationTime: resonanceState.current.activationTime + pauseDuration
+          };
+        }
+
+        // 6. Slow Motion - preserve slow mo state
+        if (slowMotionState.current.startTime > 0) {
+          slowMotionState.current = {
+            ...slowMotionState.current,
+            startTime: slowMotionState.current.startTime + pauseDuration
+          };
+        }
+
+        // Reset pause tracking
+        pauseStartTime.current = 0;
+      }
     }
 
     // Mark that we're now playing
     wasPlayingRef.current = true;
 
     const loop = () => {
+      // === PAUSE CHECK ===
+      // If paused, stop the loop entirely (don't schedule next frame)
+      // Loop will restart when gameState changes due to useEffect dependency
+      if (gameStateRef.current !== GameState.PLAYING) {
+        console.log('[GAME] Loop stopping - gameState is not PLAYING:', gameStateRef.current);
+        return; // Exit loop completely, no more frames scheduled
+      }
+
       // Skip main loop if restore animation is playing
       if (isRestoreAnimating.current) {
         frameId.current = requestAnimationFrame(loop);
@@ -2231,7 +2351,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const activeCampaign = campaignModeRef.current;
         if (activeCampaign?.enabled && activeCampaign.useDistanceMode && distanceTrackerRef.current && speedControllerRef.current) {
           const currentTime = Date.now();
-          const deltaTimeMs = currentTime - lastDistanceUpdateTime.current;
+          let deltaTimeMs = currentTime - lastDistanceUpdateTime.current;
+          // Cap deltaTime to max 50ms (~3 frames) to prevent time accumulation during pause
+          // Without this, resuming from pause would apply all accumulated time at once
+          deltaTimeMs = Math.min(deltaTimeMs, 50);
           const deltaTimeSec = deltaTimeMs / 1000;
           lastDistanceUpdateTime.current = currentTime;
 
@@ -6824,6 +6947,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
         ctx.fillRect(0, height - 10, (width * progress) / 100, 10);
         ctx.restore();
+      } else {
+        // --- NORMAL GAMEPLAY: Camera Reset ---
+        // Tutorial aktif değilse kamerayı normal pozisyona döndür
+        cameraState.current = CameraSystem.setCameraTarget(
+          cameraState.current,
+          1.0,           // Normal zoom (1x)
+          width / 2,     // Ekran merkezi X
+          height / 2     // Ekran merkezi Y
+        );
+        cameraState.current = CameraSystem.updateCamera(cameraState.current);
       }
 
       if (collisionDetected) {
@@ -6921,6 +7054,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
 
+
+
+      // Enable canvas visibility after first render
+      if (!canvasReady) {
+        setCanvasReady(true);
+      }
 
       frameId.current = requestAnimationFrame(loop);
     };
@@ -7273,11 +7412,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ref={containerRef}
       className="absolute inset-0 w-full h-full overflow-hidden cursor-pointer touch-none select-none"
     >
-      <canvas ref={canvasRef} className="block w-full h-full touch-none" />
+      <canvas
+        ref={canvasRef}
+        className={`block w-full h-full touch-none transition-opacity duration-75 ${canvasReady ? 'opacity-100' : 'opacity-0'}`}
+      />
 
       {/* Mobile Controls Hint - Show briefly when playing on mobile (NOT during tutorial) */}
       {isMobile && gameState === GameState.PLAYING && showMobileHint && !tutorialMode?.enabled && (
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-500">
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 pointer-events-none transition-opacity duration-500">
           <div className="flex flex-col items-center gap-1 text-white/60 text-sm bg-black/30 px-4 py-2 rounded-lg backdrop-blur-sm">
             <div className="flex items-center gap-2">
               <span className="text-lg">↕</span>

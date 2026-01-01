@@ -9,6 +9,7 @@
  */
 
 import { AudioSystem } from './audioSystem';
+import * as EnemySpriteCache from './EnemySpriteCache';
 
 // =============================================================================
 // CYBER ENEMY ANIMATION SYSTEM
@@ -953,9 +954,23 @@ export function drawEnemy(
         ctx.shadowColor = isLocked ? '#FF0000' : '#FF6666';
         ctx.fill();
 
-        // === DRAW CYBER ENEMY (Procedural - Based on Reference Image) ===
-        // Robot/Cyborg head with glowing red-orange eyes, dark metallic armor
-        drawCyberEnemy(ctx, 0, 0, spriteSize * pulse, isLocked, time);
+        // === DRAW CYBER ENEMY (Cached Sprite for Performance) ===
+        // Use pre-rendered sprite if available, fallback to procedural
+        const cachedSprite = EnemySpriteCache.getSprite(isLocked ? 'locked' : 'tracking');
+        if (cachedSprite && EnemySpriteCache.isReady()) {
+            const { offset } = EnemySpriteCache.getSpriteSize();
+            const scaledSize = spriteSize * pulse;
+            ctx.drawImage(
+                cachedSprite,
+                -offset * (scaledSize / spriteSize),
+                -offset * (scaledSize / spriteSize),
+                offset * 2 * (scaledSize / spriteSize),
+                offset * 2 * (scaledSize / spriteSize)
+            );
+        } else {
+            // Fallback: Procedural drawing (for first frame before cache is ready)
+            drawCyberEnemy(ctx, 0, 0, spriteSize * pulse, isLocked, time);
+        }
 
         // Danger symbol (!) for locked state
         if (isLocked) {
@@ -1048,8 +1063,21 @@ export function drawEnemy(
         ctx.shadowColor = '#FF0000';
         ctx.fill();
 
-        // === DRAW CYBER ENEMY (Procedural - Firing State) ===
-        drawCyberEnemy(ctx, 0, 0, spriteSize * enemyAnimState.scaleWobble, true, time);
+        // === DRAW CYBER ENEMY (Cached Sprite for Performance - Firing State) ===
+        const firingSprite = EnemySpriteCache.getSprite('firing');
+        if (firingSprite && EnemySpriteCache.isReady()) {
+            const { offset } = EnemySpriteCache.getSpriteSize();
+            const scaledSize = spriteSize * enemyAnimState.scaleWobble;
+            ctx.drawImage(
+                firingSprite,
+                -offset * (scaledSize / spriteSize),
+                -offset * (scaledSize / spriteSize),
+                offset * 2 * (scaledSize / spriteSize),
+                offset * 2 * (scaledSize / spriteSize)
+            );
+        } else {
+            drawCyberEnemy(ctx, 0, 0, spriteSize * enemyAnimState.scaleWobble, true, time);
+        }
 
         // === LEADING EDGE SPARK ===
         ctx.beginPath();

@@ -212,7 +212,7 @@ const GameUI: React.FC<GameUIProps> = ({
       return (
         <>
           {/* Only show pause button during tutorial */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -229,7 +229,7 @@ const GameUI: React.FC<GameUIProps> = ({
 
     return (
       <>
-        <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">
+        <div className="absolute top-6 left-0 w-full px-5 flex justify-between items-start pointer-events-none z-10">
           {/* Campaign Update v2.5 - Distance Mode HUD - Requirements 6.1, 6.2, 6.3, 6.4 */}
           {/* Visual Legibility: Enhanced shadows for guaranteed visibility on any background */}
           {distanceMode ? (
@@ -301,7 +301,7 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {/* Distance Progress Bar - Bottom Center (Mobile Optimized) */}
         {distanceMode && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 w-[80%] max-w-md pointer-events-none z-10">
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-[75%] max-w-sm pointer-events-none z-10">
             <div
               className={`relative h-4 bg-black/40 backdrop-blur-sm rounded-full overflow-visible border-2 ${isNearFinish
                 ? 'border-cyan-400 shadow-[0_0_20px_rgba(0,240,255,0.6)] animate-pulse'
@@ -390,7 +390,7 @@ const GameUI: React.FC<GameUIProps> = ({
         )}
 
         {rhythmMultiplier > 1 && (
-          <div className="absolute top-20 left-4 pointer-events-none z-10">
+          <div className="absolute top-24 left-5 pointer-events-none z-10">
             <div
               className={`px-3 py-1.5 rounded-lg backdrop-blur-sm border ${rhythmMultiplier === 3
                 ? "bg-yellow-500/20 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.3)]"
@@ -407,7 +407,7 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
         )}
 
-        <div className="absolute top-20 right-4 pointer-events-none z-10 flex flex-col gap-2 items-end">
+        <div className="absolute top-24 right-5 pointer-events-none z-10 flex flex-col gap-2 items-end">
           {rhythmStreak > 0 && (
             <div className="flex items-center gap-2 px-2 py-1 bg-cyan-500/10 rounded-md border border-cyan-500/30 backdrop-blur-sm">
               <span className="text-[10px] md:text-xs text-cyan-400/70 uppercase tracking-wider">
@@ -431,7 +431,7 @@ const GameUI: React.FC<GameUIProps> = ({
         </div>
 
         {slowMotionUsesRemaining > 0 && onActivateSlowMotion && (
-          <div className="absolute bottom-6 left-6 z-10">
+          <div className="absolute bottom-28 left-5 z-10">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -469,7 +469,7 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {/* Phase Dash Circular Energy Icon - Hidden during Quantum Lock */}
         {!isQuantumLockActive && (
-          <div className="absolute bottom-24 right-6 pointer-events-none z-10 flex flex-col items-center gap-2">
+          <div className="absolute bottom-28 right-5 pointer-events-none z-10 flex flex-col items-center gap-2">
             <div className="relative w-16 h-16 flex items-center justify-center">
               {/* Background Circle */}
               <div className={`absolute inset-0 rounded-full border-2 bg-black/40 backdrop-blur-sm transition-all duration-300 ${dashActive ? 'border-yellow-500/50' : 'border-white/10'
@@ -660,7 +660,7 @@ const GameUI: React.FC<GameUIProps> = ({
             }`}
         >
           {/* ===== SETTINGS BUTTON (Top Right) ===== */}
-          <div className="absolute top-4 right-4 z-30">
+          <div className="absolute top-6 right-5 z-30">
             <button
               onClick={() => {
                 AudioSystem.playButtonClick();

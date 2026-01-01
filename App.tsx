@@ -736,8 +736,9 @@ const App: React.FC = () => {
     setChapterNotificationLevel(levelConfig.id);
     setShowChapterNotification(true);
 
-    // Use requestAnimationFrame to ensure state change propagates before switching to PLAYING
-    requestAnimationFrame(() => {
+    // Use queueMicrotask instead of requestAnimationFrame to switch to PLAYING
+    // before the browser has a chance to render the MENU state canvas
+    queueMicrotask(() => {
       setGameState(GameState.PLAYING);
     });
 
@@ -1028,8 +1029,8 @@ const App: React.FC = () => {
     // Clear campaign mode
     setCampaignLevelConfig(null);
 
-    // Start playing
-    requestAnimationFrame(() => {
+    // Start playing - use queueMicrotask to prevent visible MENU state flash
+    queueMicrotask(() => {
       setGameState(GameState.PLAYING);
     });
 
