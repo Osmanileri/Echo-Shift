@@ -4127,6 +4127,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
             PhaseDash.PHASE_DASH_CONFIG.energyPerShard * dashRechargeMultiplier
           );
 
+          // TUTORIAL: Track diamond collection for DIAMOND_COLLECTION phase
+          if (tutorialState.current.isActive &&
+            tutorialState.current.currentPhase === 'DIAMOND_COLLECTION') {
+            tutorialState.current = InteractiveTutorial.collectDiamond(tutorialState.current);
+            console.log('[TUTORIAL] Diamond collected! Total:', tutorialState.current.diamondsCollected);
+          }
+
           // Mission System: Emit COLLECT event - Requirements 7.4
           onMissionEvent?.({ type: 'COLLECT', value: 1 });
 

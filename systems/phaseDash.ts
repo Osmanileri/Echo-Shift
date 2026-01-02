@@ -108,7 +108,7 @@ export const PHASE_DASH_CONFIG: PhaseDashConfig = {
 export function createInitialPhaseDashState(): PhaseDashState {
     return {
         isActive: false,
-        energy: 100, // TEMPORARY: Start full for testing
+        energy: 0,
         duration: PHASE_DASH_CONFIG.baseDuration,
         startTime: 0,
         ghostTrail: [],
@@ -304,7 +304,7 @@ export function updateDashState(
     if (state.isReturning && !state.isActive) {
         const elapsed = Date.now() - state.returnStartTime;
         const progress = Math.min(1, elapsed / config.returnAnimationDuration);
-        
+
         // Apply easing based on config
         let easedProgress: number;
         switch (config.returnEaseType) {
@@ -329,22 +329,22 @@ export function updateDashState(
                 easedProgress = 1 - Math.pow(1 - progress, 3);
                 break;
         }
-        
+
         // Calculate new offset based on eased progress
         newState.playerXOffset = state.returnStartOffset * (1 - easedProgress);
-        
+
         // Gradually slow down spin during return (spin decays to 0)
         // Use quadratic decay for natural slowdown feel
         const spinDecay = 1 - easedProgress * easedProgress;
         newState.spinAngle = state.spinAngle * spinDecay;
-        
+
         if (progress >= 1) {
             // Animation complete
             newState.playerXOffset = 0;
             newState.isReturning = false;
             newState.spinAngle = 0; // Reset spin completely
         }
-        
+
         return { state: newState, dashEnded: false };
     }
 
@@ -366,7 +366,7 @@ export function updateDashState(
     const progress = elapsed / state.duration;
     const easedProgress = Math.sin(progress * Math.PI * 0.5); // Ease-out sine
     const targetOffset = config.maxPlayerXOffset * easedProgress;
-    
+
     // Smooth interpolation towards target
     newState.playerXOffset += (targetOffset - newState.playerXOffset) * 0.1;
 
@@ -468,11 +468,11 @@ export function getSpinAngle(state: PhaseDashState): number {
  */
 export function getDashTargetY(state: PhaseDashState, currentY: number): number {
     if (!state.isActive) return currentY;
-    
+
     // During dash, smoothly move towards center (0.5)
     const centerY = 0.5;
     const progress = getDashProgress(state);
-    
+
     // Quick move to center at start, stay there
     const easeIn = Math.min(1, progress * 3); // Reach center in first 33% of dash
     return currentY + (centerY - currentY) * easeIn * 0.2; // Smooth interpolation
@@ -531,7 +531,7 @@ export function isInPostDashCooldown(
     config: PhaseDashConfig = PHASE_DASH_CONFIG
 ): boolean {
     if (state.isActive || state.dashEndTime === 0) return false;
-    
+
     const elapsed = Date.now() - state.dashEndTime;
     return elapsed < config.postDashCooldown;
 }
@@ -549,7 +549,7 @@ export function getReturnProgress(
     config: PhaseDashConfig = PHASE_DASH_CONFIG
 ): number {
     if (!state.isReturning) return state.playerXOffset > 0 ? 0 : 1;
-    
+
     const elapsed = Date.now() - state.returnStartTime;
     return Math.min(1, elapsed / config.returnAnimationDuration);
 }

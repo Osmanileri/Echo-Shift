@@ -565,8 +565,8 @@ function updateDiamondVFX(
     // === DASH METER ===
     state.dashMeter.visible = true;
 
-    // Calculate progress based on collected diamonds (8 total)
-    const targetProgress = (tutorial.diamondsCollected / 8) * 100;
+    // Calculate progress based on collected diamonds (5 total for tutorial)
+    const targetProgress = (tutorial.diamondsCollected / 5) * 100;
 
     // Smooth interpolation toward target
     state.dashMeter.progress += (targetProgress - state.dashMeter.progress) * 0.1;
@@ -1400,19 +1400,22 @@ function renderDashMeter(
 
     // Progress arc (animated)
     const progress = state.dashMeter.progress / 100;
+    const isFull = progress >= 0.99;
     const startAngle = -Math.PI / 2;
     const endAngle = startAngle + progress * Math.PI * 2;
 
     ctx.beginPath();
     ctx.arc(x, y, radius - 8, startAngle, endAngle);
-    ctx.strokeStyle = '#00f0ff';
+    // Turn GOLD when full
+    ctx.strokeStyle = isFull ? '#ffd700' : '#00f0ff';
     ctx.lineWidth = 8;
     ctx.lineCap = 'round';
     ctx.stroke();
 
     // Electric sparks around the arc end
-    if (zoomBoost > 0.1) {
-        for (let i = 0; i < 5; i++) {
+    if (zoomBoost > 0.1 || isFull) {
+        const sparkCount = isFull ? 8 : 5;
+        for (let i = 0; i < sparkCount; i++) {
             const sparkAngle = endAngle + (Math.random() - 0.5) * 0.5;
             const sparkDist = radius - 8 + (Math.random() - 0.5) * 15;
             const sx = x + Math.cos(sparkAngle) * sparkDist;
@@ -1420,28 +1423,38 @@ function renderDashMeter(
 
             ctx.beginPath();
             ctx.arc(sx, sy, 2 + Math.random() * 3, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + Math.random() * 0.5})`;
+            ctx.fillStyle = isFull
+                ? `rgba(255, 215, 0, ${0.5 + Math.random() * 0.5})`
+                : `rgba(255, 255, 255, ${0.5 + Math.random() * 0.5})`;
             ctx.fill();
         }
     }
 
-    // Center icon
-    ctx.shadowBlur = 0;
+    // Center icon - golden when full
+    ctx.shadowBlur = isFull ? 15 : 0;
+    ctx.shadowColor = isFull ? '#ffd700' : 'transparent';
     ctx.font = 'bold 20px Arial';
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = isFull ? '#ffd700' : '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('⚡', x, y - 6);
 
-    // DASH label
+    // DASH label or HAZIR! when full
     ctx.font = 'bold 11px Arial';
-    ctx.fillText('DASH', x, y + 14);
+    if (isFull) {
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText('HAZIR!', x, y + 14);
+    } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('DASH', x, y + 14);
+    }
 
-    // Progress percentage
+    // Progress percentage (hide when full, show checkmark)
     ctx.font = 'bold 9px Arial';
-    ctx.fillStyle = '#00f0ff';
-    ctx.fillText(`${Math.floor(state.dashMeter.progress)}%`, x, y + 28);
+    ctx.fillStyle = isFull ? '#ffd700' : '#00f0ff';
+    ctx.fillText(isFull ? '✓' : `${Math.floor(state.dashMeter.progress)}%`, x, y + 28);
 
+    ctx.shadowBlur = 0;
     ctx.restore();
 }
 
@@ -1462,55 +1475,98 @@ function renderDiamondTutorialOverlay(
 
     // === PHASE: INTRO ===
     if (overlay.phase === 'intro') {
-        // Vignette background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        // Darker vignette background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        // Big diamond icon with bounce animation
-        const scale = 1 + Math.sin(state.time * 0.01) * 0.15;
+        // === BORDERED FRAME ===
+        const frameWidth = Math.min(320, canvasWidth * 0.85);
+        const frameHeight = 220;
+        const frameX = (canvasWidth - frameWidth) / 2;
+        const frameY = (canvasHeight - frameHeight) / 2 - 30;
+
+        // Frame background with gradient
+        const frameBg = ctx.createLinearGradient(frameX, frameY, frameX, frameY + frameHeight);
+        frameBg.addColorStop(0, 'rgba(0, 30, 60, 0.95)');
+        frameBg.addColorStop(1, 'rgba(0, 15, 35, 0.98)');
+
+        ctx.beginPath();
+        ctx.roundRect(frameX, frameY, frameWidth, frameHeight, 16);
+        ctx.fillStyle = frameBg;
+        ctx.fill();
+
+        // Cyan glowing border
+        ctx.strokeStyle = '#00dcff';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#00dcff';
+        ctx.shadowBlur = 20;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Inner border highlight
+        ctx.strokeStyle = 'rgba(0, 220, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(frameX + 6, frameY + 6, frameWidth - 12, frameHeight - 12, 12);
+        ctx.stroke();
+
+        // === BIG DIAMOND ICON with smooth bounce ===
+        const bounceSpeed = 0.003; // Slower bounce
+        const scale = 1 + Math.sin(state.time * bounceSpeed) * 0.1;
+        const diamondY = frameY + 70;
+
         ctx.save();
-        ctx.translate(canvasWidth / 2, canvasHeight * 0.35);
+        ctx.translate(canvasWidth / 2, diamondY);
         ctx.scale(scale, scale);
-        ctx.font = 'bold 72px Arial';
+        ctx.font = 'bold 64px Arial';
         ctx.fillStyle = '#00dcff';
         ctx.shadowColor = '#00dcff';
-        ctx.shadowBlur = 40;
+        ctx.shadowBlur = 30;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('💎', 0, 0);
         ctx.restore();
 
-        // Animated sparkle particles
-        for (let i = 0; i < 8; i++) {
-            const angle = (state.time * 0.002 + i * 0.785) % (Math.PI * 2);
-            const dist = 80 + Math.sin(state.time * 0.005 + i) * 20;
+        // === SPARKLE PARTICLES - slower rotation ===
+        for (let i = 0; i < 6; i++) {
+            const angle = (state.time * 0.001 + i * 1.047) % (Math.PI * 2);
+            const dist = 55 + Math.sin(state.time * 0.002 + i) * 10;
             const px = canvasWidth / 2 + Math.cos(angle) * dist;
-            const py = canvasHeight * 0.35 + Math.sin(angle) * dist * 0.6;
-            const pAlpha = 0.5 + Math.sin(state.time * 0.01 + i * 2) * 0.5;
+            const py = diamondY + Math.sin(angle) * dist * 0.5;
+            const pAlpha = 0.4 + Math.sin(state.time * 0.005 + i * 2) * 0.4;
 
             ctx.beginPath();
-            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.arc(px, py, 3, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(0, 220, 255, ${pAlpha})`;
             ctx.fill();
         }
 
-        // Typewriter text animation
+        // === TITLE TEXT - slower typewriter ===
         const text = 'ELMASLARI TOPLA!';
-        const visibleChars = Math.min(text.length, Math.floor((state.time % 3000) / 120));
+        const typeSpeed = 150; // Slower: 150ms per char
+        const visibleChars = Math.min(text.length, Math.floor((state.time % 4000) / typeSpeed));
+        const titleY = frameY + frameHeight - 80;
+
         ctx.globalAlpha = overlay.textAlpha;
-        ctx.font = 'bold 28px Arial';
+        ctx.font = 'bold 26px Arial';
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = '#00dcff';
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 12;
         ctx.textAlign = 'center';
-        ctx.fillText(text.substring(0, visibleChars), canvasWidth / 2, canvasHeight * 0.55);
+        ctx.fillText(text.substring(0, visibleChars), canvasWidth / 2, titleY);
 
-        // Sub-text
+        // === SUB-TEXT with Dash teaser ===
         if (visibleChars >= text.length) {
-            ctx.font = 'bold 16px Arial';
+            const subAlpha = Math.min(1, (state.time % 4000 - 2400) / 600);
+            ctx.globalAlpha = Math.max(0, subAlpha) * overlay.textAlpha;
+            ctx.font = 'bold 14px Arial';
             ctx.fillStyle = '#ffd700';
-            ctx.fillText('⚡ DASH & 🏪 STORE için önemli!', canvasWidth / 2, canvasHeight * 0.62);
+            ctx.shadowColor = '#ffa500';
+            ctx.shadowBlur = 8;
+            ctx.fillText('⚡ DASH güçlendirmesi için önemli!', canvasWidth / 2, titleY + 35);
         }
+
+        ctx.shadowBlur = 0;
     }
 
     // === PHASE: COLLECT ===
