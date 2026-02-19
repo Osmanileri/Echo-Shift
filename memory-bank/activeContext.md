@@ -2,6 +2,25 @@
 
 ## Mevcut Odak
 
+- **Tutorial System Complete Rewrite** - TAMAMLANDI ✅
+  - Hedef: Baştan sona çalışan, profesyonel, tek hikaye altında tüm fazları anlatan eğitim sistemi
+  - **10 Kritik Bug Düzeltildi:**
+    1. 🔴 INTRO→NAVIGATION phaseIndex güncellenmiyordu → `advanceToNextPhase()` kullanılıyor
+    2. 🔴 Obstacle ID'ler her frame değişiyordu (`obs-${x}-${y}`) → stabil `block.id` kullanılıyor
+    3. 🔴 SPEED_TEST targetGoal=10 ama 8 blok → targetGoal=8 (eşleştirildi)
+    4. 🔴 TutorialInfoModal React JSX canvas callback içinde (asla render edilmiyordu) → canvas-based modal
+    5. 🟡 failPhase sub-state'leri resetlemiyordu → tam reset (swap, navigation, counters)
+    6. 🟡 Dead `updateNavigationPhase` fonksiyonu → kaldırıldı (tek temiz fonksiyon)
+    7. 🟡 SWAP_MECHANIC ikinci blok delay çok kısa → 6200ms→10000ms
+    8. 🟡 COLOR_MATCH/SHARP_MANEUVER counter'lar collision'da sıfırlanmıyordu → sıfırlanıyor
+    9. 🟢 `speedTestBlocksPassed` / `speedTestPassedIds` eklendi (SPEED_TEST persistent counter)
+    10. 🟢 `swapSuccessCount` eklendi (swap progress tracking)
+  - **Değiştirilen Dosyalar:**
+    - `systems/interactiveTutorialSystem.ts` — TAM YENİDEN YAZIM (1248 satır → 680 satır temiz kod)
+    - `systems/tutorialBlockPatterns.ts` — SWAP delay düzeltmesi
+    - `components/GameEngine.tsx` — Stabil obstacle ID, canvas-based info modal, unused import kaldırma
+  - **Test**: 720/747 (baseline korundu, 27 pre-existing fail)
+
 - **Comprehensive Performance Optimization for Mobile 60fps** - TAMAMLANDI ✅
   - Hedef: App Store deployment için mobilde donma/takılma olmadan 60fps
   - **32 Issue Tespit Edildi** (12 CRITICAL, 11 HIGH, 9 MEDIUM)

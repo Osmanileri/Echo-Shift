@@ -117,10 +117,10 @@ const COLOR_MATCH_PATTERN: PhasePattern = {
 const SWAP_MECHANIC_PATTERN: PhasePattern = {
     phase: 'SWAP_MECHANIC',
     blocks: [
-        // Block 1: Opposite color - forces first swap
+        // Block 1: Opposite color - forces first swap (4s delay for context message)
         { id: 'sm-1', delay: 4000, lane: 'top', polarity: 'black', y: 0.25, crossesCenter: false, requiresSwap: true, height: 450 },
-        // Block 2: Spawns AFTER first block is handled (~12 seconds to allow for slow-mo + success message)
-        { id: 'sm-2', delay: 6200, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: true, height: 450 },
+        // Block 2: After first success + 1.5s anim + travel time (~10s total from phase start)
+        { id: 'sm-2', delay: 10000, lane: 'bottom', polarity: 'black', y: 0.75, crossesCenter: false, requiresSwap: true, height: 450 },
     ],
     diamonds: [],
 };

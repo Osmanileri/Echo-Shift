@@ -154,7 +154,6 @@ import * as TutorialPatterns from "../systems/tutorialBlockPatterns";
 import * as TutorialIntroRenderer from "../systems/tutorialIntroRenderer";
 import { TutorialOverlayRenderer } from "../systems/tutorialOverlayRenderer";
 import * as TutorialVFX from "../systems/tutorialVFXEngine";
-import { TutorialInfoModal } from "./Tutorial/TutorialInfoModal";
 // Camera System - Cinematic zoom for tutorial SWAP_MECHANIC phase
 import * as CameraSystem from "../systems/CameraSystem";
 // Start Sequence System - Cinematic 3-2-1-GO countdown
@@ -4817,16 +4816,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Handle collision via tutorial system (e.g., restart phase)
                 tutorialState.current = InteractiveTutorial.handleCollision(tutorialState.current);
 
+                // FIX: Clear spawn tracking so blocks/diamonds can re-spawn after phase restart
+                // Without this, failPhase resets phaseStartTime but block IDs remain in the set,
+                // causing getBlocksToSpawn() to filter out ALL blocks → phase stuck forever
+                tutorialSpawnedBlockIds.current.clear();
+                tutorialSpawnedDiamondIds.current.clear();
+
+                // FIX: Truly clear obstacles array instead of moving to x=-1000
+                // Moving to x=-1000 leaves them in the array; later in this frame the tutorial
+                // system would count them as "passed" (x < playerX), inflating the persistent
+                // counter and potentially auto-completing the phase on the collision frame!
+                obstacles.current.length = 0;
+
                 // Visual feedback for collision
                 createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
                 ScreenShake.triggerCollision();
                 getHapticSystem().trigger("heavy");
                 AudioSystem.playGlitchDamage();
 
-                // Remove obstacle to prevent re-hit
-                obs.passed = true;
-                obs.x = -1000;
-                continue; // SKIP GAME OVER
+                break; // Exit obstacle loop — phase will restart cleanly
               }
 
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
@@ -5043,16 +5051,25 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Handle collision via tutorial system (e.g., restart phase)
                 tutorialState.current = InteractiveTutorial.handleCollision(tutorialState.current);
 
+                // FIX: Clear spawn tracking so blocks/diamonds can re-spawn after phase restart
+                // Without this, failPhase resets phaseStartTime but block IDs remain in the set,
+                // causing getBlocksToSpawn() to filter out ALL blocks → phase stuck forever
+                tutorialSpawnedBlockIds.current.clear();
+                tutorialSpawnedDiamondIds.current.clear();
+
+                // FIX: Truly clear obstacles array instead of moving to x=-1000
+                // Moving to x=-1000 leaves them in the array; later in this frame the tutorial
+                // system would count them as "passed" (x < playerX), inflating the persistent
+                // counter and potentially auto-completing the phase on the collision frame!
+                obstacles.current.length = 0;
+
                 // Visual feedback for collision
                 createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
                 ScreenShake.triggerCollision();
                 getHapticSystem().trigger("heavy");
                 AudioSystem.playGlitchDamage();
 
-                // Remove obstacle to prevent re-hit
-                obs.passed = true;
-                obs.x = -1000;
-                continue; // SKIP GAME OVER
+                break; // Exit obstacle loop — phase will restart cleanly
               }
 
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
@@ -7245,12 +7262,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
         };
 
         // Create obstacle info for tutorial system
-        // PERF: Reuse array by truncating and filling in-place
+        // FIX: Use stable block.id from tutorialBlockPatterns instead of position-based IDs
+        // Position-based IDs (obs-${x}-${y}) change every frame → counters never deduplicate
         const tutorialObstacles: InteractiveTutorial.TutorialObstacle[] = [];
         for (let i = 0; i < obstacles.current.length; i++) {
           const obs = obstacles.current[i];
+          // Skip dead/removed obstacles — prevents same-frame counter inflation after collision
+          if (obs.x < -100) continue;
           tutorialObstacles.push({
-            id: `obs-${obs.x}-${obs.y}`,
+            id: (obs as any).id || `obs-fallback-${i}`,
             x: obs.x,
             y: obs.y,
             lane: obs.y < height / 2 ? 'top' : 'bottom',
@@ -7283,6 +7303,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Clear spawned block/diamond IDs when phase changes
           tutorialSpawnedBlockIds.current.clear();
           tutorialSpawnedDiamondIds.current.clear();
+          // FIX: Clear old obstacles from previous phase to prevent cross-phase collisions
+          // Without this, leftover blocks could collide with player in the new phase,
+          // causing an immediate failPhase before any new blocks even spawn
+          obstacles.current.length = 0;
         }
 
         // --- TUTORIAL BLOCK SPAWNING ---
@@ -7359,6 +7383,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           activeShards.current.push(newShard);
         });
+
+        // DIAMOND_COLLECTION recovery: if all diamonds have been spawned and enough time
+        // has passed for them to cross the screen, but player hasn't collected enough,
+        // reset spawn tracking to allow a new wave of diamonds
+        if (tutorialState.current.currentPhase === 'DIAMOND_COLLECTION') {
+          const totalDiamonds = TutorialPatterns.getTotalDiamondCount('DIAMOND_COLLECTION');
+          const allSpawned = tutorialSpawnedDiamondIds.current.size >= totalDiamonds;
+          // Last diamond delay (12000ms) + generous travel time (~8000ms at 0.65x speed)
+          const DIAMOND_WAVE_TIMEOUT = 20000;
+          if (allSpawned && phaseElapsedTime > DIAMOND_WAVE_TIMEOUT &&
+              tutorialState.current.diamondsCollected < tutorialState.current.targetGoal) {
+            // Reset spawn tracking — a new wave of diamonds will spawn
+            tutorialSpawnedDiamondIds.current.clear();
+            // Reset phase start time so diamond delays work from scratch
+            tutorialState.current = {
+              ...tutorialState.current,
+              phaseStartTime: Date.now(),
+              currentMessage: {
+                text: '💎 Elmasları kaçırdın!\nTekrar dene — topları ortaya getir!',
+                duration: 3000,
+                style: 'normal' as const,
+                startTime: Date.now(),
+              },
+            };
+          }
+        }
 
         // Check for tutorial completion - trigger finish mode
         if (tutorialState.current.isComplete && onTutorialComplete) {
@@ -7506,23 +7556,60 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Render progress indicator
         const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
 
-        // --- TUTORIAL INFO MODAL ---
-        {
-          tutorialState.current.showInfoModal && (
-            <TutorialInfoModal
-              isVisible={true}
-              title={tutorialState.current.currentPhase === 'SWAP_MECHANIC' ? "TERS RENK UYARISI!" : "TEBRİKLER!"}
-              description={tutorialState.current.currentPhase === 'SWAP_MECHANIC'
-                ? "Bu bloktan dönerek geçmemiz gerekiyor. Hazır mısın?"
-                : "Hareket kontrollerini başarıyla tamamladın! Hazır mısın?"}
-              showVisuals={tutorialState.current.currentPhase === 'SWAP_MECHANIC'}
-              onClose={() => {
-                // Resume tutorial flow
-                tutorialState.current.showInfoModal = false;
-                tutorialState.current.pausedForModal = false;
-              }}
-            />
-          )
+        // --- TUTORIAL INFO MODAL (Canvas-based) ---
+        if (tutorialState.current.showInfoModal) {
+          ctx.save();
+          // Dark overlay
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillRect(0, 0, width, height);
+
+          // Modal panel
+          const modalW = Math.min(width * 0.85, 320);
+          const modalH = 200;
+          const modalX = (width - modalW) / 2;
+          const modalY = (height - modalH) / 2;
+
+          ctx.fillStyle = 'rgba(10, 10, 30, 0.95)';
+          ctx.shadowColor = '#00f0ff';
+          ctx.shadowBlur = 25;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(modalX, modalY, modalW, modalH, 16);
+          else ctx.rect(modalX, modalY, modalW, modalH);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Title
+          const modalTitle = tutorialState.current.currentPhase === 'SWAP_MECHANIC'
+            ? 'TERS RENK UYARISI!' : 'TEBRİKLER!';
+          ctx.font = 'bold 18px "Courier New", monospace';
+          ctx.fillStyle = '#00f0ff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(modalTitle, width / 2, modalY + 45);
+
+          // Description
+          const modalDesc = tutorialState.current.currentPhase === 'SWAP_MECHANIC'
+            ? 'Bu bloktan dönerek geçmemiz\ngerekiyor. Hazır mısın?'
+            : 'Hareket kontrollerini başarıyla\ntamamladın! Hazır mısın?';
+          ctx.font = '14px "Courier New", monospace';
+          ctx.fillStyle = '#cccccc';
+          const descLines = modalDesc.split('\n');
+          descLines.forEach((line, idx) => {
+            ctx.fillText(line, width / 2, modalY + 85 + idx * 22);
+          });
+
+          // Tap hint
+          const pulse = Math.sin(frameTime / 300) * 0.3 + 0.7;
+          ctx.globalAlpha = pulse;
+          ctx.font = 'bold 14px "Courier New", monospace';
+          ctx.fillStyle = '#00f0ff';
+          ctx.fillText('⟨ Devam etmek için dokun ⟩', width / 2, modalY + modalH - 30);
+          ctx.globalAlpha = 1;
+
+          ctx.restore();
         }
         ctx.save();
         ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
