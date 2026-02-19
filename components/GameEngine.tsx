@@ -79,7 +79,7 @@ import { LevelConfig } from "../data/levels";
 import { DistanceState, DistanceTracker, createDistanceTracker } from "../systems/distanceTracker";
 // Speed Controller System Integration - Campaign Update v2.5
 // Requirements: 3.1, 3.2, 3.3
-import { SpeedController, createSpeedController } from "../systems/speedController";
+import { SPEED_CONSTANTS, SpeedController, createSpeedController } from "../systems/speedController";
 // Daily Challenge System Integration - Requirements 8.1, 8.2, 8.3
 import { DailyChallengeConfig } from "../systems/dailyChallenge";
 // Zen Mode System Integration - Requirements 9.1, 9.2, 9.4
@@ -428,6 +428,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Campaign Mode State - Requirements 7.3
   const levelCompleted = useRef<boolean>(false);
 
+  // Finish Approach State - Clear runway before finish line (90-100% of level)
+  const finishApproachActive = useRef<boolean>(false);
+  const finishApproachStartTime = useRef<number>(0);
+
   // Finish Mode State - Player moves right to finish line when reaching target distance
   const isInFinishMode = useRef<boolean>(false);
   const finishModePlayerX = useRef<number>(0); // Player X offset during finish mode
@@ -729,6 +733,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     particles.current = [];
     framesSinceSpawn.current = 0;
 
+    // Reset block system state for clean polarity/gap tracking
+    blockSystemState.current = BlockSystem.createBlockSystemState();
+
     // Campaign Mode: Apply spawn rate modifier - Requirements 7.2
     let spawnRateModifier =
       campaignMode?.enabled && campaignMode.levelConfig
@@ -762,6 +769,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Reset Campaign Mode State - Requirements 7.3
     levelCompleted.current = false;
+
+    // Reset Finish Approach State
+    finishApproachActive.current = false;
+    finishApproachStartTime.current = 0;
 
     // Reset Finish Mode State
     isInFinishMode.current = false;
@@ -997,6 +1008,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     ghostRacerMode,
     onRestoreStateUpdate,
     spiritModifiers,
+    tutorialMode,
   ]);
 
   // ============================================================================
@@ -1135,9 +1147,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     canvasWidth: number
   ) => {
     shardSpawnSequence.current += 1;
-    // Mobile clarity: cap shards on screen (deterministic budget) - Increased for more rewards
+    // Mobile clarity: cap shards on screen (deterministic budget) - Generous for rewarding gameplay
     const maxActiveShards =
-      score.current < 800 ? 3 : score.current < 2500 ? 5 : 8; // Significantly increased limits
+      score.current < 400 ? 4 : score.current < 1500 ? 6 : 10; // Progressive shard density
     if (activeShards.current.length >= maxActiveShards) return;
 
     // Delay risky shards until player is warmed up
@@ -1828,12 +1840,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (frameId.current) {
         cancelAnimationFrame(frameId.current);
         frameId.current = 0;
-        console.log('[GAME] Paused - animation frame cancelled');
       }
       // Record when pause started for time offset calculation
       if (pauseStartTime.current === 0) {
         pauseStartTime.current = Date.now();
-        console.log('[GAME] Pause time recorded:', pauseStartTime.current);
       }
       // Mark that we were playing, don't reset on resume
       wasPlayingRef.current = true;
@@ -1844,17 +1854,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     // Only reset if this is a NEW game, not resuming from pause
     if (!wasPlayingRef.current) {
-      console.log("[GAME] Starting NEW game, resetting...");
       resetGame();
     } else {
-      console.log("[GAME] Resuming from pause, NOT resetting");
 
       // CRITICAL: Calculate pause duration and offset all time-based states
       // This preserves ability progress (like dash) during pause
       if (pauseStartTime.current > 0) {
         const pauseDuration = Date.now() - pauseStartTime.current;
         totalPausedTime.current += pauseDuration;
-        console.log('[GAME] Pause duration:', pauseDuration, 'ms, total paused:', totalPausedTime.current, 'ms');
 
         // Offset all time-based state startTimes forward by pause duration
         // This makes Date.now() - startTime give correct elapsed time
@@ -1862,12 +1869,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // 1. Phase Dash - preserve dash progress
         if (phaseDashState.current.isActive && phaseDashState.current.startTime > 0) {
           phaseDashState.current.startTime += pauseDuration;
-          console.log('[GAME] Dash startTime offset by', pauseDuration);
         }
         if (phaseDashState.current.isReturning && phaseDashState.current.returnStartTime > 0) {
           phaseDashState.current.returnStartTime += pauseDuration;
         }
-        if (phaseDashState.current.dashEndTime > 0) {
+        // Only offset dashEndTime if dash is active or returning (cooldown still relevant)
+        if ((phaseDashState.current.isActive || phaseDashState.current.isReturning) && phaseDashState.current.dashEndTime > 0) {
           phaseDashState.current.dashEndTime += pauseDuration;
         }
 
@@ -1920,11 +1927,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
     wasPlayingRef.current = true;
 
     const loop = () => {
+      // Single timestamp for the entire frame - prevents inconsistencies from multiple Date.now() calls
+      const frameTime = Date.now();
+
       // === PAUSE CHECK ===
       // If paused, stop the loop entirely (don't schedule next frame)
       // Loop will restart when gameState changes due to useEffect dependency
       if (gameStateRef.current !== GameState.PLAYING) {
-        console.log('[GAME] Loop stopping - gameState is not PLAYING:', gameStateRef.current);
         return; // Exit loop completely, no more frames scheduled
       }
 
@@ -1944,20 +1953,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Distance-based level completion logic with finish mode
       const currentCampaignMode = campaignModeRef.current;
 
-      // DEBUG: Log every 60 frames (~1 second)
-      if (framesSinceSpawn.current % 60 === 0) {
-        console.log('[DEBUG] Campaign:', currentCampaignMode?.enabled,
-          'DistanceMode:', currentCampaignMode?.useDistanceMode,
-          'Tracker:', !!distanceTrackerRef.current,
-          'FinishMode:', isInFinishMode.current,
-          'Completed:', levelCompleted.current);
-        if (distanceTrackerRef.current) {
-          console.log('[DEBUG] Distance:', distanceTrackerRef.current.getCurrentDistance().toFixed(1),
-            '/', distanceTrackerRef.current.getTargetDistance(),
-            'Complete:', distanceTrackerRef.current.isLevelComplete());
-        }
-      }
-
       if (currentCampaignMode?.enabled && currentCampaignMode.useDistanceMode && distanceTrackerRef.current) {
         const currentDist = distanceTrackerRef.current.getCurrentDistance();
         const targetDist = distanceTrackerRef.current.getTargetDistance();
@@ -1969,10 +1964,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // When target distance is reached, enter finish mode
         if (isComplete && !isInFinishMode.current && !levelCompleted.current) {
-          console.log('[FINISH MODE] Starting - Distance:', currentDist, '/', targetDist);
           isInFinishMode.current = true;
           finishModePlayerX.current = 0;
-          finishModeStartTime.current = Date.now();
+          finishModeStartTime.current = frameTime;
           // Finish line at 85% of screen width
           finishLineX.current = screenWidth * 0.85;
           hasReachedFinishLine.current = false;
@@ -2004,20 +1998,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Update holographic gate pulse
             holographicGateState.current = HolographicGate.updateHolographicGate(
               holographicGateState.current,
-              Date.now(),
+              frameTime,
               finishLineX.current - currentPlayerX,
               HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
             );
 
             // Check if player reached finish line
             if (currentPlayerX >= finishLineX.current - 20) {
-              console.log('[FINISH MODE] Player reached finish line!');
               hasReachedFinishLine.current = true;
 
               // Trigger gate shatter animation
               holographicGateState.current = HolographicGate.triggerGateShatter(
                 holographicGateState.current,
-                Date.now(),
+                frameTime,
                 finishLineX.current,
                 screenHeight / 2,
                 HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
@@ -2047,7 +2040,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Update shatter particles
             holographicGateState.current = HolographicGate.updateHolographicGate(
               holographicGateState.current,
-              Date.now(),
+              frameTime,
               0,
               HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
             );
@@ -2057,12 +2050,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
             // Check if animation is complete (player off screen or enough time passed)
             // Extended animation time for better visual experience
-            const timeSinceFinishLine = Date.now() - (finishModeStartTime.current + 500);
+            const timeSinceFinishLine = frameTime - (finishModeStartTime.current + 500);
             const playerOffScreen = currentPlayerX > screenWidth + 50;
 
             // Wait at least 1.5 seconds after reaching finish line for full animation
             if (playerOffScreen || timeSinceFinishLine > 1500) {
-              console.log('[LEVEL COMPLETE] Animation finished - triggering victory');
               levelCompleted.current = true;
 
               // Stop game loop
@@ -2115,7 +2107,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // --- SLOW MOTION UPDATE - Requirements 6.4 ---
-      const gameTime = Date.now();
+      const gameTime = frameTime;
 
       // --- START SEQUENCE UPDATE - Cinematic 3-2-1-GO countdown ---
       // --- START SEQUENCE UPDATE - Cinematic 3-2-1-GO countdown ---
@@ -2315,6 +2307,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         phaseDashVFXState.current = PhaseDashVFX.triggerTransitionOut(phaseDashVFXState.current);
         ScreenShake.trigger({ intensity: 10, duration: 250, frequency: 20, decay: true });
 
+        // Grace period after dash ends - prevents unfair immediate collision
+        lastSpecialAbilityEndTime.current = frameTime;
+
         // Create end-of-dash burst particles for celebration effect
         const dashEndX = width / 8 + PhaseDash.getPlayerXOffset(phaseDashState.current);
         const dashEndY = playerY.current * height;
@@ -2352,13 +2347,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Update transformation VFX
       transformationVFXState.current = TransformationVFX.updateTransformationVFX(
         transformationVFXState.current,
-        Date.now()
+        frameTime
       );
 
       // Update Second Chance VFX
       secondChanceVFXState.current = SecondChanceVFX.updateSecondChanceVFX(
         secondChanceVFXState.current,
-        Date.now()
+        frameTime
       );
 
       playerY.current += (targetPlayerY.current - playerY.current) * 0.15;
@@ -2378,7 +2373,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         (targetLen - currentConnectorLength.current) * 0.01;
 
       // --- DYNAMIC MIDLINE CALCULATION - Requirements 4.1, 4.2, 4.11, 4.12, 7.6 ---
-      const elapsedTime = Date.now() - gameStartTime.current;
+      const elapsedTime = frameTime - gameStartTime.current;
       const midlineConfig = MIDLINE_CONFIG as MidlineConfig;
 
       // Campaign Mode: Check if midline mechanic is enabled - Requirements 7.6
@@ -2503,14 +2498,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // Spawning - Pattern-Based System - Requirements 2.1, 2.2, 2.3, 2.4, 2.5
-      const spawnTime = Date.now();
+      const spawnTime = frameTime;
 
       if (usePatternBasedSpawning.current) {
         // Campaign Update v2.5 - Distance-based speed calculation
         // Requirements: 2.2, 2.3, 3.1, 3.2, 3.3
         const activeCampaign = campaignModeRef.current;
         if (activeCampaign?.enabled && activeCampaign.useDistanceMode && distanceTrackerRef.current && speedControllerRef.current) {
-          const currentTime = Date.now();
+          const currentTime = frameTime;
           let deltaTimeMs = currentTime - lastDistanceUpdateTime.current;
           // Cap deltaTime to max 50ms (~3 frames) to prevent time accumulation during pause
           // Without this, resuming from pause would apply all accumulated time at once
@@ -2522,11 +2517,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const distState = distanceTrackerRef.current.getState();
 
           // Update speed controller transition (for smooth climax zone entry)
-          speedControllerRef.current.update(deltaTimeMs, distState.isInClimaxZone);
+          // Skip speed ramp during Quantum Lock - Requirements 5.7: Stabilize game speed
+          if (!GlitchSystem.shouldStabilizeSpeed(glitchModeState.current)) {
+            speedControllerRef.current.update(deltaTimeMs, distState.isInClimaxZone);
+          }
 
           // Calculate speed using progressive formula with climax boost
           const levelId = activeCampaign.levelConfig?.id || 1;
-          speed.current = speedControllerRef.current.calculateSpeed(distState, levelId);
+          // During Quantum Lock, freeze speed at current value - Requirements 5.7
+          if (!GlitchSystem.shouldStabilizeSpeed(glitchModeState.current)) {
+            speed.current = speedControllerRef.current.calculateSpeed(distState, levelId);
+          }
 
           // Apply Tutorial Speed Multiplier - Requirements: Tutorial Slow-Motion
           if (tutorialMode?.enabled && tutorialState.current.isActive) {
@@ -2535,12 +2536,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Update distance based on current speed
           // Convert speed from pixels/frame to meters/second
-          // Factor 0.8 gives good pacing (~45-60 seconds for level 1 with 100m target)
+          // DISTANCE_COMPENSATION (1.55×) offsets the reduced speed slopes so level pacing is unchanged
           // During dash, distance increases 4x faster
           // During Quantum Lock, distance increases 3x faster
           const dashDistanceMultiplier = PhaseDash.getDistanceMultiplier(phaseDashState.current);
           const quantumLockDistanceMultiplier = GlitchSystem.getDistanceMultiplier(glitchModeState.current);
-          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * quantumLockDistanceMultiplier * 1.0;
+          const speedMetersPerSec = speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashDistanceMultiplier * quantumLockDistanceMultiplier * SPEED_CONSTANTS.DISTANCE_COMPENSATION;
           distanceTrackerRef.current.update(deltaTimeSec, speedMetersPerSec);
 
           // Update distance state ref
@@ -2597,8 +2598,18 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const isTutorialModeActive = tutorialMode?.enabled && tutorialState.current.isActive;
 
         // Grace Period Check - Post-Special Ability Safety Window
-        const timeSinceSpecialEnd = Date.now() - (lastSpecialAbilityEndTime.current || 0);
+        const timeSinceSpecialEnd = frameTime - (lastSpecialAbilityEndTime.current || 0);
         const isInGracePeriod = timeSinceSpecialEnd < 1000;
+
+        // Finish Approach: activate clear runway at 88% - stop spawning, start clearing obstacles
+        const isInFinishApproach = distanceStateRef.current.targetDistance > 0 &&
+          distanceStateRef.current.progressPercent >= 88;
+        if (isInFinishApproach && !finishApproachActive.current) {
+          finishApproachActive.current = true;
+          finishApproachStartTime.current = frameTime;
+          // Haptic pulse to signal approach
+          getHapticSystem().trigger('light');
+        }
 
         const shouldStopSpawning = isInFinishMode.current ||
           isInPostDashCooldown ||
@@ -2608,9 +2619,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Delay initial obstacles: 3 meters for distance mode, 1.8s for endless
           (campaignModeRef.current?.useDistanceMode
             ? distanceStateRef.current.currentDistance < 3
-            : (Date.now() - gameStartTime.current < 1800)) ||
-          (distanceStateRef.current.targetDistance > 0 &&
-            distanceStateRef.current.progressPercent >= 98);
+            : (frameTime - gameStartTime.current < 1800)) ||
+          isInFinishApproach; // Stop spawning at 88% for clear runway
 
         // DASH BURST SPAWN: During dash, spawn obstacles directly every few frames
         // This bypasses the pattern system for intense obstacle barrage
@@ -2795,11 +2805,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // S.H.I.F.T. PROTOCOL - DISABLED (spawn/update removed)
       // Collectibles array kept for compatibility but not spawning new letters
       const playerPosX = width / 4;
-      const gameTimeSeconds = Date.now() / 1000;
-      const now = Date.now();
+      const gameTimeSeconds = frameTime / 1000;
+      const now = frameTime;
 
       // --- GRAVITY FLIP LOGIC - Requirements 2.1, 2.3, 2.6, 2.7 ---
-      const currentTime = Date.now();
+      const currentTime = frameTime;
 
       // Check if invincibility window should end - Requirements 2.7
       if (gravityState.current.isInvincible) {
@@ -2962,7 +2972,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       };
 
       // Phase 2: Shield visual feedback (simple readable ring)
-      const shieldRemainingMs = shieldInvincibleUntil.current - Date.now();
+      const shieldRemainingMs = shieldInvincibleUntil.current - frameTime;
       if (shieldRemainingMs > 0) {
         const a = Math.max(0, Math.min(1, shieldRemainingMs / 2000));
         ctx.save();
@@ -3001,12 +3011,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const isTutorialActive = tutorialMode?.enabled && tutorialState.current.isActive;
 
       // Grace Period Check - Requirements: 2 second delay after special ability ends
-      // This prevents players from being immediately swarmed
-      const gracePeriodDuration = 2000;
-      const timeSinceSpecialEnd = Date.now() - (lastSpecialAbilityEndTime.current || 0);
-      const isInGracePeriod = timeSinceSpecialEnd < gracePeriodDuration;
+      // This prevents players from being immediately swarmed by enemies
+      const enemyGracePeriodDuration = 2000;
+      const timeSinceSpecialEndForEnemy = frameTime - (lastSpecialAbilityEndTime.current || 0);
+      const isInEnemyGracePeriod = timeSinceSpecialEndForEnemy < enemyGracePeriodDuration;
 
-      if (enemyManagerState.current && !isInSpecialAbility && !isTutorialActive && !isInGracePeriod) {
+      if (enemyManagerState.current && !isInSpecialAbility && !isTutorialActive && !isInEnemyGracePeriod) {
         // Get current distance for spawn threshold check
         const currentDistance = distanceStateRef.current.currentDistance || 0;
 
@@ -3073,8 +3083,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
             const pokemonAttack = activeCharacter.stats?.attack || 50;
 
             if (pokemonTier === 'legendary') {
-              // DEBUG: Log tier detection
-              console.log('[COUNTER] LEGENDARY tier detected - destroying enemy', { pokemonTier, pokemonLevel, pokemonAttack });
               // LEGENDARY: Instant destroy - bypass knockback
               enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
 
@@ -3096,17 +3104,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 vy: -3,
               });
             } else {
-              // DEBUG: Log knockback path
-              console.log('[COUNTER] NON-LEGENDARY - applying knockback', { pokemonTier, pokemonLevel, pokemonAttack });
               // COMMON/RARE/EPIC: Knockback with level-based distance
               const pushDistance = EnemyManager.calculatePushDistance(pokemonLevel, pokemonAttack);
-              console.log('[COUNTER] Push distance calculated:', pushDistance);
               enemyManagerState.current = EnemyManager.applyKnockback(
                 enemyManagerState.current,
                 pushDistance,
                 width
               );
-              console.log('[COUNTER] Knockback applied, new dart state:', enemyManagerState.current.dart);
 
               // Knockback VFX - impact flash, speed lines, shockwave
               const knockbackTargetX = enemyManagerState.current.dart.knockbackTargetX;
@@ -3138,10 +3142,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
         }
 
-        // Check for collision - Enemy ALWAYS deals damage when touching orbs
-        // No state check - if dart touches an orb, player takes damage
-        // Use LARGER collision radius (4x) to ensure reliable detection
-        if (enemyManagerState.current.isActive) {
+        // Check for collision - Enemy deals damage only when dart is in firing state
+        // Guard against tracking/cooldown states to prevent unfair hits
+        // Use LARGER collision radius (2x) to ensure reliable detection
+        if (enemyManagerState.current.isActive && enemyManagerState.current.dart.state === 'firing') {
           // Use actual orb visual radius for fair collision
           const collisionRadius = whiteOrb.radius * 2; // 2x for visual match, not 4x
           const whiteHit = EnemyManager.checkDartCollision(
@@ -3161,7 +3165,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Check for shield first
             if (shieldChargesRemaining.current > 0) {
               shieldChargesRemaining.current -= 1;
-              shieldInvincibleUntil.current = Date.now() + 2000 + spiritModifiers.shieldTimeBonus;
+              shieldInvincibleUntil.current = frameTime + 2000 + spiritModifiers.shieldTimeBonus;
 
               // Reset dart
               enemyManagerState.current = EnemyManager.counterDart(enemyManagerState.current);
@@ -3252,12 +3256,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // DİKKAT: Yetenekler sırasında (Phase Dash, Quantum Lock) çalışmaz!
       const fluxDistance = distanceStateRef.current.currentDistance || 0;
       const fluxLevel = campaignModeRef.current?.levelConfig?.id || 1;
-      const fluxCurrentTime = Date.now();
+      const fluxCurrentTime = frameTime;
 
       // Check if player is using any special ability (immune to FluxOverload)
+      // Include all Quantum Lock phases: warning, charging, active, exiting, ghost
       const isUsingAbility = PhaseDash.isDashActive(phaseDashState.current) ||
         glitchModeState.current.isActive ||
-        glitchModeState.current.phase === 'warning';
+        glitchModeState.current.phase === 'warning' ||
+        glitchModeState.current.phase === 'charging' ||
+        glitchModeState.current.phase === 'exiting' ||
+        glitchModeState.current.phase === 'ghost';
 
       // Trigger check - Only trigger when not using abilities and not in tutorial
       if (!isUsingAbility && !tutorialState.current.isActive && FluxOverload.shouldTrigger(fluxDistance, fluxLevel, fluxOverloadState.current)) {
@@ -3357,7 +3365,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             constructSystemState.current = ConstructSystem.transformTo(
               constructSystemState.current,
               token.constructType,
-              Date.now()
+              frameTime
             );
 
             // Trigger transformation VFX - Requirements 2.2
@@ -3365,7 +3373,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               transformationVFXState.current,
               vfxX,
               vfxY,
-              Date.now()
+              frameTime
             );
 
             // Play transformation sound - Requirements 6.5
@@ -3532,7 +3540,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glitchScreenFlashState.current = GlitchVFX.triggerScreenFlash('enter');
 
           // Start connector animation
-          connectorAnimationStartTime.current = Date.now();
+          connectorAnimationStartTime.current = frameTime;
 
           // Generate wave path shards
           wavePathShards.current = GlitchSystem.generateWavePathShards(
@@ -3593,7 +3601,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Handle transition to exiting phase - Requirements 7.3
         if (previousPhase === 'warning' && currentPhase === 'exiting') {
           // Start wave flattening animation
-          connectorAnimationStartTime.current = Date.now();
+          connectorAnimationStartTime.current = frameTime;
         }
 
         // Handle transition to ghost mode - Requirements 7.4
@@ -3647,9 +3655,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
           framesSinceSpawn.current = 0;
           // BUG FIX: Ensure no invisible obstacles are lingering
           obstacles.current = [];
+          // BUG FIX: Reset block system state to prevent stale polarity/gap overlap
+          blockSystemState.current = BlockSystem.createBlockSystemState();
+          // BUG FIX: Reset pattern manager to start fresh patterns
+          patternManagerState.current = PatternManager.createPatternManagerState();
+          patternStartTime.current = 0;
+          // Reset object pool to release stale pooled objects
+          obstaclePool.current.reset();
 
           // Grace Period Tracker
-          lastSpecialAbilityEndTime.current = Date.now();
+          lastSpecialAbilityEndTime.current = frameTime;
 
           scorePopups.current.push({
             x: width / 2,
@@ -3809,7 +3824,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Diamond Bonus System - Reflex rewards
               const bonusConfig = GLITCH_CONFIG.diamondBonus;
-              const currentTime = Date.now();
+              const currentTime = frameTime;
               const timeSinceLastCollect = currentTime - (lastDiamondCollectTime.current || 0);
 
               // Calculate reflex bonus (fast collection = 2x)
@@ -4005,6 +4020,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
         return keep;
       });
 
+      // Finish Approach: accelerate objects off-screen to clear the runway
+      // Smoothly ramp up from 1x to 3x over 1.5 seconds for a satisfying "clear" effect
+      // Hoisted here so both shards and obstacles can use the same value
+      let finishApproachSpeedBoost = 1.0;
+      if (finishApproachActive.current && !isInFinishMode.current) {
+        const timeSinceApproach = Date.now() - finishApproachStartTime.current;
+        const rampProgress = Math.min(1, timeSinceApproach / 1500); // 1.5s ramp
+        finishApproachSpeedBoost = 1.0 + rampProgress * 2.0; // 1x → 3x
+      }
+
       // --- SHARD MOVEMENT AND COLLECTION - Requirements 5.1, 5.2, 5.3, 5.4, 5.5 ---
       // Move shards with game speed + dynamic oscillation
       // Note: currentTime is already defined above in gravity flip logic
@@ -4018,9 +4043,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           return false;
         }
 
-        // Move base position left with game speed - Apply construct and dash speed multipliers
+        // Move base position left with game speed - Apply construct, dash, and finish approach multipliers
         // Dash multiplier makes shards fly faster too for consistent warp feel
-        shard.baseX -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForShards;
+        // Finish approach boost clears shards along with obstacles
+        shard.baseX -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplierForShards * finishApproachSpeedBoost;
 
         // Calculate dynamic position with oscillation (yukarı-aşağı + ileri-geri)
         const dynamicPos = ShardPlacement.calculateShardPosition(
@@ -4131,7 +4157,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
           if (tutorialState.current.isActive &&
             tutorialState.current.currentPhase === 'DIAMOND_COLLECTION') {
             tutorialState.current = InteractiveTutorial.collectDiamond(tutorialState.current);
-            console.log('[TUTORIAL] Diamond collected! Total:', tutorialState.current.diamondsCollected);
           }
 
           // Mission System: Emit COLLECT event - Requirements 7.4
@@ -4213,7 +4238,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Capture complete snapshot with all required fields - Requirements 7.2
         const snapshot = RestoreSystem.captureSnapshot({
-          timestamp: Date.now(),
+          timestamp: frameTime,
           score: score.current,
           gameSpeed: speed.current,
           playerPosition: playerY.current,
@@ -4234,7 +4259,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Also record to legacy restore state for backward compatibility
         const legacySnapshot = RestoreSystem.createSnapshot(
-          Date.now(),
+          frameTime,
           score.current,
           playerY.current,
           isSwapped.current,
@@ -4260,10 +4285,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ? (tutorialState.current.speedMultiplier ?? 1.0)
         : 1.0;
 
-      obstacles.current.forEach((obs) => {
-        // Horizontal Movement - Apply slow motion, construct, dash, and tutorial speed multipliers
+      for (let obsIdx = 0; obsIdx < obstacles.current.length; obsIdx++) {
+        const obs = obstacles.current[obsIdx];
+        // Early exit: stop processing obstacles once a collision is detected
+        if (collisionDetected) break;
+
+        // Horizontal Movement - Apply slow motion, construct, dash, tutorial, and finish approach multipliers
         // Dash multiplier makes obstacles move faster = feels like player is warping through
-        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier * tutorialSpeedMultiplier;
+        // Finish approach boost clears the runway before the finish line
+        obs.x -= speed.current * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier * tutorialSpeedMultiplier * finishApproachSpeedBoost;
 
 
         // Vertical Animation
@@ -4317,7 +4347,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             ) {
               resonanceState.current = ResonanceSystem.activate(
                 resonanceState.current,
-                Date.now()
+                frameTime
               );
               // Haptic Feedback: Success pattern for resonance activation - Requirements 4.4
               getHapticSystem().trigger("success");
@@ -4430,7 +4460,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Requirements 2.7, 4.3, 9.2
         const zenModeInvincible =
           zenMode?.enabled &&
-          ZenMode.isRespawnInvincible(zenModeState.current, Date.now());
+          ZenMode.isRespawnInvincible(zenModeState.current, frameTime);
 
         // Check Overdrive invulnerability - Requirements 4.3
         const overdriveInvincible = ShiftProtocol.isInvulnerableDuringOverdrive(
@@ -4440,7 +4470,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Check post-restore invincibility (1 second after restore)
         let postRestoreInvincibleActive = false;
         if (postRestoreInvincible.current) {
-          const timeSinceRestore = Date.now() - postRestoreStartTime.current;
+          const timeSinceRestore = frameTime - postRestoreStartTime.current;
           if (timeSinceRestore < POST_RESTORE_INVINCIBILITY_DURATION) {
             postRestoreInvincibleActive = true;
           } else {
@@ -4451,7 +4481,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Phase 2: Shield invincibility window (2s after shield break)
         const shieldInvincibleActive =
-          Date.now() < shieldInvincibleUntil.current;
+          frameTime < shieldInvincibleUntil.current;
 
         // --- OVERDRIVE OBSTACLE DESTRUCTION - Requirements 4.4 ---
         // During Overdrive, destroy obstacles on contact instead of dying
@@ -4512,13 +4542,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
               obs.x = -1000;
             }
           }
-          return; // Skip normal collision logic during Overdrive
+          continue; // Skip normal collision logic during Overdrive
         }
 
         // Check Construct System invincibility - Requirements 2.1, 6.3
         const constructInvincible = ConstructSystem.isInvulnerable(
           constructSystemState.current,
-          Date.now()
+          frameTime
         );
 
         // Check Quantum Lock / Ghost Mode invulnerability - Requirements 6.3, 7.6
@@ -4539,7 +4569,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           isRestoreAnimating.current ||
           isInFinishMode.current  // Skip collision in finish mode
         )
-          return;
+          continue;
 
         // Phase Dash: Destroy obstacles with satisfying impact
         if (PhaseDash.isInvincible(phaseDashState.current)) {
@@ -4583,12 +4613,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Audio feedback for destruction
             AudioSystem.playTitanStomp(); // Reuse stomp sound for impact
           }
-          return;
+          continue;
         }
 
         const whiteOrbPos = { x: whiteOrb.x, y: whiteOrb.y };
         const blackOrbPos = { x: blackOrb.x, y: blackOrb.y };
-        const collisionTime = Date.now();
+        const collisionTime = frameTime;
 
         // Requirements 4.6: Determine orb zones based on dynamic midline
         const whiteOrbZone = getOrbZone(whiteOrb.y, currentMidlineY);
@@ -4685,7 +4715,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Remove obstacle to prevent immediate re-hit
                 obs.passed = true;
                 obs.x = -1000;
-                return;
+                continue;
               }
 
               // --- CONSTRUCT COLLISION RESOLUTION - Requirements 3.3, 3.4, 4.4, 5.4, 5.5 ---
@@ -4696,7 +4726,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               if (collisionResult === 'IGNORE') {
                 // Blink teleport - ignore collision
-                return;
+                continue;
               } else if (collisionResult === 'DESTROY') {
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
@@ -4719,7 +4749,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 });
                 obs.passed = true;
                 obs.x = -1000;
-                return;
+                continue;
               }
 
               // DAMAGE result - check Second Chance first
@@ -4727,7 +4757,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Process Second Chance - Requirements 6.1, 6.2, 6.3, 6.7
                 const secondChanceResult = SecondChanceSystem.processSecondChance(
                   constructSystemState.current,
-                  Date.now(),
+                  frameTime,
                   obstacles.current,
                   playerX
                 );
@@ -4748,7 +4778,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   secondChanceVFXState.current,
                   whiteOrb.x,
                   whiteOrb.y,
-                  Date.now()
+                  frameTime
                 );
                 createExplosion(whiteOrb.x, whiteOrb.y, "#FF00FF");
                 ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, activeCharacter?.types[0] || 'normal');
@@ -4772,7 +4802,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 onRhythmStateUpdate?.(1, 0);
                 ChromaticAberration.endStreak();
                 resonanceState.current = ResonanceSystem.createInitialResonanceState();
-                return;
+                continue;
               }
 
               // Normal collision - game over
@@ -4791,7 +4821,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Remove obstacle to prevent re-hit
                 obs.passed = true;
                 obs.x = -1000;
-                return; // SKIP GAME OVER
+                continue; // SKIP GAME OVER
               }
 
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
@@ -4911,7 +4941,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
                 obs.passed = true;
                 obs.x = -1000;
-                return;
+                continue;
               }
 
               // --- CONSTRUCT COLLISION RESOLUTION - Requirements 3.3, 3.4, 4.4, 5.4, 5.5 ---
@@ -4922,7 +4952,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               if (blackCollisionResult === 'IGNORE') {
                 // Blink teleport - ignore collision
-                return;
+                continue;
               } else if (blackCollisionResult === 'DESTROY') {
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
@@ -4945,7 +4975,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 });
                 obs.passed = true;
                 obs.x = -1000;
-                return;
+                continue;
               }
 
               // DAMAGE result - check Second Chance first
@@ -4953,7 +4983,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Process Second Chance - Requirements 6.1, 6.2, 6.3, 6.7
                 const blackSecondChanceResult = SecondChanceSystem.processSecondChance(
                   constructSystemState.current,
-                  Date.now(),
+                  frameTime,
                   obstacles.current,
                   playerX
                 );
@@ -4974,7 +5004,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                   secondChanceVFXState.current,
                   blackOrb.x,
                   blackOrb.y,
-                  Date.now()
+                  frameTime
                 );
                 createExplosion(blackOrb.x, blackOrb.y, "#FF00FF");
                 ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, activeCharacter?.types[0] || 'normal');
@@ -4998,7 +5028,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 onRhythmStateUpdate?.(1, 0);
                 ChromaticAberration.endStreak();
                 resonanceState.current = ResonanceSystem.createInitialResonanceState();
-                return;
+                continue;
               }
 
               // Normal collision - game over
@@ -5017,7 +5047,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Remove obstacle to prevent re-hit
                 obs.passed = true;
                 obs.x = -1000;
-                return; // SKIP GAME OVER
+                continue; // SKIP GAME OVER
               }
 
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
@@ -5286,7 +5316,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             }
           }
         }
-      });
+      }
 
       // Ghost Racer Recording - Requirements 15.4
       if (ghostRacerMode?.enabled && ghostRacerState.current.isRecording) {
@@ -5314,10 +5344,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ParticleSystem.update();
 
       // Update Screen Shake - Requirements 10.3, 10.4
-      ScreenShake.update(Date.now());
+      ScreenShake.update(frameTime);
 
       // Update Chromatic Aberration - Requirements 11.2, 11.3
-      ChromaticAberration.update(Date.now());
+      ChromaticAberration.update(frameTime);
 
       // Update Environmental Effects - Requirements 14.2, 14.3
       // BPM-synced pulse and glitch artifact updates
@@ -5328,7 +5358,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       resonanceState.current = ResonanceSystem.update(
         resonanceState.current,
         resonanceDeltaTime,
-        Date.now()
+        frameTime
       );
 
       // Update S.H.I.F.T. Overdrive Timer - Requirements 4.6, 4.7
@@ -5742,16 +5772,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // This matches the game logic: white orb passes through white obstacles, black orb passes through black obstacles
       const whiteObstacleColor = getColor("topOrb"); // White obstacles use topOrb color (same as white orb)
       const blackObstacleColor = getColor("bottomOrb"); // Black obstacles use bottomOrb color (same as black orb)
-
-      if (obstacles.current.length > 0 && framesSinceSpawn.current % 60 === 0) {
-        console.log(
-          "[RENDER] Drawing",
-          obstacles.current.length,
-          "obstacles. First obs:",
-          obstacles.current[0]?.x,
-          obstacles.current[0]?.y
-        );
-      }
 
       // Render all blocks using BlockSystem
       BlockSystem.renderAllBlocks(obstacles.current, {
@@ -6630,6 +6650,67 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Render trails BEFORE orbs so they appear behind
       OrbTrailSystem.renderTrails(ctx, trailConfig);
 
+      // --- FINISH APPROACH VFX --- Clear runway atmosphere before finish line
+      // Creates a dramatic "the end is near" feel with speed lines and a pulsing glow
+      if (finishApproachActive.current && !isInFinishMode.current) {
+        const timeSinceApproach = Date.now() - finishApproachStartTime.current;
+        const approachProgress = Math.min(1, timeSinceApproach / 3000); // 3s total approach phase
+
+        ctx.save();
+
+        // 1. Edge glow — pulsing cyan/gold vignette on right side (finish is ahead)
+        const edgePulse = 0.15 + 0.1 * Math.sin(timeSinceApproach * 0.004);
+        const edgeGradient = ctx.createLinearGradient(width * 0.6, 0, width, 0);
+        edgeGradient.addColorStop(0, 'rgba(0, 240, 255, 0)');
+        edgeGradient.addColorStop(1, `rgba(0, 240, 255, ${edgePulse * approachProgress})`);
+        ctx.fillStyle = edgeGradient;
+        ctx.fillRect(0, 0, width, height);
+
+        // Gold warmth overlay building up
+        const goldPulse = 0.06 * approachProgress * (0.7 + 0.3 * Math.sin(timeSinceApproach * 0.003));
+        ctx.fillStyle = `rgba(255, 215, 0, ${goldPulse})`;
+        ctx.fillRect(0, 0, width, height);
+
+        // 2. Horizontal speed lines — flying towards the right (rush feeling)
+        const lineCount = Math.floor(4 + approachProgress * 10);
+        for (let i = 0; i < lineCount; i++) {
+          const seed = i * 137.5;
+          const lineY = ((seed * 7.3 + timeSinceApproach * 0.15 * (0.5 + (i % 3) * 0.3)) % height);
+          const lineLength = 40 + (i % 5) * 30 + approachProgress * 60;
+          const lineX = ((seed * 3.1 + timeSinceApproach * (0.3 + (i % 4) * 0.1)) % (width + lineLength)) - lineLength;
+          const lineAlpha = (0.08 + approachProgress * 0.15) * (0.5 + 0.5 * Math.sin(seed + timeSinceApproach * 0.005));
+
+          ctx.strokeStyle = `rgba(0, 240, 255, ${lineAlpha})`;
+          ctx.lineWidth = 1 + (i % 3) * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(lineX, lineY);
+          ctx.lineTo(lineX + lineLength, lineY);
+          ctx.stroke();
+        }
+
+        // 3. "BİTİŞ YAKLAŞIYOR" text — fades in and pulses
+        if (approachProgress > 0.15) {
+          const textOpacity = Math.min(1, (approachProgress - 0.15) / 0.3) * (0.6 + 0.4 * Math.sin(timeSinceApproach * 0.005));
+          ctx.font = 'bold 22px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = `rgba(0, 240, 255, ${textOpacity})`;
+          ctx.shadowColor = '#00F0FF';
+          ctx.shadowBlur = 12;
+          ctx.fillText('BİTİŞ YAKLAŞIYOR', width / 2, 90);
+          ctx.shadowBlur = 0;
+
+          // Remaining distance counter
+          const remaining = Math.ceil(distanceStateRef.current.targetDistance - distanceStateRef.current.currentDistance);
+          if (remaining > 0) {
+            ctx.font = 'bold 16px monospace';
+            ctx.fillStyle = `rgba(255, 255, 255, ${textOpacity * 0.8})`;
+            ctx.fillText(`${remaining}m`, width / 2, 115);
+          }
+        }
+
+        ctx.restore();
+      }
+
       // --- HOLOGRAPHIC GATE / FINISH LINE RENDER ---
       // Requirements: 12.1, 12.2 - Render finish line when in finish mode
       if (isInFinishMode.current && !levelCompleted.current) {
@@ -6750,7 +6831,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Post-restore invincibility visual effect - cyan glow and countdown
       if (postRestoreInvincible.current) {
-        const timeSinceRestore = Date.now() - postRestoreStartTime.current;
+        const timeSinceRestore = frameTime - postRestoreStartTime.current;
         const remainingTime =
           POST_RESTORE_INVINCIBILITY_DURATION - timeSinceRestore;
 
@@ -7222,8 +7303,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
               ctx.fill();
               ctx.restore();
 
-              // Complete tutorial after burst
-              if (finishElapsed > FINISH_DURATION + 500) {
+              // Complete tutorial after burst (fire callback only once)
+              if (finishElapsed > FINISH_DURATION + 500 && !tutorialState.current.completionCallbackFired) {
+                tutorialState.current = {
+                  ...tutorialState.current,
+                  completionCallbackFired: true,
+                };
                 onTutorialComplete();
               }
             }
@@ -7335,7 +7420,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (collisionDetected) {
         // Zen Mode: Respawn instead of game over - Requirements 9.2
         if (zenMode?.enabled && zenModeState.current.isActive) {
-          const collisionTime = Date.now();
+          const collisionTime = frameTime;
           const { newState, shouldRespawn } = ZenMode.handleZenModeCollision(
             zenModeState.current,
             collisionTime
@@ -7680,11 +7765,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const playerX = canvas ? canvas.width / 8 : 100;
           const safeZoneRadius = 150; // Clear obstacles within 150px of player
 
+          // CRITICAL: Reset object pool to prevent stale pooled objects from corrupting new spawns
+          obstaclePool.current.reset();
+
+          const spawnEdgeX = (canvas?.width || window.innerWidth) - 50;
           obstacles.current = finalSnapshot.obstacles
             .filter(obs => {
               // Remove obstacles that are too close to player (safe zone)
               const distance = Math.abs(obs.x - playerX);
-              return distance > safeZoneRadius;
+              if (distance <= safeZoneRadius) return false;
+              // Remove obstacles near the right spawn edge to prevent overlap with new spawns
+              if (obs.x > spawnEdgeX) return false;
+              // Remove obstacles that are off-screen to the left
+              if (obs.x < -100) return false;
+              return true;
             })
             .map(obs => ({
               id: obs.id,
@@ -7732,9 +7826,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
           patternManagerState.current = PatternManager.createPatternManagerState();
           patternStartTime.current = 0;
 
+          // CRITICAL: Reset block system state to clear stale polarity/gap values
+          // Without this, new spawns use pre-death polarity and gap positions,
+          // causing misaligned blocks that overlap with restored obstacles
+          blockSystemState.current = BlockSystem.createBlockSystemState();
+
+          // CRITICAL: Trigger spawn grace period to prevent immediate obstacle spawning
+          // The existing isInGracePeriod check (1s) in the spawn loop will pause spawning,
+          // giving restored obstacles time to move away from the spawn edge
+          lastSpecialAbilityEndTime.current = Date.now();
+
           // CRITICAL: Reset lastDistanceUpdateTime to prevent huge deltaTime jump
           // This fixes the bug where distance would jump after restore animation
           lastDistanceUpdateTime.current = Date.now();
+
+          // Reset finish approach state - restored distance may be below threshold
+          finishApproachActive.current = false;
+          finishApproachStartTime.current = 0;
 
           // Restore distance from snapshot if available
           if (distanceTrackerRef.current && finalSnapshot.currentDistance !== undefined) {

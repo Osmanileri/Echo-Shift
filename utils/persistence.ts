@@ -152,4 +152,6 @@ export const STORAGE_KEYS = {
   MISSIONS: 'echo-shift-missions',
   SYNC_RATE: 'echo-shift-sync-rate',
   LAST_LOGIN: 'echo-shift-last-login',
+  // Level Unlock Celebration System - Pro-Grade Progression
+  SEEN_UNLOCKS: 'echo-shift-seen-unlocks',
 } as const;

@@ -428,12 +428,14 @@ export function getSpeedMultiplier(
 
 /**
  * Checks if player should be invincible (collision immunity)
+ * Active during dash AND during return animation (player is off-position,
+ * colliding with obstacles while returning is unfair).
  * 
  * @param state - Current Phase Dash state
  * @returns true if player should ignore collisions
  */
 export function isInvincible(state: PhaseDashState): boolean {
-    return state.isActive;
+    return state.isActive || state.isReturning;
 }
 
 /**

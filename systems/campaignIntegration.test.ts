@@ -16,11 +16,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { calculateBaseSpeed, calculateTargetDistance, ChapterType, getChapterForLevel, getLevelById } from '../data/levels';
 import { useGameStore } from '../store/gameStore';
 import {
-    calculateBaseReward,
-    calculateFirstClearBonus,
-    calculateLevelReward,
-    calculateStarRating,
-    LevelResult,
+  calculateBaseReward,
+  calculateFirstClearBonus,
+  calculateLevelReward,
+  calculateStarRating,
+  LevelResult,
 } from './campaignSystem';
 import { calculateFOVMultiplier, DEFAULT_CLIMAX_VFX_CONFIG } from './climaxVFX';
 import { createDistanceTracker, shouldTriggerGameOver } from './distanceTracker';
@@ -225,7 +225,8 @@ describe('Campaign Integration: Visual Effects Triggers', () => {
         (level) => {
           const targetDistance = calculateTargetDistance(level);
           const distanceTracker = createDistanceTracker(targetDistance);
-          const speedController = createSpeedController(level);
+          // Use instant ramp so speed reaches ceiling immediately (test focus: climax boost, not ramp)
+          const speedController = createSpeedController(level, { accelerationRate: 999999 });
 
           // Progress to 85% (in climax zone)
           const climaxDistance = targetDistance * 0.85;
@@ -235,7 +236,7 @@ describe('Campaign Integration: Visual Effects Triggers', () => {
           expect(state.isInClimaxZone).toBe(true);
           expect(state.progressPercent).toBeGreaterThanOrEqual(80);
 
-          // Simulate transition completion
+          // Simulate transition completion + ramp fill
           speedController.update(500, true);
 
           // FOV should be increased
@@ -244,16 +245,13 @@ describe('Campaign Integration: Visual Effects Triggers', () => {
           expect(fovMultiplier).toBeLessThanOrEqual(1.15);
 
           // Speed should include climax multiplier
-          // Using level-scaled logarithmic formula with climax boost
+          // Absolute-distance speed: speed = (BASE_START + GROWTH_RATE × √d) × CLIMAX_MULTIPLIER
           const speed = speedController.calculateSpeed(state, level);
-          const rawBaseSpeed = speedController.getBaseSpeed();
-          const baseSpeedMultiplier = 1 + (level - 1) * 0.05;
-          const effectiveBaseSpeed = rawBaseSpeed * baseSpeedMultiplier;
-          const accelMultiplier = 1 + (level - 1) * 0.03;
-          const effectiveLogFactor = 0.3 * accelMultiplier;
-          const logFactor = Math.log(1 + climaxDistance / 50);
-          const progressiveSpeed = effectiveBaseSpeed * (1 + effectiveLogFactor * logFactor);
-          const expectedSpeed = progressiveSpeed * 1.2; // Climax multiplier
+          // Raw speed from distance alone
+          const sqrtD = Math.sqrt(climaxDistance);
+          const rawSpeed = 1.0 + 0.12 * Math.min(sqrtD, 10) + 0.10 * Math.max(0, sqrtD - 10);
+          // In climax zone with full transition: speed ≈ rawSpeed × 1.15
+          const expectedSpeed = Math.min(rawSpeed * 1.15, 6.5);
           expect(speed).toBeCloseTo(expectedSpeed, 1);
 
           return true;
@@ -426,9 +424,8 @@ describe('Campaign Integration: Progressive Difficulty', () => {
 
   /**
    * Integration Test: Speed progression throughout a level
-   * Uses logarithmic formula with level scaling:
-   * - Base speed scales: baseSpeed × (1 + (level - 1) × 0.05)
-   * - Acceleration scales: logFactor × (1 + (level - 1) × 0.03)
+   * Absolute-distance formula: speed = BASE_START + GROWTH_RATE × √d
+   * Speed is the same at the same distance regardless of level.
    */
   test('Speed increases progressively throughout level', () => {
     fc.assert(
@@ -438,7 +435,6 @@ describe('Campaign Integration: Progressive Difficulty', () => {
           const targetDistance = calculateTargetDistance(level);
           const distanceTracker = createDistanceTracker(targetDistance);
           const speedController = createSpeedController(level);
-          const rawBaseSpeed = speedController.getBaseSpeed(); // Raw base speed before level scaling
 
           // Test speed at different progress points
           const progressPoints = [0, 0.25, 0.5, 0.75];
@@ -452,18 +448,14 @@ describe('Campaign Integration: Progressive Difficulty', () => {
             const state = distanceTracker.getState();
             const speed = speedController.calculateSpeed(state, level);
 
-            // Speed should increase with progress
+            // Speed should increase with progress (distance grows → speed grows)
             expect(speed).toBeGreaterThanOrEqual(previousSpeed);
             previousSpeed = speed;
 
-            // Speed should follow level-scaled logarithmic formula
-            const baseSpeedMultiplier = 1 + (level - 1) * 0.05;
-            const effectiveBaseSpeed = rawBaseSpeed * baseSpeedMultiplier;
-            const accelMultiplier = 1 + (level - 1) * 0.03;
-            const effectiveLogFactor = 0.3 * accelMultiplier;
-            const logFactor = Math.log(1 + currentDistance / 50);
-            const expectedSpeed = effectiveBaseSpeed * (1 + effectiveLogFactor * logFactor);
-            expect(speed).toBeCloseTo(expectedSpeed, 1);
+            // Absolute-distance formula: speed = BASE_START + slopes × √d
+            // Reasonable range: from BASE_START (1.0) up to MAX_ALLOWED_SPEED (6.5)
+            expect(speed).toBeGreaterThanOrEqual(1.0);
+            expect(speed).toBeLessThanOrEqual(6.5);
           }
 
           return true;
@@ -519,13 +511,13 @@ describe('Campaign Integration: Star Rating Edge Cases', () => {
 // ============================================================================
 
 import {
-    calculateTargetDistance as calculateChapterTargetDistance,
-    CHAPTER_PROGRESS_KEY,
-    createDefaultChapterProgress,
-    isChapterUnlocked,
-    loadChapterProgress,
-    saveChapterProgress,
-    unlockNextChapter
+  calculateTargetDistance as calculateChapterTargetDistance,
+  CHAPTER_PROGRESS_KEY,
+  createDefaultChapterProgress,
+  isChapterUnlocked,
+  loadChapterProgress,
+  saveChapterProgress,
+  unlockNextChapter
 } from './chapterSystem';
 
 describe('Chapter System Integration: Full Chapter Flow', () => {

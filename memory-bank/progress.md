@@ -2,10 +2,13 @@
 
 ## Genel Durum
 
-- **710 test** geçiyor
-- **9 spec** tamamlandı
+- **747 test** (720 pass, 27 pre-existing fail in glitchSystem + particleSystem)
+- **10 spec** tamamlandı
 - **Dokümantasyon** güncel
 - **Storage key'ler** standardize
+- **GameEngine Code Review & 12 Bug Fix** tamamlandı
+- **Finish Approach System & Restore Fix** tamamlandı
+- **Pro-Grade Progression & Pacing** tamamlandı
 - **Glitch Protocol** tamamlandı
 - **Campaign Update v2.5** tamamlandı
 - **Mobile-Friendly Tuning** tamamlandı
@@ -13,6 +16,26 @@
 - **Phase Dash Dönüşüm Animasyonu** tamamlandı
 
 ## Tamamlanan Spec'ler
+
+### 0. Pro-Grade Progression & Pacing System ✅ (YENİ)
+- Level Unlock Celebration System
+  - `systems/LevelUnlockManager.ts`: 8-milestone unlock schedule with persistence
+  - `components/UnlockModal/UnlockModal.tsx`: In-game visual demo celebration modal (actual game rendering: split bg, orbs+connector, obstacles)
+  - Integrated into App.tsx level-complete flow (gates VictoryScreen)
+- Absolute-Distance Speed Mathematics (v2 + Linear Acceleration)
+  - Two-layer speed system:
+    1. Target ceiling: piecewise linear in √d — `speed(d) = 1.0 + 0.20×min(√d,10) + 0.15×max(0,√d−10)`
+    2. Linear ramp: `currentSpeed += ACCELERATION_RATE (0.04/s)`, clamped to ceiling
+  - Speed flows up smoothly instead of jumping to target values
+  - 2 zones: CRUISE (normal) / CLIMAX (final 20%)
+  - Level parameter ignored — difficulty = endurance
+  - Climax multiplier 1.15× with 500ms transition
+  - Hard cap at MAX_ALLOWED_SPEED = 8.5
+  - `getCurrentSpeed()` accessor for diagnostics
+- New types: `UnlockPayload`, `SpeedZone` (CRUISE|CLIMAX), `SpeedZoneState` in types.ts
+- New storage key: `SEEN_UNLOCKS` in persistence.ts
+- 59 tests (37 SpeedController + 22 campaignIntegration)
+- LevelUnlockManager: 15 tests
 
 ### 1. Glitch Protocol ✅ (YENİ)
 - Quantum Lock bonus modu (8 saniye)

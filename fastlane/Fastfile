@@ -69,23 +69,47 @@ platform :ios do
     # ========================================
     # 3. SERTIFIKA VE PROFIL
     # ========================================
-    # Sertifikayi indir ve gecici keychain'e yukle
-    cert(
-      api_key: api_key, 
-      development: false,
-      force: false,
-      keychain_path: keychain_path,
-      keychain_password: keychain_password
-    )
+    # ========================================
+    # 3. SERTIFIKA VE PROFIL
+    # ========================================
+    # Once manual sertifika var mi kontrol et (GitHub Actions Secret'tan gelen)
+    cert_path = "android_fastlane_certificate.p12"
+    if File.exist?(cert_path)
+      puts "Manual certificate found at #{cert_path}, importing..."
+      import_certificate(
+        certificate_path: cert_path,
+        certificate_password: ENV["P12_PASSWORD"] || "",
+        keychain_name: keychain_name,
+        keychain_password: keychain_password
+      )
+    else
+      puts "No manual certificate found, trying automatic generation..."
+      # Sertifikayi indir ve gecici keychain'e yukle
+      cert(
+        api_key: api_key, 
+        development: false,
+        force: false,
+        keychain_path: keychain_path,
+        keychain_password: keychain_password
+      )
+    end
 
-    # Provisioning profile olustur/indir
-    sigh(
-      api_key: api_key,
-      app_identifier: bundle_id,
-      force: true,
-      team_id: team_id,
-      provisioning_name: "AppStore_#{bundle_id}" 
-    )
+    # Provisioning profile kontrol et
+    profile_path = "android_fastlane_profile.mobileprovision"
+    if File.exist?(profile_path)
+      puts "Manual provisioning profile found at #{profile_path}, installing..."
+      install_provisioning_profile(path: profile_path)
+    else
+      puts "No manual profile found, trying automatic generation..."
+      # Provisioning profile olustur/indir
+      sigh(
+        api_key: api_key,
+        app_identifier: bundle_id,
+        force: true,
+        team_id: team_id,
+        provisioning_name: "AppStore_#{bundle_id}" 
+      )
+    end
     
     # Profilin gercek adini al (Fastlane sonuna sayi ekleyebilir)
     profile_name = Actions.lane_context[SharedValues::SIGH_NAME]

@@ -2,6 +2,69 @@
 
 ## Mevcut Odak
 
+- **GameEngine Code Review & Bug Fixes (12 Fix)** - TAMAMLANDI ✅
+  - 15 sorun tespit edildi, 3'ü non-issue olarak dismiss edildi, 12'si uygulandı
+  - **Kritik Düzeltmeler:**
+    - Fix #1: `finishApproachSpeedBoost` hoisting — değişken shard loop'undan önce tanımlandı (önceden kullanımdan sonra tanımlanıyordu)
+    - Fix #2: Phase Dash grace period — dashEnded'da `lastSpecialAbilityEndTime` set edildi, dash sonrası anlık ölüm önlendi
+    - Fix #3: `isInGracePeriod` variable shadowing — enemy grace period'u `isInEnemyGracePeriod` olarak rename edildi
+    - Fix #4: `obstacles.current.forEach` → `for` loop — collision sonrası `break` ile erken çıkış, çoklu VFX tetiklenmesi önlendi
+  - **Önemli İyileştirmeler:**
+    - Fix #6: `resetGame` useCallback'e `tutorialMode` dependency eklendi
+    - Fix #7: Tek `frameTime = Date.now()` per frame — loop içindeki ~40 Date.now() çağrısı frameTime ile değiştirildi
+    - Fix #8: Enemy dart collision'a `state === 'firing'` guard eklendi
+    - Fix #9: Shard limitleri artırıldı (3/5/8 → 4/6/10, eşikler 800/2500 → 400/1500)
+    - Fix #10: FluxOverload isUsingAbility'ye tüm Quantum Lock fazları eklendi (charging, exiting, ghost)
+    - Fix #11: Pause offset'te `dashEndTime` guard'ı — sadece dash aktifken offset uygulanır
+  - **Polish:**
+    - Fix #13: 18 console.log statement kaldırıldı (production performance)
+    - Fix #14: `onTutorialComplete()` callback'i her frame yerine sadece 1 kez çağrılır (`completionCallbackFired` flag)
+  - **Dismiss edilen sorunlar:**
+    - Fix #5: S.H.I.F.T. spawn DISABLED, collectibles array her zaman boş
+    - Fix #12: JS closure canvas ref'i doğru yakalar, cleanup güvenli
+    - Fix #15: `spawnObstaclePair` ve `spawnPatternObstaclePair` zaten unique ID üretiyor
+
+- **Finish Approach System & Restore Fix** - TAMAMLANDI ✅
+  - Finish Approach (Clear Runway): %88 mesafede blok spawn durur, mevcut bloklar hızlanarak ekrandan çıkar
+  - VFX: Sağ kenarda pulsing cyan/gold glow, horizontal speed lines, "BİTİŞ YAKLAŞIYOR" text + kalan mesafe counter
+  - Obstacle speed boost: 1x → 3x smooth ramp (1.5 saniye), shard'lar da aynı hızda
+  - Temiz pist: Oyuncu bitiş çizgisine yaklaşırken bloksuz alan oluşur → dramatik bitiş atmosferi
+  - Finish mode: %100'de holographic gate görünür, oyuncu sağa hızlanarak gate'e çarpar
+  - Restore sonrası blok overlap fix: blockSystemState reset, obstaclePool reset, spawn grace period (1s)
+  - Ghost mode bitişinde de aynı fix uygulandı (blockSystemState + patternManager + pool reset)
+  - resetGame'de blockSystemState reset eklendi (oyun başlangıcında temiz durum)
+  - finishApproachActive restore'da sıfırlanır (geri sarılan mesafe eşiğin altında olabilir)
+
+- **Pro-Grade Progression & Pacing System** - TAMAMLANDI ✅
+  - Level Unlock Celebration System (UnlockModal) v2
+    - `systems/LevelUnlockManager.ts`: Unlock schedule + persistence (8 milestones)
+    - `components/UnlockModal/UnlockModal.tsx`: Full-screen neon modal with IN-GAME visual demos
+    - Her unlock için canvas-based mini animasyon: GERÇEK oyun görüntüsü (split black/white bg, actual orbs+connector, real obstacles)
+    - In-game primitives: drawGameBg (split zones), drawPlayer (dual orbs+connector bar), drawObstacle (polarity-aware), drawGateObstacle, drawMidline
+    - Demo renderers: Shift swap (scrolling obstacles+polarity switch), Quantum Lock (green connector+plasma wave), Pulse Gate (color-shifting obstacle), Ghost Mode (translucent phase-through), Phantom (dashed outline→solid fade-in), Dynamic Midline (moving zones+forecast), Rhythm (beat-synced pulse+streak), Gravity Flip (zones swap+inverted orbs)
+    - Rounded corner clipping, distance HUD, floating particles background
+    - 5-phase state machine (enter→icon-slam→demo-play→text-reveal→ready)
+    - ACK_DELAY 3s (demo izleme süresi)
+    - Milestone levels: 1 (Shift), 3 (Quantum Lock), 5 (Pulse Gate), 10 (Ghost Mode), 11 (Phantom), 21 (Midline), 31 (Rhythm), 41 (Gravity)
+    - Persistence via `STORAGE_KEYS.SEEN_UNLOCKS` — each unlock shown only once
+    - Gated before VictoryScreen in App.tsx flow
+  - Absolute-Distance Speed Mathematics (SpeedController refactor v2)
+    - Core: speed = f(absoluteMeters) — same distance = same speed in ALL levels
+    - Two-layer system:
+      1. **Target ceiling**: speed(d) = 1.0 + 0.20×min(√d,10) + 0.15×max(0, √d−10) (piecewise in √d)
+      2. **Linear ramp**: currentSpeed starts at BASE_START (1.0), increases by ACCELERATION_RATE (0.04/s), clamped to ceiling
+    - Speed flows up smoothly instead of jumping to formula values instantly
+    - Two-slope piecewise in √d: initial ramp (0.20) + cruise (0.15), knee at 100m
+    - 2 zones: CRUISE (normal curve) and CLIMAX (final 20% of level)
+    - CLIMAX: 1.15x multiplier with 500ms smooth transition
+    - Level parameter IGNORED — difficulty = endurance (surviving longer distances)
+    - Hard cap at MAX_ALLOWED_SPEED = 8.5
+    - Speed reaches cap at ~2178m
+    - `getCurrentSpeed()` accessor for diagnostics
+  - Types: `UnlockPayload`, `UnlockType`, `SpeedZone` (CRUISE|CLIMAX|WARMUP|FLOW), `SpeedZoneState` in types.ts
+  - 59 tests (37 SpeedController + 22 campaignIntegration)
+  - LevelUnlockManager: 15 tests
+
 - **Glitch Protocol GameEngine Integration** - TAMAMLANDI ✅
   - Quantum Lock bonus modu GameEngine'e entegre edildi
   - Glitch Shard spawn logic (500m sonra, seviye başına 1 kez)

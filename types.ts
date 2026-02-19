@@ -562,3 +562,48 @@ export interface NumbersMissionRewards {
   xp: number;
   gems: number;
 }
+
+// ============================================================================
+// Level Unlock Celebration System - Pro-Grade Progression
+// ============================================================================
+
+/**
+ * Type of unlock: new ability/mechanic or new enemy/threat
+ */
+export type UnlockType = 'ABILITY' | 'ENEMY';
+
+/**
+ * Payload describing a feature unlock at a specific level milestone
+ */
+export interface UnlockPayload {
+  levelId: number;                // Level that triggers this unlock
+  type: UnlockType;               // Category of unlock
+  title: string;                  // Modal header (e.g., "SYSTEM UPGRADE")
+  name: string;                   // Feature name (e.g., "SHIFT MECHANIC")
+  description: string;            // Short explanation text
+  icon: string;                   // Emoji or icon identifier
+  color: string;                  // Accent color for the modal (hex)
+}
+
+// ============================================================================
+// Speed Zone Types - Absolute-Distance Speed Mathematics
+// ============================================================================
+
+/**
+ * Named speed zones for the absolute-distance pacing system.
+ * CRUISE: normal distance-based speed (√d curve)
+ * CLIMAX: final 20% of level — mild speed boost for excitement
+ * Legacy values WARMUP and FLOW are retained as aliases for backward compat.
+ */
+export type SpeedZone = 'CRUISE' | 'CLIMAX' | 'WARMUP' | 'FLOW';
+
+/**
+ * Speed zone state returned by the speed controller
+ */
+export interface SpeedZoneState {
+  zone: SpeedZone;                // Current active zone
+  zoneProgress: number;           // 0-1 progress within current zone
+  rawSpeed: number;               // Speed before zone multiplier
+  finalSpeed: number;             // Speed after zone multiplier + cap
+  zoneMultiplier: number;         // Active zone multiplier
+}

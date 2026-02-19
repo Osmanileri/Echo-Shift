@@ -111,6 +111,7 @@ export interface TutorialState {
     // Tutorial Finish Mode (forward rush animation)
     inFinishMode: boolean;
     finishModeStartTime: number;
+    completionCallbackFired: boolean; // Prevents onTutorialComplete from firing every frame
 
     // SWAP_MECHANIC sub-states
     swapSubPhase: number;           // 0=waiting, 1=block approaching, 2=show prompt, 3=success
@@ -285,6 +286,7 @@ export function createInitialState(): TutorialState {
         // Tutorial Finish Mode
         inFinishMode: false,
         finishModeStartTime: 0,
+        completionCallbackFired: false,
 
         // SWAP_MECHANIC sub-states
         swapSubPhase: 0,

@@ -27,6 +27,7 @@
 ├─────────────────────────────────────────────────────────┤
 │  constructs/  │ audioSystem │ flowCurve │ patterns     │
 │  resonance    │ restore     │ shiftProtocol │ ...      │
+│  LevelUnlockManager │ SpeedController (absolute-dist) │
 └─────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -159,16 +160,18 @@ safeLoad(key, default)  // JSON deserialize + fallback
 
 ```typescript
 // Target Distance (Requirements 2.1)
-targetDistance = 350 + (level * 100) * Math.pow(level, 0.1);
+targetDistance = level * 100; // L1=100m, L5=500m, L100=10000m
 
-// Base Speed (Requirements 3.4)
-baseSpeed = 10 + (level * 0.4);
-
-// Progressive Speed (Requirements 3.1)
-speed = baseSpeed * (1 + (currentDistance / targetDistance) * 0.3);
+// Absolute-Distance Speed (Requirements 3.1, 3.4)
+// Two-slope piecewise in √d space:
+speed(d) = 1.0 + 0.20 × min(√d, 10) + 0.15 × max(0, √d − 10)
+// At 0m: 1.0, 100m: 3.0, 400m: 4.5, 900m: 6.0, 1600m: 7.5, 2178m: 8.5 (cap)
+// Level parameter IGNORED — same distance = same speed in all levels
 
 // Climax Speed (Requirements 3.2)
-climaxSpeed = progressiveSpeed * 1.2; // Final 20%
+climaxSpeed = speed × 1.15; // Final 20% of level target
+
+// Hard cap: MAX_ALLOWED_SPEED = 8.5
 
 // Obstacle Density (Requirements 5.4)
 density = Math.min(1.0, 0.5 + (level * 0.02));

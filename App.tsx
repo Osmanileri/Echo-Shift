@@ -52,6 +52,10 @@ import { createRateUsSystem, RateUsSystem } from "./systems/rateUsSystem";
 // Audio System - Phase 4 Launch Polish
 import * as AudioSystem from "./systems/audioSystem";
 import { calculateLevelReward, calculateStarRating } from "./systems/campaignSystem";
+// Level Unlock Celebration System - Pro-Grade Progression
+import UnlockModal from "./components/UnlockModal/UnlockModal";
+import { checkUnlocks, markUnlockSeen } from "./systems/LevelUnlockManager";
+import { UnlockPayload } from "./types";
 
 // Global analytics system instance
 let analyticsSystemInstance: AnalyticsSystem | null = null;
@@ -186,6 +190,9 @@ const App: React.FC = () => {
   // Ghost Pace Indicator state - Requirements 15.1, 15.3
   const [previousBestDistance, setPreviousBestDistance] = useState<number>(0);
   const [hasPassedGhost, setHasPassedGhost] = useState<boolean>(false);
+
+  // Level Unlock Celebration state - Pro-Grade Progression
+  const [pendingUnlock, setPendingUnlock] = useState<UnlockPayload | null>(null);
 
   // Victory Screen state - for level completion
   const [showVictoryScreen, setShowVictoryScreen] = useState<boolean>(false);
@@ -904,10 +911,19 @@ const App: React.FC = () => {
       // Play celebration sound
       AudioSystem.playNewHighScore(); // Ensure this doesn't throw
 
-      // Update Game state LAST to ensure data is ready
-      console.log('[App] Setting GameState to VICTORY');
-      setGameState(GameState.VICTORY);
-      setShowVictoryScreen(true);
+      // Level Unlock Celebration — check if this level triggers an unlock modal
+      const unlock = checkUnlocks(currentLevelId);
+      if (unlock) {
+        console.log('[App] Unlock detected for level', currentLevelId, ':', unlock.name);
+        setPendingUnlock(unlock);
+        // Don't show victory screen yet — UnlockModal will gate it
+        setGameState(GameState.VICTORY);
+      } else {
+        // Update Game state LAST to ensure data is ready
+        console.log('[App] Setting GameState to VICTORY');
+        setGameState(GameState.VICTORY);
+        setShowVictoryScreen(true);
+      }
 
     } catch (e) {
       console.error('[App] Error in handleDistanceLevelComplete:', e);
@@ -1253,6 +1269,18 @@ const App: React.FC = () => {
         <ChapterNotification
           levelId={chapterNotificationLevel}
           onComplete={() => setShowChapterNotification(false)}
+        />
+      )}
+      {/* Unlock Celebration Modal - Pro-Grade Progression */}
+      {pendingUnlock && (
+        <UnlockModal
+          unlock={pendingUnlock}
+          onAcknowledge={() => {
+            markUnlockSeen(pendingUnlock.levelId);
+            setPendingUnlock(null);
+            // Now show victory screen
+            setShowVictoryScreen(true);
+          }}
         />
       )}
       {/* Victory Screen - Level Complete */}

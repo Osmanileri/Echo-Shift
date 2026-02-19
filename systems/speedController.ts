@@ -1,12 +1,32 @@
 /**
- * Progressive Speed Controller for Campaign Mode
- * Exponential Escalation Style - Squared-based acceleration
- * Formula: v = v_min + (v_max - v_min) × progress²
- * "Slow start, fast finish" - gives players warm-up time
+ * Absolute-Distance Speed Controller for Campaign Mode
+ * 
+ * Core Principle: speed = f(absoluteMeters)
+ * The same absolute distance always produces the same speed regardless of level.
+ * Level difficulty comes from endurance — surviving longer at ever-increasing speed.
+ *
+ * Two-layer system:
+ *   1. TARGET SPEED (ceiling): piecewise linear in √d
+ *      target(d) = BASE_START + INITIAL_SLOPE × min(√d, √KNEE)
+ *                + CRUISE_SLOPE × max(0, √d - √KNEE)
+ *
+ *   2. ACTUAL SPEED: starts at BASE_START and ramps linearly by
+ *      ACCELERATION_RATE per second, clamped to never exceed target(d).
+ *
+ * This gives smooth acceleration feel — speed flows up rather than jumping.
+ *
+ * Target ceiling values (after slope reduction for gentler mid-chapter feel):
+ *   0m    → 1.0   |  100m  → 2.2   |  400m  → 3.2
+ *   900m  → 4.2   |  1600m → 5.2   |  2500m → 6.0
+ * Distance pacing is preserved via DISTANCE_COMPENSATION (1.55×).
+ *
+ * Climax Zone (final 20% of each level): mild 1.15× boost for excitement.
+ * Speed is hard-capped at MAX_ALLOWED_SPEED to prevent frame-skipping.
+ *
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 
-import { INITIAL_CONFIG } from '../constants';
+import { SpeedZone, SpeedZoneState } from '../types';
 import { DistanceState } from './distanceTracker';
 
 /**
@@ -14,103 +34,168 @@ import { DistanceState } from './distanceTracker';
  * Centralized for easy tuning during game balance iterations
  */
 export const SPEED_CONSTANTS = {
-  /** Speed bonus percentage per level (4% = 0.04) */
-  LEVEL_INCREMENT_RATE: 0.04,
-  /** Maximum speed bonus ratio at target distance (70% = 0.7) */
-  MAX_BONUS_RATIO: 0.7,
-  /** Speed multiplier in climax zone (final 20%) */
-  CLIMAX_MULTIPLIER: 1.2,
-  /** Progress threshold for climax zone (80% = 0.8) */
-  CLIMAX_ZONE_START: 0.8,
+  /** Base starting speed at 0 meters (pixels/frame) */
+  BASE_START: 1.0,
+  /** Initial slope in √d space (0 – KNEE_DISTANCE) — reduced from 0.2 for gentler mid-chapter ramp */
+  INITIAL_SLOPE: 0.12,
+  /** Cruise slope in √d space (KNEE_DISTANCE onwards) — reduced from 0.15 for gentler ramp */
+  CRUISE_SLOPE: 0.10,
+  /** Knee point: distance where slope transitions from initial to cruise */
+  KNEE_DISTANCE: 100,
+  /** √KNEE_DISTANCE — pre-computed for performance */
+  KNEE_SQRT: 10,
+  /** Distance compensation: multiplier for distance-tracker speed so level pacing stays unchanged
+   *  despite slower visual speed ramp. Old curve ~3.34 at 150m, new ~2.42 → ratio ≈1.55 */
+  DISTANCE_COMPENSATION: 1.55,
+  /** Climax zone begins at this progress fraction (final 20% of level) */
+  CLIMAX_ZONE_START: 0.80,
+  /** Climax zone speed multiplier (15% boost near level end) */
+  CLIMAX_MULTIPLIER: 1.15,
   /** Duration of climax transition in milliseconds */
   CLIMAX_TRANSITION_MS: 500,
   /** Maximum allowed speed to prevent frame-skipping (pixels/frame) */
-  MAX_ALLOWED_SPEED: 15,
+  MAX_ALLOWED_SPEED: 6.5,
+  /** Linear acceleration rate: speed increase per second — reduced proportionally with slopes */
+  ACCELERATION_RATE: 0.05,
+  // Legacy aliases kept for backward compat
+  /** @deprecated — use INITIAL_SLOPE */
+  GROWTH_RATE: 0.12,
+  // Legacy aliases kept for backward compat in tests
+  /** @deprecated kept for backward compat */
+  LEVEL_INCREMENT_RATE: 0,
+  /** @deprecated kept for backward compat */
+  LEVEL_SPEED_CAP: 20,
+  /** @deprecated use CLIMAX_MULTIPLIER */
+  MAX_BONUS_RATIO: 0.7,
+  /** @deprecated no longer used */
+  WARMUP_START_FACTOR: 1.0,
+  /** @deprecated no longer used */
+  WARMUP_ZONE_END: 0,
+  /** @deprecated no longer used */
+  FLOW_LOG_DRIFT: 0,
 } as const;
 
 /**
  * Speed configuration state
- * Exponential Escalation Style - Squared-based progression
+ * Absolute-Distance Pacing — CRUISE / CLIMAX
  */
 export interface SpeedConfig {
-  baseSpeed: number;              // Fixed base speed at chapter start
-  progressMultiplier: number;     // Current progress-based multiplier (1.0 - 1.5)
-  climaxMultiplier: number;       // Climax zone multiplier (1.0 or 1.2)
-  isInClimaxZone: boolean;        // Whether in final 20%
-  climaxTransitionProgress: number; // 0-1 for smooth transition
-  finalSpeed: number;             // Calculated final speed
+  baseSpeed: number;              // Raw distance-based speed (before climax)
+  zone: SpeedZone;                // Current speed zone (CRUISE or CLIMAX)
+  zoneMultiplier: number;         // 1.0 for CRUISE, up to 1.15 for CLIMAX
+  climaxTransitionProgress: number; // 0-1 for smooth climax transition
+  finalSpeed: number;             // Calculated final speed (capped)
   progressPercent: number;        // Current progress (0-100%)
+  // Legacy fields kept for backward compatibility
+  progressMultiplier: number;     // Maps to zoneMultiplier
+  climaxMultiplier: number;       // Maps to climax transition multiplier
+  isInClimaxZone: boolean;        // True when zone === 'CLIMAX'
 }
 
 /**
  * Speed controller configuration options
  */
 export interface SpeedControllerOptions {
-  baseSpeed?: number;             // Default: from INITIAL_CONFIG
+  baseStart?: number;             // Default: SPEED_CONSTANTS.BASE_START
+  initialSlope?: number;          // Default: SPEED_CONSTANTS.INITIAL_SLOPE
+  cruiseSlope?: number;           // Default: SPEED_CONSTANTS.CRUISE_SLOPE
+  kneeDistance?: number;          // Default: SPEED_CONSTANTS.KNEE_DISTANCE
+  accelerationRate?: number;      // Default: SPEED_CONSTANTS.ACCELERATION_RATE
   climaxMultiplier?: number;      // Default: SPEED_CONSTANTS.CLIMAX_MULTIPLIER
   transitionDuration?: number;    // Default: SPEED_CONSTANTS.CLIMAX_TRANSITION_MS
   maxAllowedSpeed?: number;       // Default: SPEED_CONSTANTS.MAX_ALLOWED_SPEED
+  // Legacy — accepted but ignored
+  baseSpeed?: number;
+  growthRate?: number;
+}
+
+// ============================================================================
+// Pure helper: Calculate speed from absolute distance (core formula)
+// Two-slope piecewise linear in √d space:
+//   0–100m (√d ≤ 10): slope 0.20 per √m  (initial ramp)
+//   100m+  (√d > 10): slope 0.15 per √m  (cruise)
+// ============================================================================
+export function speedFromDistance(
+  distance: number,
+  baseStart: number = SPEED_CONSTANTS.BASE_START,
+  initialSlope: number = SPEED_CONSTANTS.INITIAL_SLOPE,
+  cruiseSlope: number = SPEED_CONSTANTS.CRUISE_SLOPE,
+  kneeSqrt: number = SPEED_CONSTANTS.KNEE_SQRT,
+): number {
+  if (distance <= 0) return baseStart;
+  const sqrtD = Math.sqrt(distance);
+  return baseStart
+    + initialSlope * Math.min(sqrtD, kneeSqrt)
+    + cruiseSlope * Math.max(0, sqrtD - kneeSqrt);
+}
+
+// ============================================================================
+// Pure helper: Determine current speed zone from progress (percentage within level)
+// Two zones: CRUISE (normal) and CLIMAX (final 20%)
+// ============================================================================
+export function getSpeedZone(progress: number): SpeedZone {
+  if (progress >= SPEED_CONSTANTS.CLIMAX_ZONE_START) return 'CLIMAX';
+  return 'CRUISE';
 }
 
 /**
- * Default configuration values (for backward compatibility)
- */
-const DEFAULT_BASE_SPEED = INITIAL_CONFIG.baseSpeed;
-const DEFAULT_CLIMAX_MULTIPLIER = SPEED_CONSTANTS.CLIMAX_MULTIPLIER;
-const DEFAULT_TRANSITION_DURATION = SPEED_CONSTANTS.CLIMAX_TRANSITION_MS;
-const DEFAULT_DISTANCE_DIVISOR = 50;
-
-/**
- * Speed Controller class for managing progressive speed in campaign mode
- * Hybrid Curve Style - progress^1.5 for mid-game boost
+ * Absolute-Distance Speed Controller for Campaign Mode
+ * speed = f(absoluteMeters) — same distance = same speed in every level.
  * Requirements: 4.1, 4.2, 4.3, 4.4, 4.5
  */
 export class SpeedController {
-  private baseSpeed: number;
+  private baseStart: number;
+  private initialSlope: number;
+  private cruiseSlope: number;
+  private kneeSqrt: number;
+  private accelerationRate: number;
   private climaxMultiplier: number;
   private transitionDuration: number;
   private maxAllowedSpeed: number;
   private climaxTransitionProgress: number = 0;
   private wasInClimaxZone: boolean = false;
+  /** Linearly ramping speed — advances by ACCELERATION_RATE each second */
+  private currentSpeed: number;
 
   /**
    * Create a new speed controller
    * @param options - Configuration options
    */
   constructor(options: SpeedControllerOptions = {}) {
-    this.baseSpeed = options.baseSpeed ?? DEFAULT_BASE_SPEED;
-    this.climaxMultiplier = options.climaxMultiplier ?? DEFAULT_CLIMAX_MULTIPLIER;
-    this.transitionDuration = options.transitionDuration ?? DEFAULT_TRANSITION_DURATION;
+    this.baseStart = options.baseStart ?? SPEED_CONSTANTS.BASE_START;
+    this.initialSlope = options.initialSlope ?? SPEED_CONSTANTS.INITIAL_SLOPE;
+    this.cruiseSlope = options.cruiseSlope ?? SPEED_CONSTANTS.CRUISE_SLOPE;
+    this.kneeSqrt = Math.sqrt(options.kneeDistance ?? SPEED_CONSTANTS.KNEE_DISTANCE);
+    this.accelerationRate = options.accelerationRate ?? SPEED_CONSTANTS.ACCELERATION_RATE;
+    this.climaxMultiplier = options.climaxMultiplier ?? SPEED_CONSTANTS.CLIMAX_MULTIPLIER;
+    this.transitionDuration = options.transitionDuration ?? SPEED_CONSTANTS.CLIMAX_TRANSITION_MS;
     this.maxAllowedSpeed = options.maxAllowedSpeed ?? SPEED_CONSTANTS.MAX_ALLOWED_SPEED;
+    this.currentSpeed = this.baseStart;
   }
 
   /**
-   * DRY Helper: Get effective base speed scaled by level
-   * Level 1: 1.0x, Level 5: 1.2x, Level 10: 1.45x, Level 20: 1.95x
-   * @param level - Current level number (default: 1)
-   * @returns Scaled base speed
-   */
-  private getEffectiveBaseSpeed(level: number = 1): number {
-    const multiplier = 1 + (level - 1) * SPEED_CONSTANTS.LEVEL_INCREMENT_RATE;
-    return this.baseSpeed * multiplier;
-  }
-
-  /**
-   * Initialize the controller for a new chapter
+   * Initialize the controller for a new chapter / level
    * @param _chapterId - Chapter number (unused, kept for API compatibility)
    */
   initialize(_chapterId?: number): void {
-    this.baseSpeed = INITIAL_CONFIG.baseSpeed;
     this.climaxTransitionProgress = 0;
     this.wasInClimaxZone = false;
+    this.currentSpeed = this.baseStart;
   }
 
   /**
-   * Update the climax transition progress (time-based smooth transition)
+   * Update speed ramp and climax transition (called every frame).
+   * - Advances currentSpeed linearly by ACCELERATION_RATE per second.
+   * - Manages climax zone transition progress.
    * @param deltaTime - Time since last frame in milliseconds
    * @param isInClimaxZone - Whether currently in climax zone
    */
   update(deltaTime: number, isInClimaxZone: boolean): void {
+    // Linear speed ramp: increase currentSpeed by acceleration rate
+    const deltaSec = deltaTime / 1000;
+    this.currentSpeed += this.accelerationRate * deltaSec;
+
+    // Climax transition
     if (isInClimaxZone && !this.wasInClimaxZone) {
       this.climaxTransitionProgress = 0;
     }
@@ -128,65 +213,106 @@ export class SpeedController {
   }
 
   /**
-   * Calculate the current speed based on distance state
-   * Hybrid Curve: v = baseSpeed + (maxBonus × progress^1.5)
-   * "Soft start, Strong finish" - balances warm-up with mid-game tempo
-   * Includes speed cap to prevent frame-skipping at high levels
-   * 
+   * Calculate the current speed.
+   *
+   * The linear ramp (currentSpeed) is clamped to never exceed
+   * the target ceiling from speedFromDistance(d).
+   * In CLIMAX zone: speed × 1.15 (smooth transition).
+   * Hard-capped at MAX_ALLOWED_SPEED.
+   *
    * @param distanceState - Current distance tracking state
-   * @param level - Level number (scales base speed and max bonus)
-   * @returns Current speed value (capped at MAX_ALLOWED_SPEED)
+   * @param _level - Level number (IGNORED — speed is distance-based)
+   * @returns Current speed value
    */
-  calculateSpeed(distanceState: DistanceState, level?: number): number {
-    // DRY: Use helper for effective base speed
-    const effectiveBaseSpeed = this.getEffectiveBaseSpeed(level ?? 1);
+  calculateSpeed(distanceState: DistanceState, _level?: number): number {
+    // Target ceiling from piecewise curve
+    const targetSpeed = speedFromDistance(
+      distanceState.currentDistance,
+      this.baseStart,
+      this.initialSlope,
+      this.cruiseSlope,
+      this.kneeSqrt,
+    );
 
-    // Calculate progress (0.0 - 1.0), guard against division by zero
-    const progress = distanceState.targetDistance > 0
-      ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
-      : 0;
+    // Actual speed = linear ramp, clamped to ceiling
+    let speed = Math.min(this.currentSpeed, targetSpeed);
 
-    // Exponential Escalation: maxBonus from constants
-    const maxBonus = effectiveBaseSpeed * SPEED_CONSTANTS.MAX_BONUS_RATIO;
-
-    // Hybrid Curve: slow initial, stronger mid-game (progress^1.5)
-    // Formula: progress * sqrt(progress)
-    const currentBonus = maxBonus * (progress * Math.sqrt(progress));
-    const progressSpeed = effectiveBaseSpeed + currentBonus;
-
-    // Apply climax multiplier with smooth transition
-    let effectiveClimaxMultiplier = 1.0;
+    // Climax boost: smooth transition to 1.15× in the final 20% of the level
     if (distanceState.isInClimaxZone) {
-      effectiveClimaxMultiplier = 1.0 +
+      const effectiveClimaxMultiplier = 1.0 +
         (this.climaxMultiplier - 1.0) * this.climaxTransitionProgress;
+      speed *= effectiveClimaxMultiplier;
     }
 
-    // Calculate final speed with speed cap to prevent frame-skipping
-    const finalSpeed = progressSpeed * effectiveClimaxMultiplier;
-    return Math.min(finalSpeed, this.maxAllowedSpeed);
+    return Math.min(speed, this.maxAllowedSpeed);
   }
 
   /**
-   * Get the current speed configuration state
-   * Hybrid Curve - Returns progress^1.5-based speed info
+   * Get the full speed zone state (for VFX / HUD consumption)
    * @param distanceState - Current distance tracking state
-   * @param level - Level number (used to scale base speed)
-   * @returns SpeedConfig with all speed information
+   * @param _level - Level number (ignored)
+   * @returns SpeedZoneState with zone details
    */
-  getConfig(distanceState: DistanceState, level?: number): SpeedConfig {
-    const currentLevel = level ?? 1;
-
-    // Scale base speed based on level
-    const baseSpeedMultiplier = 1 + (currentLevel - 1) * 0.04;
-    const effectiveBaseSpeed = this.baseSpeed * baseSpeedMultiplier;
-
-    // Calculate progress (0.0 - 1.0)
+  getZoneState(distanceState: DistanceState, _level?: number): SpeedZoneState {
     const progress = distanceState.targetDistance > 0
       ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
       : 0;
 
-    // Progress multiplier: 1.0 at start, up to 1.7 at target (70% max bonus with p^1.5)
-    const progressMultiplier = 1 + 0.7 * (progress * Math.sqrt(progress));
+    const zone = getSpeedZone(progress);
+    const rawSpeed = speedFromDistance(
+      distanceState.currentDistance,
+      this.baseStart,
+      this.initialSlope,
+      this.cruiseSlope,
+      this.kneeSqrt,
+    );
+    const finalSpeed = this.calculateSpeed(distanceState);
+
+    let zoneProgress: number;
+    let zoneMultiplier: number;
+
+    if (zone === 'CLIMAX') {
+      zoneProgress = (progress - SPEED_CONSTANTS.CLIMAX_ZONE_START) /
+        (1 - SPEED_CONSTANTS.CLIMAX_ZONE_START);
+      zoneMultiplier = 1.0 + (this.climaxMultiplier - 1.0) * this.climaxTransitionProgress;
+    } else {
+      // CRUISE zone: progress 0 → CLIMAX_ZONE_START maps to 0 → 1
+      zoneProgress = SPEED_CONSTANTS.CLIMAX_ZONE_START > 0
+        ? progress / SPEED_CONSTANTS.CLIMAX_ZONE_START
+        : 0;
+      zoneMultiplier = 1.0;
+    }
+
+    return {
+      zone,
+      zoneProgress,
+      rawSpeed,
+      finalSpeed,
+      zoneMultiplier,
+    };
+  }
+
+  /**
+   * Get the current speed configuration state (backward-compatible)
+   * @param distanceState - Current distance tracking state
+   * @param _level - Level number (ignored)
+   * @returns SpeedConfig with all speed information
+   */
+  getConfig(distanceState: DistanceState, _level?: number): SpeedConfig {
+    const progress = distanceState.targetDistance > 0
+      ? Math.min(distanceState.currentDistance / distanceState.targetDistance, 1.0)
+      : 0;
+
+    const zone = getSpeedZone(progress);
+    const rawSpeed = speedFromDistance(
+      distanceState.currentDistance,
+      this.baseStart,
+      this.initialSlope,
+      this.cruiseSlope,
+      this.kneeSqrt,
+    );
+    const zoneState = this.getZoneState(distanceState);
+    const finalSpeed = this.calculateSpeed(distanceState);
 
     let effectiveClimaxMultiplier = 1.0;
     if (distanceState.isInClimaxZone) {
@@ -195,22 +321,25 @@ export class SpeedController {
     }
 
     return {
-      baseSpeed: effectiveBaseSpeed,
-      progressMultiplier,
+      baseSpeed: rawSpeed,
+      zone,
+      zoneMultiplier: zoneState.zoneMultiplier,
+      climaxTransitionProgress: this.climaxTransitionProgress,
+      finalSpeed,
+      progressPercent: progress * 100,
+      // Legacy compat
+      progressMultiplier: zoneState.zoneMultiplier,
       climaxMultiplier: effectiveClimaxMultiplier,
       isInClimaxZone: distanceState.isInClimaxZone,
-      climaxTransitionProgress: this.climaxTransitionProgress,
-      finalSpeed: effectiveBaseSpeed * progressMultiplier * effectiveClimaxMultiplier,
-      progressPercent: progress * 100,
     };
   }
 
   /**
-   * Get the base speed for the current level
-   * @returns Base speed value
+   * Get the base starting speed
+   * @returns Base start speed value
    */
   getBaseSpeed(): number {
-    return this.baseSpeed;
+    return this.baseStart;
   }
 
   /**
@@ -219,12 +348,21 @@ export class SpeedController {
   reset(): void {
     this.climaxTransitionProgress = 0;
     this.wasInClimaxZone = false;
+    this.currentSpeed = this.baseStart;
+  }
+
+  /**
+   * Get the current ramped speed (for diagnostics / testing)
+   * @returns Current linear-ramp speed value
+   */
+  getCurrentSpeed(): number {
+    return this.currentSpeed;
   }
 }
 
 /**
  * Create a speed controller for a chapter
- * Requirements: 4.1, 4.5 - Speed resets to baseSpeed (5) at chapter start
+ * Requirements: 4.1, 4.5 - Speed resets at chapter start
  * @param _chapterId - Chapter number (unused, kept for API compatibility)
  * @param options - Optional configuration
  * @returns SpeedController instance
@@ -239,40 +377,37 @@ export function createSpeedController(
 }
 
 /**
- * Calculate dynamic speed using Hybrid Curve (progress^1.5) formula
- * Pure function for testing - used by SpeedController.calculateSpeed internally
- * Formula: v = baseSpeed + (maxBonus × progress^1.5)
- * "Soft start, Strong finish"
- * @param currentMeters - Current distance traveled
- * @param chapterTarget - Chapter's target distance
- * @param baseSpeed - Base speed at chapter start
- * @returns Speed value using progress^1.5 formula
+ * Calculate absolute-distance speed for a given position.
+ * Pure function for testing — mirrors SpeedController.calculateSpeed without class state.
+ *
+ * @param currentMeters - Current distance traveled (absolute)
+ * @param chapterTarget - Chapter's target distance (used only for climax zone detection)
+ * @param _baseSpeed - IGNORED (kept for backward compat signature)
+ * @returns Speed value using absolute-distance formula
  */
 export function calculateDynamicSpeed(
   currentMeters: number,
   chapterTarget: number,
-  baseSpeed: number
+  _baseSpeed?: number
 ): number {
-  // 1. Calculate progress percentage (0.0 - 1.0)
-  const progress = chapterTarget > 0
-    ? Math.min(currentMeters / chapterTarget, 1.0)
-    : 0;
+  let speed = speedFromDistance(currentMeters);
 
-  // 2. Maximum speed bonus (70% of base speed)
-  const maxBonus = baseSpeed * 0.7;
+  // Apply climax multiplier if in final 20%
+  if (chapterTarget > 0) {
+    const progress = currentMeters / chapterTarget;
+    if (progress >= SPEED_CONSTANTS.CLIMAX_ZONE_START) {
+      speed *= SPEED_CONSTANTS.CLIMAX_MULTIPLIER;
+    }
+  }
 
-  // 3. Hybrid Curve acceleration (progress^1.5)
-  const currentBonus = maxBonus * (progress * Math.sqrt(progress));
-
-  return baseSpeed + currentBonus;
+  return Math.min(speed, SPEED_CONSTANTS.MAX_ALLOWED_SPEED);
 }
 
 /**
- * Calculate speed with climax multiplier applied
- * Pure function for testing Property 8: Climax Speed Multiplier
- * Requirements: 4.4 - 1.2x multiplier in final 20%
- * @param speed - Speed after logarithmic calculation
- * @param isInClimaxZone - Whether in final 20%
+ * Apply climax multiplier to a speed value.
+ * Pure function for testing.
+ * @param speed - Speed value
+ * @param isInClimaxZone - Whether in climax zone
  * @param transitionProgress - 0-1 transition progress (1 = fully transitioned)
  * @returns Final speed with climax multiplier
  */
@@ -282,13 +417,12 @@ export function applyClimaxMultiplier(
   transitionProgress: number = 1
 ): number {
   if (!isInClimaxZone) return speed;
-  const effectiveMultiplier = 1.0 + (DEFAULT_CLIMAX_MULTIPLIER - 1.0) * transitionProgress;
+  const effectiveMultiplier = 1.0 + (SPEED_CONSTANTS.CLIMAX_MULTIPLIER - 1.0) * transitionProgress;
   return speed * effectiveMultiplier;
 }
 
 /**
- * Check if current distance is in climax zone (final 20%)
- * Requirements: 4.4 - Climax zone is final 20% of target distance
+ * Check if current distance is in climax zone (final 20% of level)
  * @param currentDistance - Current distance traveled
  * @param targetDistance - Target distance for the chapter
  * @returns True if in climax zone
@@ -298,8 +432,8 @@ export function isInClimaxZone(
   targetDistance: number
 ): boolean {
   if (targetDistance <= 0) return false;
-  const progressPercent = (currentDistance / targetDistance) * 100;
-  return progressPercent >= 80;
+  const progress = currentDistance / targetDistance;
+  return progress >= SPEED_CONSTANTS.CLIMAX_ZONE_START;
 }
 
 /**
@@ -307,9 +441,9 @@ export function isInClimaxZone(
  * Kept for backward compatibility
  */
 export function calculateProgressiveSpeed(
-  baseSpeed: number,
+  _baseSpeed: number,
   currentDistance: number,
   targetDistance: number
 ): number {
-  return calculateDynamicSpeed(currentDistance, targetDistance, baseSpeed);
+  return calculateDynamicSpeed(currentDistance, targetDistance);
 }

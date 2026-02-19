@@ -154,25 +154,25 @@ export const SHIFT_CONFIG = {
 // Glitch Protocol Configuration - Requirements 7.1, 6.5, 2.7, 2.6
 export const GLITCH_CONFIG = {
   // Duration - Requirements 7.1
-  duration: 8000,                // Quantum Lock duration (8 seconds)
-  chargingDuration: 3000, // Cinematic slow entry (3 seconds)
+  duration: 6000,                // Quantum Lock duration (3 seconds)
+  chargingDuration: 1500, // Cinematic slow entry (2 seconds)
 
   // Connector - Requirements 4.2
   idealConnectorLength: 80,       // Target connector length during Quantum Lock (minimal growth)
 
-  waveSpeed: 0.05,                // Wave offset increment per frame (smoother, faster animation)
+  waveSpeed: 0.025,               // Wave offset increment per frame (slower, heavier oscillation)
   waveAmplitude: 120,             // Sinusoidal wave amplitude (pixels)
 
   // Phase Thresholds
-  warningThreshold: 0.75,         // Start warning at 75%
-  flattenThreshold: 0.80,         // Start exiting (Snake Out) at 80%
+  warningThreshold: 0.65,         // Start warning at 65%
+  flattenThreshold: 0.70,         // Start exiting (Snake Out) at 70%
 
   // Ghost Mode - Requirements 7.4
   ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)
 
   // Phase Thresholds - Requirements 7.2, 7.3
-  warningThreshold: 0.75,        // 75% - start exit warning
-  flattenThreshold: 0.80,        // 80% - start wave flattening
+  warningThreshold: 0.65,        // 65% - start exit warning
+  flattenThreshold: 0.70,        // 70% - start wave flattening
 
   // Shard Value - Requirements 6.5
   shardMultiplier: 2,            // 2x shard value during Quantum Lock
