@@ -104,12 +104,13 @@ const _oscResult = { scale: 1.0, verticalOffset: 0 };
 /**
  * Calculate oscillation transform for rendering
  * Creates a smooth, flowing vertical motion for oscillating blocks
+ * BPM-synced: cycle duration = 60000/bpm ms (one full beat)
  * PERF: Returns pre-allocated object - do NOT store reference
  */
 export function calculateOscillationTransform(
   obs: Obstacle,
   currentTime: number,
-  _bpm: number, // Not used - using smooth fixed cycle
+  bpm: number,
   config: BlockSystemConfig = DEFAULT_BLOCK_CONFIG
 ): {
   scale: number;
@@ -127,9 +128,9 @@ export function calculateOscillationTransform(
   // No scale change - only vertical movement
   const scale = config.oscillationBaseScale;
 
-  // Fast vertical bobbing - 900ms per full cycle
-  // Visible during fast gameplay
-  const bobCycleDuration = 900;
+  // BPM-synced vertical bobbing: one full cycle per beat
+  // Falls back to 900ms when bpm is 0 or invalid
+  const bobCycleDuration = bpm > 0 ? 60000 / bpm : 900;
   const bobPhase = ((currentTime % bobCycleDuration) / bobCycleDuration) * Math.PI * 2 + phase;
 
   // Pure sine wave for smooth, continuous motion

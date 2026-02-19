@@ -9,10 +9,9 @@
  * - Haptic feedback on distance bar pulse (14.4)
  */
 
+import { BPM_CONFIG } from '../constants';
 import { getHapticSystem } from './hapticSystem';
 
-// ============================================================================
-// Configuration
 // ============================================================================
 
 /**
@@ -40,7 +39,8 @@ export interface EnvironmentalEffectsConfig {
  */
 export const DEFAULT_ENVIRONMENTAL_CONFIG: EnvironmentalEffectsConfig = {
   // BPM-synced pulse - Requirements 14.2
-  defaultBPM: 120,
+  // Uses baseBPM from BPM_CONFIG as default, overridden by beatEngine at runtime
+  defaultBPM: BPM_CONFIG.baseBPM,
   pulseMinScale: 0.98,
   pulseMaxScale: 1.02,
   

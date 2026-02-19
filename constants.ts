@@ -54,10 +54,37 @@ export const STORAGE_KEYS = {
 
 // Rhythm System Configuration - Requirements 1.2, 1.6
 export const RHYTHM_CONFIG = {
-  toleranceMs: 200,             // ±200ms tolerans (daha kolay)
+  toleranceMs: 200,             // ±200ms tolerans (daha kolay) — overridden by BPM-dynamic tolerance
   streakForX2: 3,               // x2 için gereken streak (düşürüldü)
   streakForX3: 6,               // x3 için gereken streak (düşürüldü)
-  baseInterval: 800,            // Temel ritim aralığı (ms)
+  baseInterval: 800,            // Legacy — now derived from BPM: 60000 / bpm
+};
+
+// ============================================================================
+// BPM & Beat Music Configuration — Rhythm Engine
+// ============================================================================
+
+/** Global BPM scaling: baseBPM at score 0, logarithmically ramps to maxBPM */
+export const BPM_CONFIG = {
+  baseBPM: 90,                    // Rahat başlangıç temposu
+  maxBPM: 140,                    // Maksimum tempo (yüksek skor)
+  scaleFactor: 8,                 // Logaritmik ölçek katsayısı
+  scoreBase: 1500,                // Eğrinin yarı noktası skoru
+};
+
+/** Layered procedural music gain & unlock thresholds */
+export const BEAT_MUSIC_CONFIG = {
+  // Per-layer gain levels (0–1, mixed into master)
+  kickGain: 0.22,                 // Kick drum (downbeat)
+  hihatGain: 0.10,                // Hi-hat (1/8 beats)
+  bassGain: 0.16,                 // Bass line (1/4 beats)
+  arpGain: 0.09,                  // Melodic arp (1/16 accents)
+  // Score thresholds for layer unlock (fade-in)
+  bassUnlockScore: 1500,          // groove phase
+  arpUnlockScore: 12000,          // plateau phase
+  // Crossfade timing
+  crossfadeDuration: 2000,        // ms for smooth BPM transitions
+  layerFadeInDuration: 3000,      // ms for new layer introduction
 };
 
 // Gravity System Configuration - Requirements 2.6

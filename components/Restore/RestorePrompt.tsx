@@ -6,8 +6,8 @@
  * Shows static noise effect and allows player to spend Echo Shards to continue.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, RotateCcw, X, Gem } from 'lucide-react';
+import { AlertTriangle, Gem, RotateCcw, X } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { RESTORE_CONFIG } from '../../systems/restoreSystem';
 
 interface RestorePromptProps {
@@ -125,7 +125,13 @@ const RestorePrompt: React.FC<RestorePromptProps> = ({
   }, [canRestore, onRestore]);
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center z-40 overflow-hidden">
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center z-40 overflow-y-auto overflow-x-hidden"
+      style={{
+        paddingTop: 'max(1rem, var(--safe-top, 0px))',
+        paddingBottom: 'max(1rem, var(--safe-bottom, 0px))',
+      }}
+    >
       {/* Dark background with red tint */}
       <div className="absolute inset-0 bg-gradient-to-b from-red-950/95 via-black/95 to-black" />
       
@@ -240,7 +246,7 @@ const RestorePrompt: React.FC<RestorePromptProps> = ({
           {/* Decline option */}
           <button
             onClick={onDecline}
-            className="group flex items-center justify-center gap-2 w-full py-2.5 border border-white/20 text-white/70 font-bold text-xs sm:text-sm tracking-widest hover:bg-white/5 hover:border-white/30 hover:text-white transition-all duration-300 rounded-lg"
+            className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/20 text-white/70 font-bold text-xs sm:text-sm tracking-widest hover:bg-white/5 hover:border-white/30 hover:text-white transition-all duration-300 rounded-xl"
           >
             <X className="w-4 h-4" />
             ACCEPT FATE
@@ -248,7 +254,7 @@ const RestorePrompt: React.FC<RestorePromptProps> = ({
         </div>
         
         {/* Rewind info */}
-        <p className="mt-3 text-center text-gray-500 text-[10px] tracking-wider">
+        <p className="mt-3 text-center text-gray-500 text-[11px] tracking-wider">
           Rewinds {RESTORE_CONFIG.rewindSeconds} seconds before collision
         </p>
       </div>

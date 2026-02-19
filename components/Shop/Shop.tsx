@@ -5,24 +5,24 @@
  */
 
 import {
-  Clock,
-  Gem,
-  Ghost,
-  Magnet,
-  Palette,
-  Play,
-  Shield,
-  TrendingUp,
-  X,
-  Zap
+    Clock,
+    Gem,
+    Ghost,
+    Magnet,
+    Palette,
+    Play,
+    Shield,
+    TrendingUp,
+    X,
+    Zap
 } from "lucide-react";
 import React, { useState } from "react";
 import { BALL_SKINS, BallSkin } from "../../data/skins";
 import { THEMES, Theme } from "../../data/themes";
 import {
-  UPGRADES,
-  getUpgradeCost,
-  getUpgradeEffect,
+    UPGRADES,
+    getUpgradeCost,
+    getUpgradeEffect,
 } from "../../data/upgrades";
 import { ItemCategory, useGameStore } from "../../store/gameStore";
 import { purchaseUpgrade } from "../../systems/upgradeSystem";
@@ -222,17 +222,17 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
                   <h3 className="font-bold text-white text-xs sm:text-sm truncate">
                     {upgrade.name}
                   </h3>
-                  <span className="text-[10px] text-white/50 flex-shrink-0 ml-1">
+                  <span className="text-[11px] text-white/50 flex-shrink-0 ml-1">
                     {currentLevel}/{upgrade.maxLevel}
                   </span>
                 </div>
-                <p className="text-[10px] text-white/60 mb-1 line-clamp-1">
+                <p className="text-[11px] text-white/60 mb-1 line-clamp-1">
                   {upgrade.description}
                 </p>
 
                 {/* Current Effect */}
                 {currentLevel > 0 && (
-                  <p className="text-[10px] text-cyan-400">
+                  <p className="text-[11px] text-cyan-400">
                     {getEffectDisplay(upgrade.id, currentLevel)}
                   </p>
                 )}
@@ -241,14 +241,14 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
               {/* Purchase Button - Compact */}
               <div className="flex-shrink-0">
                 {isMaxed ? (
-                  <span className="px-2 py-1 text-[10px] font-bold text-green-400 bg-green-500/20 rounded-full">
+                  <span className="px-2 py-1 text-[11px] font-bold text-green-400 bg-green-500/20 rounded-full">
                     MAX
                   </span>
                 ) : (
                   <button
                     onClick={() => handleUpgradePurchase(upgrade.id)}
                     disabled={!canAfford}
-                    className={`flex items-center gap-1 px-2 py-1.5 rounded-lg font-bold text-xs transition-all ${canAfford
+                    className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-xs transition-all ${canAfford
                       ? "bg-cyan-500 text-black active:scale-95"
                       : "bg-white/10 text-white/30 cursor-not-allowed"
                       }`}
@@ -276,7 +276,10 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3">
-      <div className="relative w-full max-w-xs sm:max-w-sm max-h-[90vh] bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 overflow-hidden flex flex-col">
+      <div
+        className="relative w-full max-w-xs sm:max-w-sm bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 overflow-hidden flex flex-col"
+        style={{ maxHeight: 'calc(100vh - max(1.5rem, var(--safe-top, 0px)) - max(1.5rem, var(--safe-bottom, 0px)))' }}
+      >
         {/* Header - Compact */}
         <div className="flex items-center justify-between p-3 border-b border-white/10 flex-shrink-0">
           <h2 className="text-base font-bold text-white tracking-wider">
@@ -293,9 +296,9 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+              className="p-2.5 hover:bg-white/10 rounded-full transition-colors"
             >
-              <X className="w-4 h-4 text-white/70" />
+              <X className="w-5 h-5 text-white/70" />
             </button>
           </div>
         </div>
@@ -306,7 +309,7 @@ const Shop: React.FC<ShopProps> = ({ isOpen, onClose }) => {
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`flex-1 flex items-center justify-center gap-1 py-2 text-xs font-medium transition-colors ${activeCategory === cat.id
+              className={`flex-1 flex items-center justify-center gap-1 py-3 text-xs font-medium transition-colors ${activeCategory === cat.id
                 ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5"
                 : "text-white/50 hover:text-white/70 hover:bg-white/5"
                 }`}

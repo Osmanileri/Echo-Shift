@@ -124,7 +124,10 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 to-black sm:rounded-2xl rounded-t-2xl border-t sm:border border-white/10 overflow-hidden flex flex-col max-h-[90vh]">
+      <div
+        className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 to-black sm:rounded-2xl rounded-t-2xl border-t sm:border border-white/10 overflow-hidden flex flex-col"
+        style={{ maxHeight: 'calc(100vh - max(0px, var(--safe-top, 0px)) - max(0px, var(--safe-bottom, 0px)))' }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
           <div className="flex items-center gap-3">
@@ -132,7 +135,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
               <Palette className="w-5 h-5 text-cyan-400" />
             </div>
             <div>
-              <p className="text-[10px] text-white/50 tracking-[0.25em] uppercase">
+              <p className="text-[11px] text-white/50 tracking-[0.25em] uppercase">
                 Customize
               </p>
               <h2 className="text-sm font-bold text-white tracking-wider">
@@ -142,7 +145,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            className="p-2.5 hover:bg-white/10 rounded-full transition-colors"
           >
             <X className="w-5 h-5 text-white/70" />
           </button>
@@ -152,7 +155,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6">
           {/* Live Preview Card */}
           <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/40 shadow-2xl relative group">
-            <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded-md bg-black/50 backdrop-blur text-[10px] text-white/50 uppercase tracking-wider font-bold">
+            <div className="absolute top-3 right-3 z-10 px-2 py-1 rounded-md bg-black/50 backdrop-blur text-[11px] text-white/50 uppercase tracking-wider font-bold">
               Preview
             </div>
             <div className="relative h-40">
@@ -220,7 +223,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                   className="w-3 h-3 rounded-full shadow-[0_0_8px_currentColor]"
                   style={{ color: draft.accent, backgroundColor: draft.accent }}
                 />
-                <span className="text-[10px] text-white/60 tracking-wider uppercase font-medium">
+                <span className="text-[11px] text-white/60 tracking-wider uppercase font-medium">
                   Accent Color
                 </span>
               </div>
@@ -237,7 +240,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                 </p>
                 <ul className="space-y-1">
                   {warnings.map((w) => (
-                    <li key={w} className="text-[10px] text-amber-200/70">
+                    <li key={w} className="text-[11px] text-amber-200/70">
                       • {w}
                     </li>
                   ))}
@@ -254,7 +257,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                 className="group p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="text-[10px] text-white/40 tracking-wider uppercase font-medium group-hover:text-white/60 transition-colors">
+                  <p className="text-[11px] text-white/40 tracking-wider uppercase font-medium group-hover:text-white/60 transition-colors">
                     {label}
                   </p>
                   <div className="relative w-6 h-6 rounded-full overflow-hidden border border-white/20 shadow-sm">
@@ -269,7 +272,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                 <input
                   value={draft[key]}
                   onChange={(e) => setColor(key, e.target.value)}
-                  className="w-full bg-black/20 border border-white/5 rounded-lg px-2 py-1.5 text-[10px] text-white/60 font-mono focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  className="w-full bg-black/20 border border-white/5 rounded-lg px-2 py-2 text-[11px] text-white/60 font-mono focus:outline-none focus:border-cyan-500/50 transition-colors"
                 />
               </div>
             ))}
@@ -280,13 +283,13 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Copy className="w-4 h-4 text-white/40" />
-                <p className="text-[10px] text-white/40 tracking-wider uppercase font-bold">
+                <p className="text-[11px] text-white/40 tracking-wider uppercase font-bold">
                   Share Theme
                 </p>
               </div>
               <button
                 onClick={handleCopy}
-                className="px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold tracking-wider hover:bg-cyan-500/20 transition-colors"
+                className="px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[11px] font-bold tracking-wider hover:bg-cyan-500/20 transition-colors"
               >
                 {copied ? "COPIED!" : "COPY CODE"}
               </button>
@@ -297,12 +300,12 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="Paste theme code (ECHO-...)"
-                className="w-full h-20 bg-black/30 border border-white/10 rounded-xl p-3 text-[10px] text-white/70 font-mono resize-none focus:outline-none focus:border-cyan-500/30 transition-colors placeholder:text-white/20"
+                className="w-full h-20 bg-black/30 border border-white/10 rounded-xl p-3 text-[11px] text-white/70 font-mono resize-none focus:outline-none focus:border-cyan-500/30 transition-colors placeholder:text-white/20"
               />
               <div className="absolute bottom-2 right-2">
                 <button
                   onClick={handleApplyCode}
-                  className="px-3 py-1.5 rounded-lg bg-white/10 border border-white/10 text-white/80 text-[10px] font-bold tracking-wider hover:bg-white/20 transition-colors"
+                  className="px-4 py-2 rounded-lg bg-white/10 border border-white/10 text-white/80 text-[11px] font-bold tracking-wider hover:bg-white/20 transition-colors"
                 >
                   APPLY
                 </button>
@@ -310,7 +313,7 @@ export const ThemeCreatorModal: React.FC<ThemeCreatorModalProps> = ({
             </div>
 
             {codeError && (
-              <p className="text-[10px] text-red-400 font-medium pl-1">
+              <p className="text-[11px] text-red-400 font-medium pl-1">
                 {codeError}
               </p>
             )}

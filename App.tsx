@@ -1,3 +1,7 @@
+import { App as CapApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
+import { SplashScreen } from "@capacitor/splash-screen";
+import { StatusBar, Style as StatusBarStyle } from "@capacitor/status-bar";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
@@ -242,6 +246,71 @@ const App: React.FC = () => {
   const addXP = useGameStore((state) => state.addXP);
   // Ghost Pace Indicator - get level stats for previous best distance
   const levelStats = useGameStore((state) => state.levelStats);
+
+  // ─── Mobile: Android back button handling ───
+  // Navigate back through UI layers instead of closing the app
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let cleanup: (() => void) | null = null;
+    CapApp.addListener('backButton', () => {
+      // Close modals/panels in reverse-depth order
+      if (showRatePrompt) { setShowRatePrompt(false); return; }
+      if (showMissionPanel) { setShowMissionPanel(false); return; }
+      if (showRitualsPanel) { setShowRitualsPanel(false); return; }
+      if (isDailyChallengeOpen) { setIsDailyChallengeOpen(false); return; }
+      if (isStudioOpen) { setIsStudioOpen(false); return; }
+      if (isShopOpen) { setIsShopOpen(false); return; }
+      if (showCampaignMap) { setShowCampaignMap(false); return; }
+      if (gameState === GameState.PAUSED) { handleResume(); return; }
+      if (gameState === GameState.PLAYING) { handlePause(); return; }
+      if (gameState === GameState.GAME_OVER || gameState === GameState.VICTORY) {
+        handleMainMenu(); return;
+      }
+      // At root menu — minimize app (don't close)
+      CapApp.minimizeApp();
+    }).then(l => { cleanup = () => l.remove(); });
+    return () => { cleanup?.(); };
+  }, [gameState, isShopOpen, isStudioOpen, showCampaignMap,
+      isDailyChallengeOpen, showMissionPanel, showRitualsPanel, showRatePrompt]);
+
+  // ─── Mobile: Status bar management ───
+  // Hide during gameplay for full-screen immersion, show in menus
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (gameState === GameState.PLAYING) {
+      StatusBar.hide().catch(() => {});
+    } else {
+      StatusBar.show().catch(() => {});
+      StatusBar.setStyle({ style: StatusBarStyle.Dark }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: '#000000' }).catch(() => {});
+    }
+  }, [gameState]);
+
+  // ─── Mobile: App lifecycle — auto-pause & save on background ───
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        // Auto-pause if playing
+        if (gameState === GameState.PLAYING) {
+          handlePause();
+        }
+        // Flush analytics & save state
+        try {
+          getAnalyticsSystem().flush();
+          useGameStore.getState().saveToStorage?.();
+        } catch { /* best-effort */ }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [gameState]);
+
+  // ─── Mobile: Hide splash screen once React is mounted ───
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      SplashScreen.hide().catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.HIGH_SCORE);

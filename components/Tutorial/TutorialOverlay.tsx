@@ -5,19 +5,18 @@
  * Displays step-by-step instructions with UI element highlighting and skip option.
  */
 
+import { ChevronLeft, ChevronRight, Ghost, RotateCcw, Sparkles, Target, Waves, X, Zap } from 'lucide-react';
 import React, { useCallback, useEffect } from 'react';
-import { X, ChevronRight, ChevronLeft, Sparkles, Target, Zap, Ghost, Waves, RotateCcw } from 'lucide-react';
 import {
-  TutorialStep,
-  TutorialState,
-  getCurrentStep,
-  getTutorialState,
-  getTutorialProgress,
-  advanceStep,
-  previousStep,
-  skipTutorial,
-  isTutorialActive,
   HighlightTarget,
+  TutorialStep,
+  advanceStep,
+  getCurrentStep,
+  getTutorialProgress,
+  getTutorialState,
+  isTutorialActive,
+  previousStep,
+  skipTutorial
 } from '../../systems/tutorialSystem';
 
 interface TutorialOverlayProps {
@@ -246,17 +245,17 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               </div>
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-white">{currentStep.title}</h3>
-                <p className="text-[10px] text-white/70">
+                <p className="text-[11px] text-white/70">
                   {progress.current} / {progress.total}
                 </p>
               </div>
             </div>
             <button
               onClick={handleSkip}
-              className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+              className="p-2.5 hover:bg-white/20 rounded-full transition-colors"
               title="Eğitimi Atla"
             >
-              <X className="w-4 h-4 text-white/80" />
+              <X className="w-5 h-5 text-white/80" />
             </button>
           </div>
           
@@ -297,29 +296,29 @@ const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
             <button
               onClick={handlePrevious}
               disabled={isFirstStep}
-              className={`flex items-center gap-0.5 px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
                 isFirstStep
                   ? 'text-white/30 cursor-not-allowed'
                   : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
-              <ChevronLeft className="w-3 h-3" />
+              <ChevronLeft className="w-4 h-4" />
               Geri
             </button>
             
             <button
               onClick={handleSkip}
-              className="text-[10px] text-white/50 hover:text-white/70 transition-colors"
+              className="px-3 py-2.5 text-[11px] text-white/50 hover:text-white/70 transition-colors rounded-lg"
             >
               Atla
             </button>
             
             <button
               onClick={handleNext}
-              className={`flex items-center gap-0.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r ${getTutorialColor()} text-white hover:opacity-90`}
+              className={`flex items-center gap-1 px-4 py-2.5 rounded-lg text-xs font-bold transition-all bg-gradient-to-r ${getTutorialColor()} text-white hover:opacity-90`}
             >
               {isLastStep ? 'Başla!' : 'İleri'}
-              {!isLastStep && <ChevronRight className="w-3 h-3" />}
+              {!isLastStep && <ChevronRight className="w-4 h-4" />}
             </button>
           </div>
         </div>

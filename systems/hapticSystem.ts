@@ -22,7 +22,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 /**
  * Types of haptic feedback available
  */
-export type HapticType = 'light' | 'medium' | 'heavy' | 'selection' | 'success';
+export type HapticType = 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'beat';
 
 /**
  * Haptic configuration with durations in milliseconds
@@ -33,6 +33,7 @@ export interface HapticConfig {
   heavy: number;      // 50ms - collision
   selection: number;  // 5ms - UI button press
   success: number[];  // [10, 50, 10] - resonance activation pattern
+  beat: number;       // 8ms - rhythm beat tick (on-beat pass)
 }
 
 /**
@@ -66,6 +67,7 @@ export const HAPTIC_CONFIG: HapticConfig = {
   heavy: 50,           // Requirements 4.2: heavy haptic impact (50ms)
   selection: 5,        // Requirements 4.5: selection haptic (5ms)
   success: [10, 50, 10], // Requirements 4.4: success pattern (double pulse)
+  beat: 8,             // Beat-synced tick for rhythm passes
 };
 
 
@@ -120,6 +122,8 @@ export function getVibrationPattern(
       return config.selection;
     case 'success':
       return config.success;
+    case 'beat':
+      return config.beat;
     default:
       return config.light;
   }
@@ -166,6 +170,9 @@ export function triggerHaptic(
           break;
         case 'success':
           Haptics.notification({ type: NotificationType.Success });
+          break;
+        case 'beat':
+          Haptics.impact({ style: ImpactStyle.Light });
           break;
       }
       return true;

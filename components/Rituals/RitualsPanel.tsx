@@ -6,10 +6,10 @@
  * Shows progress bars (current/target) and completion status with rewards.
  */
 
+import { CheckCircle, Circle, Gem, Gift, Terminal, X } from 'lucide-react';
 import React, { useMemo } from 'react';
-import { Terminal, CheckCircle, Circle, Gift, Gem } from 'lucide-react';
-import { RitualProgress, DailyRitualsState } from '../../systems/dailyRituals';
-import { RITUAL_POOL, BONUS_REWARD } from '../../data/rituals';
+import { BONUS_REWARD, RITUAL_POOL } from '../../data/rituals';
+import { DailyRitualsState, RitualProgress } from '../../systems/dailyRituals';
 
 interface RitualsPanelProps {
   /** Current rituals state */
@@ -148,7 +148,10 @@ const RitualsPanel: React.FC<RitualsPanelProps> = ({
       />
       
       {/* Panel */}
-      <div className="relative w-full max-w-md bg-gray-950 border border-cyan-500/30 rounded-lg overflow-hidden shadow-[0_0_30px_rgba(0,240,255,0.1)]">
+      <div
+        className="relative w-full max-w-md bg-gray-950 border border-cyan-500/30 rounded-lg overflow-hidden shadow-[0_0_30px_rgba(0,240,255,0.1)] flex flex-col"
+        style={{ maxHeight: 'calc(100vh - max(2rem, var(--safe-top, 0px)) - max(2rem, var(--safe-bottom, 0px)))' }}
+      >
         {/* Scanlines effect */}
         <div 
           className="absolute inset-0 pointer-events-none opacity-10"
@@ -174,14 +177,15 @@ const RitualsPanel: React.FC<RitualsPanelProps> = ({
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+            className="absolute top-3 right-3 p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"
+            aria-label="Close"
           >
-            ✕
+            <X className="w-5 h-5 text-gray-400 hover:text-white transition-colors" />
           </button>
         </div>
         
         {/* Rituals List */}
-        <div className="relative p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        <div className="relative p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
           {state.rituals.map((progress) => (
             <RitualItem key={progress.ritualId} progress={progress} />
           ))}

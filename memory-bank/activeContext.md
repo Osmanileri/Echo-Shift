@@ -2,6 +2,86 @@
 
 ## Mevcut Odak
 
+- **Mobile UI/UX Layout Overhaul** - TAMAMLANDI ✅
+  - Hedef: Tüm arayüzlerin (ana sayfa, oyun içi, paneller, modallar) telefona uygun mobil oyun görünümüne getirilmesi
+  - **14 Komponent Audit Edildi** — P0/P1/P2 sorunlar tespit ve düzeltildi
+  - **13 dosyada 50+ düzeltme** — sıfır yeni TypeScript hatası
+
+  ### Uygulanan Düzeltmeler:
+
+  #### P0 — Kritik Scroll Düzeltmeleri (İçerik Kırpılması):
+  1. **VictoryScreen.tsx** — `overflow-y-auto` + safe area padding eklendi, background'lar `fixed` yapıldı, butonlar `my-auto` ile merkezlendi
+  2. **MissionPanel.tsx** — Content area'ya `overflow-y-auto flex-1 min-h-0` eklendi, panel'e safe area `maxHeight` eklendi
+  3. **NumbersMissionVictory.tsx** — `overflow-y-auto` + safe area padding, `my-auto` centering, background'lar `fixed`
+
+  #### P1 — Safe Area + Touch Target Düzeltmeleri:
+  4. **GameUI.tsx MENU** — Safe area padding (top/bottom), logo responsive (`text-[2rem] sm:text-5xl`), spacing sıkılaştırıldı, tutorial cards `flex-1 min-h-0 overflow-y-auto`
+  5. **GameUI.tsx PAUSED** — Safe area padding eklendi
+  6. **GameUI.tsx GAME_OVER** — `overflow-y-auto` + safe area, buton touch target artırıldı (`py-3.5`, `rounded-xl`)
+  7. **GameUI.tsx PLAYING** — Progress bar + multiplier/streak safe area positioning (`calc(max(...) + offset)`)
+  8. **ChapterNotification.tsx** — `fixed top-4` → `style={{ top: 'max(1rem, var(--safe-top, 0px))' }}`
+  9. **RatePrompt.tsx** — Close button `p-1` → `p-2.5` (22px → 40px), dismiss `py-1.5` → `py-3`
+  10. **RitualsPanel.tsx** — Bare `✕` → proper `<X>` icon in `p-2.5` button, safe area `maxHeight`, `flex-1 min-h-0 overflow-y-auto`
+  11. **RestorePrompt.tsx** — `overflow-y-auto` + safe area, decline `py-2.5` → `py-3.5 rounded-xl`
+  12. **Shop.tsx** — Close `p-1.5` → `p-2.5`, tab `py-2` → `py-3`, buy button `px-2 py-1.5` → `px-3 py-2`, safe area `maxHeight`
+  13. **DailyChallenge.tsx** — Close `p-1.5` → `p-2.5`, start `py-2.5` → `py-3.5 rounded-xl`, safe area `maxHeight`
+  14. **TutorialOverlay.tsx** — Skip/X `p-1.5` → `p-2.5`, back/next `py-1.5` → `py-2.5`, "Atla" button `no padding` → `px-3 py-2.5 rounded-lg`
+  15. **MissionComplete.tsx** — Close `p-1.5` → `p-2.5`, safe area padding on root
+  16. **ThemeCreatorModal.tsx** — Close `p-2` → `p-2.5`, safe area `maxHeight`, COPY/APPLY buttons paddings artırıldı
+
+  #### P2 — Minimum Text Size (11px) Düzeltmeleri:
+  17. **GameUI.tsx** — `text-[8px]` (×3 stat labels) → `text-[11px]`, `text-[9px]` (×3 music/tutorial/footer) → `text-[11px]`
+  18. **ChapterNotification.tsx** — `text-[10px]` "Bölüm" label → `text-[11px]`
+  19. **VictoryScreen.tsx** — `text-[10px]` distance label → `text-[11px]`
+  20. **RestorePrompt.tsx** — `text-[10px]` rewind info → `text-[11px]`
+  21. **Shop.tsx** — 4× `text-[10px]` (upgrade level/desc/effect/MAX) → `text-[11px]`
+  22. **DailyChallenge.tsx** — 2× `text-[10px]` (date/modifier) → `text-[11px]`
+  23. **TutorialOverlay.tsx** — 2× `text-[10px]` (step counter/skip) → `text-[11px]`
+  24. **ThemeCreatorModal.tsx** — 9× `text-[10px]` → `text-[11px]` (labels, inputs, buttons, errors)
+  25. **SpiritShop.tsx** — `text-[9px]` VFX badge → `text-[11px]`
+
+- **Comprehensive Mobile Audit & Fixes** - TAMAMLANDI ✅
+  - Hedef: Mobil oyun olduğu için eksikleri tespit et ve düzelt
+  - **30 Issue Tespit Edildi** (6 CRITICAL, 8 HIGH, 10 MEDIUM, 6 LOW)
+  - **22+ Fix Uygulandı** — sıfır yeni TypeScript hatası
+
+  ### Uygulanan Düzeltmeler:
+  1. **viewport-fit=cover** eklendi (index.html) — notch/Dynamic Island desteği
+  2. **Canvas DPR/Retina desteği** (GameEngine.tsx) — `devicePixelRatio` ile buffer scaling + `ctx.setTransform(dpr,0,0,dpr,0,0)`
+  3. **iOS portrait-only lock** (Info.plist + AppDelegate.swift) — landscape devre dışı
+  4. **arm64 zorunlu** (Info.plist) — armv7 kaldırıldı
+  5. **UIStatusBarStyle** (Info.plist) — LightContent
+  6. **Capacitor config genişletme** (capacitor.config.ts) — backgroundColor, iOS/Android config, SplashScreen/StatusBar/Keyboard plugins
+  7. **CDN Tailwind → Local PostCSS build** — `@tailwindcss/postcss` + `postcss.config.js` + `index.css`
+  8. **Safe area CSS vars** (index.html) — `--safe-top/bottom/left/right` root padding yerine
+  9. **iPad touch detection fix** (GameEngine.tsx) — screen width yerine touch capability + Capacitor detection
+  10. **Apple touch icon PNG** (index.html) — SVG → PNG
+  11. **.mixWithOthers kaldırıldı** (AppDelegate.swift) — ritim oyunu exclusive audio
+  12. **BeatEngine unmount cleanup** (GameEngine.tsx) — `BeatEngine.stop()` eklendi
+  13. **BeatEngine duplicate callback fix** (beatEngine.ts) — `_onBeatCallbacks.length = 0` before push
+  14. **GameUI safe area insets** (GameUI.tsx) — `var(--safe-top)` ile HUD elemanları
+  15. **Vite build optimizations** (vite.config.ts) — es2020 target, no sourcemap, vendor chunking
+  16. **Manifest dedup** — `public/manifest.json` silindi (VitePWA kendi oluşturuyor)
+  17. **Android back button** (App.tsx) — `CapApp.addListener('backButton')` ile UI katman navigasyonu
+  18. **StatusBar management** (App.tsx) — PLAYING'de hide, menüde show + Dark style
+  19. **App lifecycle** (App.tsx) — `visibilitychange` ile auto-pause, analytics flush, state save
+  20. **ErrorBoundary** (components/ErrorBoundary.tsx) — beyaz ekrana düşmeyi önleyen recovery UI
+  21. **ErrorBoundary entegrasyonu** (index.tsx) — `<App />` sarmalandı
+  22. **SplashScreen plugin** — `@capacitor/splash-screen` kuruldu, App.tsx'de `SplashScreen.hide()` mount'ta çağrılıyor
+  23. **Android platform** — `@capacitor/android` kuruldu, `npx cap add android` ile platform eklendi
+  24. **Android portrait-only** (AndroidManifest.xml) — `screenOrientation="portrait"`
+  25. **Android dark theme** (styles.xml) — Siyah navigation/status bar, #6366f1 accent
+  26. **Touch preventDefault** (GameEngine.tsx) — touchstart/move/end'de `e.preventDefault()` — scroll/zoom/pull-to-refresh engellendi
+  27. **Canvas ResizeObserver** (GameEngine.tsx) — Viewport değişikliklerinde (address bar, split-screen) otomatik canvas yeniden boyutlandırma
+  28. **Package.json scripts** — `android:open` ve `android:build` eklendi
+
+  ### Rhythm System (Önceki Oturum):
+  - `systems/beatEngine.ts`: Global BPM clock (start/stop/pause/resume)
+  - `systems/audioSystem.ts`: Layered procedural music (kick/hihat/bass/arp)
+  - `systems/rhythmSystem.ts`: BPM-driven tolerance
+  - `constants.ts`: BPM_CONFIG, BEAT_MUSIC_CONFIG
+  - Mobile audio optimizations: AudioContext lifecycle, node cleanup, iOS AVAudioSession
+
 - **Tutorial System Complete Rewrite** - TAMAMLANDI ✅
   - Hedef: Baştan sona çalışan, profesyonel, tek hikaye altında tüm fazları anlatan eğitim sistemi
   - **10 Kritik Bug Düzeltildi:**

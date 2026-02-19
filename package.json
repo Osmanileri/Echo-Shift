@@ -10,15 +10,19 @@
     "test:watch": "vitest",
     "cap:sync": "npx cap sync",
     "ios:open": "npx cap open ios",
-    "ios:build": "npm run build && npx cap sync ios"
+    "ios:build": "npm run build && npx cap sync ios",
+    "android:open": "npx cap open android",
+    "android:build": "npm run build && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.1.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/haptics": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
     "@capacitor/keyboard": "^8.0.0",
+    "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.0",
     "lucide-react": "^0.561.0",
     "react": "^18.2.0",
@@ -26,11 +30,15 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^25.0.1",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.24",
     "fast-check": "^4.4.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.2.0",
     "typescript": "~5.9.2",
     "vite": "^5.0.0",
     "vite-plugin-pwa": "^1.2.0",

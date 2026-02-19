@@ -150,6 +150,63 @@ safeLoad(key, default)  // JSON deserialize + fallback
 - Her sistem için `*.test.ts` dosyası
 - 747 test (720 pass, 27 pre-existing fail)
 
+## Mobile Platform Patterns
+
+### Canvas DPR Scaling
+```typescript
+// GameEngine.tsx — retina display desteği
+const dpr = Math.min(window.devicePixelRatio || 1, 3);
+canvas.width = window.innerWidth * dpr;
+canvas.height = window.innerHeight * dpr;
+canvas.style.width = `${window.innerWidth}px`;
+canvas.style.height = `${window.innerHeight}px`;
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+// TÜM koordinatlar logical pixel (window.innerWidth/Height)
+// canvas.width/height SADECE buffer boyutu (DPR × logical)
+```
+
+### Safe Area Insets
+```css
+/* index.html — CSS custom properties (opt-in per element) */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+/* GameUI.tsx — HUD elemanları */
+style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}
+```
+
+### Capacitor App Lifecycle
+```typescript
+// App.tsx — Android back button, StatusBar, visibility
+useEffect(() => {
+  CapApp.addListener('backButton', () => {
+    // Close modals in reverse-depth order → minimize at root
+  });
+}, [deps]);
+
+useEffect(() => {
+  if (gameState === GameState.PLAYING) StatusBar.hide();
+  else StatusBar.show();
+}, [gameState]);
+
+useEffect(() => {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { handlePause(); flush(); save(); }
+  });
+}, [gameState]);
+```
+
+### Error Boundary
+```typescript
+// components/ErrorBoundary.tsx — top-level crash recovery
+// Wraps <App /> in index.tsx
+// Shows "Signal Lost" UI with Restart button
+// Development mode: shows stack trace
+```
+
 ## Performance Optimization Patterns (Mobile 60fps)
 
 ### Pre-Allocated Reusable Objects

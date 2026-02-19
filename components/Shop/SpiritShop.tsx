@@ -246,7 +246,7 @@ const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
                                     {/* VFX Info Badge */}
                                     <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-full bg-white/5 border border-white/10 group-hover:border-cyan-500/30 transition-colors">
                                         <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
-                                        <span className="text-[9px] font-bold text-cyan-300 uppercase tracking-tighter">
+                                        <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-tighter">
                                             {primaryType} VFX AKTİF
                                         </span>
                                     </div>

@@ -3,14 +3,14 @@
  * Requirements: 8.1, 8.4 - Challenge info display, special rules, completion status
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, Trophy, Gem, Clock, Zap, Ghost, Shuffle, Minus, AlertTriangle, Play, CheckCircle } from 'lucide-react';
-import { 
-  getTodayChallenge, 
-  getTimeUntilNextChallenge,
-  DailyChallengeConfig 
-} from '../../systems/dailyChallenge';
+import { AlertTriangle, Calendar, CheckCircle, Clock, Gem, Ghost, Minus, Play, Shuffle, Trophy, X, Zap } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
+import {
+    DailyChallengeConfig,
+    getTimeUntilNextChallenge,
+    getTodayChallenge
+} from '../../systems/dailyChallenge';
 
 interface DailyChallengeProps {
   isOpen: boolean;
@@ -127,7 +127,10 @@ const DailyChallenge: React.FC<DailyChallengeProps> = ({ isOpen, onClose, onStar
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-xs sm:max-w-sm bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 overflow-hidden max-h-[90vh] overflow-y-auto">
+      <div
+        className="relative w-full max-w-xs sm:max-w-sm bg-gradient-to-b from-gray-900 to-black rounded-xl border border-white/10 overflow-hidden overflow-y-auto"
+        style={{ maxHeight: 'calc(100vh - max(2rem, var(--safe-top, 0px)) - max(2rem, var(--safe-bottom, 0px)))' }}
+      >
         {/* Header - Compact */}
         <div className="flex items-center justify-between p-3 border-b border-white/10 sticky top-0 bg-gray-900/95 backdrop-blur-sm">
           <div className="flex items-center gap-2">
@@ -136,14 +139,14 @@ const DailyChallenge: React.FC<DailyChallengeProps> = ({ isOpen, onClose, onStar
             </div>
             <div>
               <h2 className="text-sm font-bold text-white tracking-wider">GÜNLÜK MEYDAN OKUMA</h2>
-              <p className="text-[10px] text-white/50">{challenge.date}</p>
+              <p className="text-[11px] text-white/50">{challenge.date}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+            className="p-2.5 hover:bg-white/10 rounded-full transition-colors"
           >
-            <X className="w-4 h-4 text-white/70" />
+            <X className="w-5 h-5 text-white/70" />
           </button>
         </div>
 
@@ -187,7 +190,7 @@ const DailyChallenge: React.FC<DailyChallengeProps> = ({ isOpen, onClose, onStar
                       {getModifierIcon(mod.key)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-white/60 truncate">{mod.label}</p>
+                      <p className="text-[11px] text-white/60 truncate">{mod.label}</p>
                       <p className={`text-xs font-bold ${mod.color}`}>{mod.value}</p>
                     </div>
                   </div>
@@ -234,7 +237,7 @@ const DailyChallenge: React.FC<DailyChallengeProps> = ({ isOpen, onClose, onStar
           <button
             onClick={handleStartChallenge}
             disabled={challenge.completed}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all ${
+            className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm transition-all ${
               challenge.completed
                 ? 'bg-white/10 text-white/30 cursor-not-allowed'
                 : 'bg-gradient-to-r from-orange-500 to-red-500 text-white active:scale-[0.98] shadow-lg shadow-orange-500/25'

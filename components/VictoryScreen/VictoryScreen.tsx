@@ -313,17 +313,23 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center z-30 text-white overflow-hidden px-4">
+    <div
+      className="absolute inset-0 flex flex-col items-center z-30 text-white overflow-y-auto overflow-x-hidden px-4"
+      style={{
+        paddingTop: 'max(1.5rem, var(--safe-top, 0px))',
+        paddingBottom: 'max(1.5rem, var(--safe-bottom, 0px))',
+      }}
+    >
       {/* Background with victory gradient */}
       <div 
-        className="absolute inset-0 bg-gradient-to-b from-cyan-950/80 via-black/90 to-black backdrop-blur-md"
+        className="fixed inset-0 bg-gradient-to-b from-cyan-950/80 via-black/90 to-black backdrop-blur-md pointer-events-none"
         style={{
           opacity: phase === 'slowmo' ? 0.5 + slowmoProgress * 0.5 : 1,
         }}
       />
       
       {/* Animated glow effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 left-1/4 w-64 h-64 bg-yellow-500/10 rounded-full blur-3xl animate-pulse delay-500" />
       </div>
@@ -354,7 +360,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
       })}
 
       {/* Main content */}
-      <div className="relative z-10 flex flex-col items-center w-full max-w-xs">
+      <div className="relative z-10 flex flex-col items-center w-full max-w-xs my-auto">
         {/* Victory title - Requirements 5.2 */}
         <h2 
           className="text-3xl sm:text-4xl md:text-5xl font-black mb-1 tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-cyan-500"
@@ -399,7 +405,7 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
               {Math.floor(targetDistance)}m
             </span>
           </div>
-          <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
+          <span className="text-[11px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
             Mesafe Tamamlandı
           </span>
         </div>
@@ -431,24 +437,24 @@ const VictoryScreen: React.FC<VictoryScreenProps> = ({
 
         {/* Action buttons - Requirements 5.5 */}
         {phase === 'complete' && (
-          <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex flex-col gap-3 w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
             <button
               onClick={() => handleButtonClick(onNextLevel)}
-              className="group flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-lg shadow-[0_0_20px_rgba(0,240,255,0.3)]"
+              className="group flex items-center justify-center gap-2 w-full py-3.5 bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.3)]"
             >
               <Play size={18} className="fill-black" />
               SONRAKİ BÖLÜM
             </button>
             <button
               onClick={() => handleButtonClick(onRestart)}
-              className="group flex items-center justify-center gap-2 w-full py-3 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-lg"
+              className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-xl"
             >
               <RotateCcw size={18} className="group-hover:rotate-180 transition-transform duration-500" />
               TEKRAR OYNA
             </button>
             <button
               onClick={() => handleButtonClick(onMainMenu)}
-              className="group flex items-center justify-center gap-2 w-full py-3 border border-white/10 text-white/50 font-bold text-sm tracking-widest hover:text-white/80 transition-all duration-300 rounded-lg"
+              className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/10 text-white/50 font-bold text-sm tracking-widest hover:text-white/80 transition-all duration-300 rounded-xl"
             >
               <Home size={18} />
               ANA MENÜ

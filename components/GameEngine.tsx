@@ -158,6 +158,10 @@ import * as TutorialVFX from "../systems/tutorialVFXEngine";
 import * as CameraSystem from "../systems/CameraSystem";
 // Start Sequence System - Cinematic 3-2-1-GO countdown
 import * as StartSequence from "../systems/startSequenceSystem";
+// Beat Engine - Global BPM clock for rhythm-driven gameplay
+import * as BeatEngine from "../systems/beatEngine";
+// AudioSystem - AudioContext lifecycle for mobile
+import { onAudioContextStateChange } from "../systems/audioSystem";
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -553,6 +557,43 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Mobile Controls State
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHint, setShowMobileHint] = useState(true);
+
+  // Device Pixel Ratio — for retina/high-DPI canvas rendering
+  const dprRef = useRef(Math.min(window.devicePixelRatio || 1, 3)); // cap at 3x for perf
+
+  /** Size the canvas buffer for retina, but keep logical coordinate space = CSS pixels.
+   *  ctx.scale(dpr) makes all subsequent draw calls use logical pixels automatically. */
+  const sizeCanvas = useCallback((canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
+    const dpr = dprRef.current;
+    const logicalW = window.innerWidth;
+    const logicalH = window.innerHeight;
+    const bufferW = Math.round(logicalW * dpr);
+    const bufferH = Math.round(logicalH * dpr);
+    if (canvas.width !== bufferW || canvas.height !== bufferH) {
+      canvas.width = bufferW;
+      canvas.height = bufferH;
+      canvas.style.width = `${logicalW}px`;
+      canvas.style.height = `${logicalH}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }, []);
+
+  // ─── Dynamic canvas resize via ResizeObserver ───
+  // Handles address-bar show/hide, split-screen, rotation edge cases
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const ro = new ResizeObserver(() => {
+      // Re-apply DPR-aware sizing whenever the visual viewport changes
+      sizeCanvas(canvas, ctx);
+    });
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [sizeCanvas]);
+
   // Countdown display state - triggers React re-renders for smooth animation
   const [countdownDisplay, setCountdownDisplay] = useState<{ value: number; active: boolean }>({ value: 3, active: true });
   const joystickRef = useRef<{
@@ -1402,13 +1443,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
     }, INITIAL_CONFIG.swapDuration);
   }, [gameState, onMissionEvent]);
 
-  // Detect mobile device
+  // Detect mobile device — touch capability is the primary signal, not screen width.
+  // iPads (1024px+) and large Android tablets should still use touch controls.
   useEffect(() => {
     const checkMobile = () => {
       const isTouchDevice =
         "ontouchstart" in window || navigator.maxTouchPoints > 0;
-      const isSmallScreen = window.innerWidth <= 768;
-      setIsMobile(isTouchDevice && isSmallScreen);
+      const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
+      setIsMobile(isTouchDevice || isCapacitor);
     };
 
     checkMobile();
@@ -1522,6 +1564,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (gameState !== GameState.PLAYING) return;
       if (startSequenceState.current.isActive) return; // Block input during countdown
       if (!isMobile) return;
+      e.preventDefault(); // Block scroll/zoom/pull-to-refresh on mobile
 
       const touch = e.touches[0];
       touchControlRef.current = {
@@ -1585,6 +1628,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (!touchControlRef.current.active || gameState !== GameState.PLAYING)
         return;
       if (!isMobile) return;
+      e.preventDefault(); // Block scroll/zoom during drag
 
       // Find the correct touch
       const touch = Array.from(e.touches).find(
@@ -1632,6 +1676,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     (e: TouchEvent) => {
       if (!touchControlRef.current.active) return;
       if (!isMobile) return;
+      e.preventDefault(); // Prevent synthetic click / zoom
 
       // Check if this is the correct touch ending
       const touchEnded = !Array.from(e.touches).some(
@@ -1773,6 +1818,58 @@ const GameEngine: React.FC<GameEngineProps> = ({
     };
   }, [gameState, triggerSwap, isMobile]);
 
+  // ─── Mobile Lifecycle: visibility & AudioContext interruption handling ───
+  // Pauses/resumes BeatEngine when app goes to background (tab switch, home button,
+  // phone call, Siri, etc.).  Critical for mobile: setTimeout is throttled to ≥1s
+  // in background, so we must explicitly pause the scheduler.
+  useEffect(() => {
+    // 1) Document visibility (works in browser + Capacitor WebView)
+    const handleVisibility = () => {
+      if (document.hidden) {
+        BeatEngine.pause();
+      } else {
+        // Only resume if game was actually running (not menu / game over)
+        if (gameStateRef.current === GameState.PLAYING) {
+          BeatEngine.resume();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // 2) Capacitor native app state (iOS/Android home button, app switcher)
+    let appStateCleanup: (() => void) | null = null;
+    (async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        const listener = await App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) {
+            BeatEngine.pause();
+          } else if (gameStateRef.current === GameState.PLAYING) {
+            BeatEngine.resume();
+          }
+        });
+        appStateCleanup = () => listener.remove();
+      } catch {
+        // @capacitor/app not available (browser dev) — visibilitychange is enough
+      }
+    })();
+
+    // 3) AudioContext statechange — catches iOS audio interruptions (phone call, Siri)
+    const removeCtxListener = onAudioContextStateChange((ctxState) => {
+      if (ctxState === 'interrupted' || ctxState === 'suspended') {
+        BeatEngine.pause();
+      }
+      // Note: we don't auto-resume here because iOS requires a user gesture.
+      // The game's pause/resume UI flow (or next touch) will handle it.
+    });
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (appStateCleanup) appStateCleanup();
+      removeCtxListener();
+    };
+  }, []);
+
   // Sync gameStateRef with gameState prop for animation loop
   // This allows the loop to check current state without re-creating
   useEffect(() => {
@@ -1798,23 +1895,22 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (canvas && ctx) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        sizeCanvas(canvas, ctx);
 
         // BUGFIX: Fill entire canvas black first to prevent flash
         // This ensures no partial render is visible during state transitions
         ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
         // Now draw both background halves immediately after
         // Theme System Integration - Requirements 5.1, 5.2, 5.3
         ctx.fillStyle = getColor("topBg");
-        ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight / 2);
         ctx.fillStyle = getColor("bottomBg");
-        ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+        ctx.fillRect(0, window.innerHeight / 2, window.innerWidth, window.innerHeight / 2);
 
-        const cx = canvas.width / 3;
-        const cy = canvas.height / 2;
+        const cx = window.innerWidth / 3;
+        const cy = window.innerHeight / 2;
         ctx.beginPath();
         ctx.moveTo(cx, cy - 40);
         ctx.lineTo(cx, cy + 40);
@@ -1844,6 +1940,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (pauseStartTime.current === 0) {
         pauseStartTime.current = Date.now();
       }
+      // Pause beat engine — stops scheduler and suspends audio on mobile
+      BeatEngine.pause();
       // Mark that we were playing, don't reset on resume
       wasPlayingRef.current = true;
       return;
@@ -1920,6 +2018,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Reset pause tracking
         pauseStartTime.current = 0;
       }
+
+      // Resume beat engine after pause — re-syncs beat grid & resumes AudioContext
+      BeatEngine.resume();
     }
 
     // Mark that we're now playing
@@ -1958,8 +2059,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const isComplete = distanceTrackerRef.current.isLevelComplete();
 
         const canvas = canvasRef.current;
-        const screenWidth = canvas?.width || window.innerWidth;
-        const screenHeight = canvas?.height || window.innerHeight;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
 
         // When target distance is reached, enter finish mode
         if (isComplete && !isInFinishMode.current && !levelCompleted.current) {
@@ -2082,16 +2183,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      if (
-        canvas.width !== window.innerWidth ||
-        canvas.height !== window.innerHeight
-      ) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-      }
+      sizeCanvas(canvas, ctx);
 
-      const width = canvas.width;
-      const height = canvas.height;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
       const halfHeight = height / 2;
 
       // --- UPDATE LOGIC ---
@@ -2148,6 +2243,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               AudioSystem.playCountdownGo();
               // Start game start sound too
               AudioSystem.playGameStart();
+              // Start beat engine — procedural music + BPM clock
+              BeatEngine.start(0);
             }
           }
         }
@@ -4318,15 +4415,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
             // Note: currentTime is already defined above in gravity flip logic
 
             // Calculate expected interval based on current speed - Requirements 1.6
+            // BPM-driven: uses beat engine tempo when available
+            const currentBPM = BeatEngine.isRunning() ? BeatEngine.getBPM() : undefined;
             const expectedInterval = calculateExpectedInterval(
               speed.current,
-              currentSpawnRate.current
+              currentSpawnRate.current,
+              currentBPM
             );
 
             // Check rhythm timing - Requirements 1.1, 1.2
             const rhythmResult = checkRhythmTiming(
               currentTime,
-              rhythmState.current
+              rhythmState.current,
+              currentBPM
             );
 
             // Update rhythm state - Requirements 1.2, 1.3, 1.4, 1.5
@@ -4447,6 +4548,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
             // Show multiplier popup when on-beat with active multiplier
             if (rhythmResult.isOnBeat && multiplier > 1) {
+              // Beat-aligned pass: satisfying audio + haptic tick
+              AudioSystem.playBeatHit();
+              getHapticSystem().trigger("beat");
+
               scorePopups.current.push({
                 x: playerX,
                 y: playerY.current * height - 40,
@@ -4848,7 +4953,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               }
 
               // Environmental Effects: Glitch artifact on damage - Requirements 14.3
-              EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
+              EnvironmentalEffects.triggerGlobalGlitchArtifact(height);
               // Audio: Glitch damage SFX - Requirements 14.3
               AudioSystem.playGlitchDamage();
 
@@ -4856,6 +4961,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
               AudioSystem.playGameOver();
+              // Stop beat engine / music layers on game over
+              BeatEngine.stop();
               // Haptic Feedback: Heavy impact for collision - Requirements 4.2
               getHapticSystem().trigger("heavy");
               // Mission System: Emit COLLISION event for Sound Check - Requirements 1.4
@@ -5083,7 +5190,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
               }
 
               // Environmental Effects: Glitch artifact on damage - Requirements 14.3
-              EnvironmentalEffects.triggerGlobalGlitchArtifact(canvas.height);
+              EnvironmentalEffects.triggerGlobalGlitchArtifact(height);
               // Audio: Glitch damage SFX - Requirements 14.3
               AudioSystem.playGlitchDamage();
 
@@ -5091,6 +5198,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               ScreenShake.triggerCollision();
               // Audio: Game over sound - Phase 4
               AudioSystem.playGameOver();
+              // Stop beat engine / music layers on game over
+              BeatEngine.stop();
               // Haptic Feedback: Heavy impact for collision - Requirements 4.2
               getHapticSystem().trigger("heavy");
               // Mission System: Emit COLLISION event for Sound Check - Requirements 1.4
@@ -5373,7 +5482,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Update Environmental Effects - Requirements 14.2, 14.3
       // BPM-synced pulse and glitch artifact updates
-      EnvironmentalEffects.updateGlobalEnvironmentalEffects();
+      // Feed dynamic BPM from beat engine to environmental effects
+      BeatEngine.update(score.current);
+      EnvironmentalEffects.updateGlobalEnvironmentalEffects(
+        BeatEngine.isRunning() ? BeatEngine.getBPM() : undefined
+      );
 
       // Update Resonance System - Requirements 1.7, 1.8, 1.9
       const resonanceDeltaTime = 16.67; // ~60fps
@@ -5601,6 +5714,24 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillRect(0, 0, width, height);
       }
 
+      // ── Beat Pulse Overlay ──
+      // Subtle opacity flash synced to the BPM clock.  Barely visible at
+      // low streak, more pronounced at streak 3+ / 6+ for satisfying rhythm feel.
+      if (BeatEngine.isRunning()) {
+        const beatPhase = BeatEngine.getBeatPhase(); // 0-1
+        const streakLevel = rhythmState.current.streakCount;
+        // Pulse amplitude: 0.015 base, +0.02 at streak 3, +0.03 at streak 6
+        const amp = 0.015 + (streakLevel >= 6 ? 0.03 : streakLevel >= 3 ? 0.02 : 0);
+        const pulse = Math.cos(beatPhase * Math.PI * 2); // peaks at phase 0 (downbeat)
+        const alpha = amp * (pulse + 1) / 2; // 0 … amp
+        if (alpha > 0.002) {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
       // Requirements 4.4: Horizon Line at currentMidlineY position
       ctx.beginPath();
       ctx.moveTo(0, currentMidlineY);
@@ -5800,7 +5931,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       BlockSystem.renderAllBlocks(obstacles.current, {
         ctx,
         currentTime: frameTime,
-        bpm: EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM,
+        bpm: BeatEngine.isRunning() ? BeatEngine.getBPM() : EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM,
         whiteObstacleColor,
         blackObstacleColor,
       });
@@ -7741,6 +7872,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
     return () => {
       cancelAnimationFrame(frameId.current);
+      BeatEngine.stop(); // Clean up scheduler + audio on unmount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState]);
@@ -7798,8 +7930,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const width = canvas.width;
-        const height = canvas.height;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         const halfHeight = height / 2;
         const snapshots = restoreSnapshotsForRewind.current;
 
@@ -7972,13 +8104,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Restore obstacles from final snapshot with correct dimensions
           // Also apply safe zone clearing to prevent immediate collision after restore
           const canvas = canvasRef.current;
-          const playerX = canvas ? canvas.width / 8 : 100;
+          const playerX = window.innerWidth / 8;
           const safeZoneRadius = 150; // Clear obstacles within 150px of player
 
           // CRITICAL: Reset object pool to prevent stale pooled objects from corrupting new spawns
           obstaclePool.current.reset();
 
-          const spawnEdgeX = (canvas?.width || window.innerWidth) - 50;
+          const spawnEdgeX = window.innerWidth - 50;
           obstacles.current = finalSnapshot.obstacles
             .filter(obs => {
               // Remove obstacles that are too close to player (safe zone)

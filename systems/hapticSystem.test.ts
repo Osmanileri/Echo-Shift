@@ -3,20 +3,17 @@
  * Requirements: 4.6
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fc from 'fast-check';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  HapticType,
-  HapticState,
-  HapticConfig,
-  HAPTIC_CONFIG,
-  createInitialHapticState,
-  triggerHaptic,
-  setEnabled,
-  getVibrationPattern,
-  checkVibrationSupport,
-  createHapticSystem,
-  resetHapticSystem,
+    HAPTIC_CONFIG,
+    HapticState,
+    HapticType,
+    createHapticSystem,
+    getVibrationPattern,
+    resetHapticSystem,
+    setEnabled,
+    triggerHaptic
 } from './hapticSystem';
 
 // ============================================================================
@@ -51,6 +48,7 @@ const hapticConfigArb = fc.record({
   heavy: fc.integer({ min: 1, max: 100 }),
   selection: fc.integer({ min: 1, max: 100 }),
   success: fc.array(fc.integer({ min: 1, max: 100 }), { minLength: 1, maxLength: 5 }),
+  beat: fc.integer({ min: 1, max: 100 }),
 });
 
 // ============================================================================

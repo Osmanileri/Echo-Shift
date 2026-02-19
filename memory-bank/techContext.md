@@ -6,12 +6,14 @@
 |----------|-----------|
 | Frontend | React 18 + TypeScript |
 | Build/Dev | Vite 5 |
+| CSS | Tailwind CSS 4 (local PostCSS build — `@tailwindcss/postcss`) |
 | State | Zustand (subscribeWithSelector middleware) |
 | Test | Vitest + fast-check (property-based) |
 | PWA | vite-plugin-pwa (autoUpdate) |
 | Persistence | localStorage (güvenli adapter + fallback) |
-| Audio | Web Audio API (procedural sound generation) |
-| Mobile | Capacitor (iOS App Store deployment) |
+| Audio | Web Audio API (procedural sound generation + BPM-synced layered music) |
+| Mobile | Capacitor v8 (iOS App Store deployment) |
+| Mobile Plugins | `@capacitor/app`, `@capacitor/status-bar`, `@capacitor/keyboard`, `@capacitor/splash-screen` |
 
 ## Çalıştırma
 
@@ -21,7 +23,41 @@ npm run dev          # Vite dev server
 npx vitest run       # Test çalıştır (tek seferlik)
 npm run build        # Production build
 npm run preview      # Build önizleme
+npx cap sync ios     # iOS native sync
 ```
+
+## Mobil Platform Detayları
+
+### iOS
+- **Portrait-only** (Info.plist + AppDelegate.swift `supportedInterfaceOrientationsFor`)
+- **arm64 zorunlu** (armv7 desteği yok)
+- **AVAudioSession**: `.playback` kategori (`.mixWithOthers` YOK — ritim oyunu exclusive audio gerektirir)
+- **Safe Areas**: CSS custom properties `--safe-top/bottom/left/right` ile — `env(safe-area-inset-*)` destekli
+- **Status Bar**: Oyun sırasında gizli, menülerde Dark style + siyah arka plan
+- **DPR Scaling**: Canvas buffer `logicalSize * devicePixelRatio` ile ölçeklenir, `ctx.setTransform(dpr,0,0,dpr,0,0)`
+
+### Android
+- **Portrait-only** (`android:screenOrientation="portrait"` in AndroidManifest.xml)
+- **Dark theme**: Siyah navigation/status bar, `#6366f1` accent (styles.xml)
+- **Edge-to-edge**: `windowBackground = @android:color/black`
+- **5 Capacitor plugins**: app, haptics, keyboard, splash-screen, status-bar
+- Platform eklendi: `npx cap add android` ✅
+
+### Capacitor Config
+- SplashScreen: launchAutoHide=true, 2s duration, fade
+- StatusBar: overlay=true, Dark style, siyah arka plan
+- Keyboard: resize=none, scroll=false (canvas oyunu)
+
+## Build Optimizasyonları
+- Target: `es2020` (modern browser/WebView)
+- Sourcemap: production'da kapalı
+- Manual chunks: `vendor` (react, react-dom, zustand)
+- Tailwind: Local PostCSS build (CDN değil — 300KB+ tasarruf)
+
+## Error Handling
+- `components/ErrorBoundary.tsx`: Top-level React error boundary
+- Beyaz ekrana düşmeyi önler, "Signal Lost" recovery UI gösterir
+- Development modunda stack trace görüntüler
 
 ## Önemli Dosyalar
 

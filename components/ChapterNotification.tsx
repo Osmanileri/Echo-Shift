@@ -72,8 +72,9 @@ const ChapterNotification: React.FC<ChapterNotificationProps> = ({
 
   return (
     <div
-      className="fixed top-4 left-1/2 z-50 pointer-events-none"
+      className="fixed left-1/2 z-50 pointer-events-none"
       style={{
+        top: 'max(1rem, var(--safe-top, 0px))',
         transform: `translateX(-50%) ${getTransform()}`,
         opacity: getOpacity(),
         transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -85,7 +86,7 @@ const ChapterNotification: React.FC<ChapterNotificationProps> = ({
             <span className="text-cyan-400 font-bold text-sm">{levelId}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] text-cyan-400/60 uppercase tracking-[0.2em]">
+            <span className="text-[11px] text-cyan-400/60 uppercase tracking-[0.2em]">
               Bölüm
             </span>
             <span className="text-lg font-bold text-white tracking-wider">

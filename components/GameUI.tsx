@@ -1,24 +1,24 @@
 import {
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Gem,
-  Ghost,
-  Home,
-  Palette,
-  Pause,
-  Play,
-  PlayCircle,
-  RotateCcw,
-  Settings,
-  ShoppingCart,
-  Star,
-  Target,
-  Trophy,
-  Volume2,
-  VolumeX,
-  X
+    Calendar,
+    ChevronLeft,
+    ChevronRight,
+    Clock,
+    Gem,
+    Ghost,
+    Home,
+    Palette,
+    Pause,
+    Play,
+    PlayCircle,
+    RotateCcw,
+    Settings,
+    ShoppingCart,
+    Star,
+    Target,
+    Trophy,
+    Volume2,
+    VolumeX,
+    X
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
@@ -214,7 +214,7 @@ const GameUI: React.FC<GameUIProps> = ({
       return (
         <>
           {/* Only show pause button during tutorial */}
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 pointer-events-auto z-10">
+          <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto z-10" style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -231,7 +231,7 @@ const GameUI: React.FC<GameUIProps> = ({
 
     return (
       <>
-        <div className="absolute top-6 left-0 w-full px-5 flex justify-between items-start pointer-events-none z-10">
+        <div className="absolute left-0 w-full px-5 flex justify-between items-start pointer-events-none z-10" style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}>
           {/* Campaign Update v2.5 - Distance Mode HUD - Requirements 6.1, 6.2, 6.3, 6.4 */}
           {/* Visual Legibility: Enhanced shadows for guaranteed visibility on any background */}
           {distanceMode ? (
@@ -303,7 +303,7 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {/* Distance Progress Bar - Bottom Center (Mobile Optimized) */}
         {distanceMode && (
-          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-[75%] max-w-sm pointer-events-none z-10">
+          <div className="absolute left-1/2 -translate-x-1/2 w-[75%] max-w-sm pointer-events-none z-10" style={{ bottom: 'max(6rem, calc(5rem + var(--safe-bottom, 0px)))' }}>
             <div
               className={`relative h-4 bg-black/40 backdrop-blur-sm rounded-full overflow-visible border-2 ${isNearFinish
                 ? 'border-cyan-400 shadow-[0_0_20px_rgba(0,240,255,0.6)] animate-pulse'
@@ -392,7 +392,7 @@ const GameUI: React.FC<GameUIProps> = ({
         )}
 
         {rhythmMultiplier > 1 && (
-          <div className="absolute top-24 left-5 pointer-events-none z-10">
+          <div className="absolute left-5 pointer-events-none z-10" style={{ top: 'calc(max(1.5rem, var(--safe-top, 0px)) + 3.5rem)' }}>
             <div
               className={`px-3 py-1.5 rounded-lg backdrop-blur-sm border ${rhythmMultiplier === 3
                 ? "bg-yellow-500/20 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.3)]"
@@ -409,7 +409,7 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
         )}
 
-        <div className="absolute top-24 right-5 pointer-events-none z-10 flex flex-col gap-2 items-end">
+        <div className="absolute right-5 pointer-events-none z-10 flex flex-col gap-2 items-end" style={{ top: 'calc(max(1.5rem, var(--safe-top, 0px)) + 3.5rem)' }}>
           {rhythmStreak > 0 && (
             <div className="flex items-center gap-2 px-2 py-1 bg-cyan-500/10 rounded-md border border-cyan-500/30 backdrop-blur-sm">
               <span className="text-[10px] md:text-xs text-cyan-400/70 uppercase tracking-wider">
@@ -456,7 +456,7 @@ const GameUI: React.FC<GameUIProps> = ({
                     }`}
                 />
               </div>
-              <span className="text-[9px] md:text-[10px] font-bold text-purple-400 tracking-widest uppercase">
+              <span className="text-[11px] md:text-[11px] font-bold text-purple-400 tracking-widest uppercase">
                 {slowMotionActive
                   ? "AKTİF"
                   : `YAVAŞLAT (${slowMotionUsesRemaining})`}
@@ -558,7 +558,13 @@ const GameUI: React.FC<GameUIProps> = ({
   // ============ PAUSED STATE ============
   if (gameState === GameState.PAUSED) {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 backdrop-blur-md z-30 text-white px-4">
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 backdrop-blur-md z-30 text-white px-4"
+        style={{
+          paddingTop: 'max(1rem, var(--safe-top, 0px))',
+          paddingBottom: 'max(1rem, var(--safe-bottom, 0px))',
+        }}
+      >
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-1/4 left-1/4 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" />
           <div className="absolute bottom-1/4 right-1/4 w-48 h-48 bg-white/5 rounded-full blur-3xl animate-pulse delay-1000" />
@@ -675,11 +681,15 @@ const GameUI: React.FC<GameUIProps> = ({
 
         {/* Content */}
         <div
-          className={`absolute inset-0 flex flex-col px-4 py-6 transition-all duration-700 ${showContent ? "opacity-100" : "opacity-0"
+          className={`absolute inset-0 flex flex-col px-4 transition-all duration-700 ${showContent ? "opacity-100" : "opacity-0"
             }`}
+          style={{
+            paddingTop: 'max(1.25rem, var(--safe-top, 0px))',
+            paddingBottom: 'max(1.25rem, var(--safe-bottom, 0px))',
+          }}
         >
           {/* ===== SETTINGS BUTTON (Top Right) ===== */}
-          <div className="absolute top-6 right-5 z-30">
+          <div className="absolute right-5 z-30" style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}>
             <button
               onClick={() => {
                 AudioSystem.playButtonClick();
@@ -760,17 +770,17 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
 
           {/* ===== HEADER: Logo + Slogan ===== */}
-          <div className="text-center mb-3">
-            <h1 className="text-4xl sm:text-5xl font-black tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-100 to-cyan-300 drop-shadow-[0_0_30px_rgba(0,240,255,0.3)]">
+          <div className="text-center mb-2">
+            <h1 className="text-[2rem] sm:text-5xl font-black tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-100 to-cyan-300 drop-shadow-[0_0_30px_rgba(0,240,255,0.3)]">
               ECHO SHIFT
             </h1>
-            <p className="text-[9px] text-cyan-400/70 tracking-[0.25em] uppercase font-medium mt-1">
+            <p className="text-[10px] text-cyan-400/70 tracking-[0.25em] uppercase font-medium mt-1">
               ÇUBUK UZAR • HIZ ARTAR • HAYATTA KAL
             </p>
           </div>
 
           {/* ===== STATS - Clean Display ===== */}
-          <div className="flex items-center justify-center gap-6 mb-5">
+          <div className="flex items-center justify-center gap-6 mb-3">
             {/* Sync Rate / Level */}
             <div className="text-center">
               <div className="flex items-center justify-center gap-1.5 mb-0.5">
@@ -778,7 +788,7 @@ const GameUI: React.FC<GameUIProps> = ({
                   <span className="text-[10px] font-black text-black">{syncRate}</span>
                 </div>
               </div>
-              <span className="text-[8px] text-cyan-400/50 uppercase tracking-widest">
+              <span className="text-[11px] text-cyan-400/50 uppercase tracking-widest">
                 Seviye
               </span>
             </div>
@@ -790,7 +800,7 @@ const GameUI: React.FC<GameUIProps> = ({
                   {highScore}
                 </span>
               </div>
-              <span className="text-[8px] text-white/40 uppercase tracking-widest">
+              <span className="text-[11px] text-white/40 uppercase tracking-widest">
                 En İyi
               </span>
             </div>
@@ -802,14 +812,14 @@ const GameUI: React.FC<GameUIProps> = ({
                   {echoShards.toLocaleString()}
                 </span>
               </div>
-              <span className="text-[8px] text-cyan-400/50 uppercase tracking-widest">
+              <span className="text-[11px] text-cyan-400/50 uppercase tracking-widest">
                 Parça
               </span>
             </div>
           </div>
 
           {/* ===== FEATURE NAV - Floating Orbs ===== */}
-          <div className="flex items-center justify-center gap-6 mb-5">
+          <div className="flex items-center justify-center gap-5 mb-3">
             {onOpenShop && (
               <button
                 onClick={() => handleButtonClick(onOpenShop)}
@@ -899,7 +909,7 @@ const GameUI: React.FC<GameUIProps> = ({
           {/* ===== SECONDARY NAV - Rituals ===== */}
           {/* Campaign Update v2.5 - Requirements 1.3: Removed "Kampanya" button */}
           {/* Campaign is now the primary mode, accessed via "Start Game" button */}
-          <div className="flex items-center justify-center gap-4 mb-4">
+          <div className="flex items-center justify-center gap-4 mb-2">
             {onOpenRituals && soundCheckComplete && (
               <button
                 onClick={() => handleButtonClick(onOpenRituals)}
@@ -914,7 +924,7 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
 
           {/* ===== TUTORIAL CARDS ===== */}
-          <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full mb-3">
+          <div className="flex-1 min-h-0 flex flex-col justify-center max-w-sm mx-auto w-full mb-2 overflow-y-auto">
             <div className="space-y-2">
               {tutorialCards.map((card) => (
                 <div
@@ -931,7 +941,7 @@ const GameUI: React.FC<GameUIProps> = ({
                     <h3 className="text-white font-bold tracking-wider text-[11px] uppercase">
                       {card.title}
                     </h3>
-                    <p className="text-[9px] text-white/50 leading-relaxed mt-0.5">
+                    <p className="text-[11px] text-white/50 leading-relaxed mt-0.5">
                       {card.desc}
                     </p>
                   </div>
@@ -977,7 +987,7 @@ const GameUI: React.FC<GameUIProps> = ({
             </button>
 
             {/* Subtitle hint */}
-            <p className="text-center text-[9px] text-white/30 mt-2 tracking-wider uppercase">
+            <p className="text-center text-[11px] text-white/30 mt-2 tracking-wider uppercase">
               Seviye Seç ve Başla
             </p>
           </div>
@@ -990,14 +1000,20 @@ const GameUI: React.FC<GameUIProps> = ({
   // ============ GAME OVER STATE ============
   if (gameState === GameState.GAME_OVER) {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center z-30 text-white overflow-hidden px-4">
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center z-30 text-white overflow-y-auto px-4"
+        style={{
+          paddingTop: 'max(1.5rem, var(--safe-top, 0px))',
+          paddingBottom: 'max(1.5rem, var(--safe-bottom, 0px))',
+        }}
+      >
         <div className="absolute inset-0 bg-gradient-to-b from-red-950/80 via-black/90 to-black backdrop-blur-md" />
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-0 w-full h-px bg-red-500/30 animate-pulse" />
           <div className="absolute top-1/3 left-0 w-full h-px bg-red-500/20 animate-pulse delay-100" />
         </div>
 
-        <div className="relative z-10 flex flex-col items-center w-full max-w-xs">
+        <div className="relative z-10 flex flex-col items-center w-full max-w-xs my-auto">
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-1 tracking-[0.15em] text-white relative">
             OYUN
             <span className="absolute -right-1 top-0 text-red-500 opacity-50 blur-sm">
@@ -1077,10 +1093,10 @@ const GameUI: React.FC<GameUIProps> = ({
             </div>
           )}
 
-          <div className="flex flex-col gap-2 w-full">
+          <div className="flex flex-col gap-3 w-full">
             <button
               onClick={() => handleButtonClick(onRestart)}
-              className="group flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-white to-gray-200 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-lg"
+              className="group flex items-center justify-center gap-2 w-full py-3.5 bg-gradient-to-r from-white to-gray-200 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-xl"
             >
               <RotateCcw
                 size={18}
@@ -1090,7 +1106,7 @@ const GameUI: React.FC<GameUIProps> = ({
             </button>
             <button
               onClick={() => handleButtonClick(onMainMenu)}
-              className="group flex items-center justify-center gap-2 w-full py-3 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-lg"
+              className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-xl"
             >
               <Home size={18} />
               ANA MENÜ

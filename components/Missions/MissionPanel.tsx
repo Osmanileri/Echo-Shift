@@ -107,7 +107,10 @@ const MissionPanel: React.FC<MissionPanelProps> = ({
       />
 
       {/* Main Panel */}
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 via-gray-950 to-black border border-cyan-500/30 rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,240,255,0.15)]">
+      <div
+        className="relative w-full max-w-lg bg-gradient-to-b from-gray-900 via-gray-950 to-black border border-cyan-500/30 rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,240,255,0.15)] flex flex-col"
+        style={{ maxHeight: 'calc(100vh - max(2rem, var(--safe-top, 0px)) - max(2rem, var(--safe-bottom, 0px)))' }}
+      >
         {/* Animated background lines */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-20">
           <div className="absolute inset-0" style={{
@@ -143,14 +146,14 @@ const MissionPanel: React.FC<MissionPanelProps> = ({
           {/* Close button only */}
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition-all active:scale-90"
+            className="absolute top-3 right-3 p-2.5 hover:bg-white/10 rounded-full transition-all active:scale-90"
           >
             <X className="w-5 h-5 text-gray-400 hover:text-white transition-colors" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="relative p-5">
+        <div className="relative p-5 overflow-y-auto flex-1 min-h-0">
           {/* Cooldown State */}
           {isOnCooldown && (
             <div className="flex flex-col items-center py-10">

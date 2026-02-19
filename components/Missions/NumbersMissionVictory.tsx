@@ -139,12 +139,18 @@ const NumbersMissionVictory: React.FC<NumbersMissionVictoryProps> = ({
     }, [phase]);
 
     return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-40 text-white overflow-hidden px-4">
+        <div
+            className="absolute inset-0 flex flex-col items-center z-40 text-white overflow-y-auto overflow-x-hidden px-4"
+            style={{
+                paddingTop: 'max(1.5rem, var(--safe-top, 0px))',
+                paddingBottom: 'max(1.5rem, var(--safe-bottom, 0px))',
+            }}
+        >
             {/* Background */}
-            <div className="absolute inset-0 bg-gradient-to-b from-cyan-950/90 via-black/95 to-black backdrop-blur-md" />
+            <div className="fixed inset-0 bg-gradient-to-b from-cyan-950/90 via-black/95 to-black backdrop-blur-md pointer-events-none" />
 
             {/* Animated glow */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" />
             </div>
 
@@ -155,7 +161,7 @@ const NumbersMissionVictory: React.FC<NumbersMissionVictoryProps> = ({
             />
 
             {/* Main content */}
-            <div className="relative z-10 flex flex-col items-center w-full max-w-sm">
+            <div className="relative z-10 flex flex-col items-center w-full max-w-sm my-auto">
                 {/* Victory title */}
                 <div
                     className={`transition-all duration-500 ${phase === 'reveal' ? 'scale-100 opacity-100' : 'scale-100 opacity-100'
@@ -223,12 +229,12 @@ const NumbersMissionVictory: React.FC<NumbersMissionVictoryProps> = ({
 
                 {/* Action buttons */}
                 {phase === 'complete' && (
-                    <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex flex-col gap-3 w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <button
                             onClick={() => {
                                 handleButtonClick(onClaim);
                             }}
-                            className="group flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-lg shadow-[0_0_20px_rgba(0,240,255,0.3)]"
+                            className="group flex items-center justify-center gap-2 w-full py-3.5 bg-gradient-to-r from-cyan-500 to-cyan-400 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.3)]"
                         >
                             <Gem className="w-5 h-5" />
                             TOPLA & DEVAM ET
@@ -236,7 +242,7 @@ const NumbersMissionVictory: React.FC<NumbersMissionVictoryProps> = ({
 
                         <button
                             onClick={() => handleButtonClick(onPlayAgain)}
-                            className="group flex items-center justify-center gap-2 w-full py-3 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-lg"
+                            className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/30 text-white font-bold text-sm tracking-widest hover:bg-white/10 transition-all duration-300 rounded-xl"
                         >
                             <Play className="w-4 h-4 fill-white" />
                             YENİ GÖREV
@@ -244,7 +250,7 @@ const NumbersMissionVictory: React.FC<NumbersMissionVictoryProps> = ({
 
                         <button
                             onClick={() => handleButtonClick(onMainMenu)}
-                            className="group flex items-center justify-center gap-2 w-full py-3 border border-white/10 text-white/50 font-bold text-sm tracking-widest hover:text-white/80 transition-all duration-300 rounded-lg"
+                            className="group flex items-center justify-center gap-2 w-full py-3.5 border border-white/10 text-white/50 font-bold text-sm tracking-widest hover:text-white/80 transition-all duration-300 rounded-xl"
                         >
                             <Home className="w-4 h-4" />
                             ANA MENÜ

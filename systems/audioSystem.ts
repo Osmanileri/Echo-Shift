@@ -77,6 +77,44 @@ function getMasterGain(): GainNode | null {
   return state.masterGain;
 }
 
+// Public aliases so external systems (beatEngine) can share the AudioContext
+export function getAudioContext(): AudioContext | null {
+  return getContext();
+}
+export { getMasterGain };
+
+/**
+ * Suspend the AudioContext — called when app goes to background.
+ * Saves battery by stopping the audio hardware clock.
+ */
+export function suspendAudioContext(): void {
+  if (state.context && state.context.state === 'running') {
+    state.context.suspend().catch(() => {/* ignore */});
+  }
+}
+
+/**
+ * Resume the AudioContext — called when app returns to foreground.
+ * On iOS this must be triggered within a user-gesture handler to succeed.
+ */
+export function resumeAudioContext(): void {
+  if (state.context && state.context.state !== 'running') {
+    state.context.resume().catch(() => {/* ignore */});
+  }
+}
+
+/**
+ * Listen for AudioContext state changes (iOS interruption: phone call, Siri, etc.)
+ * Returns a cleanup function to remove the listener.
+ */
+export function onAudioContextStateChange(cb: (state: AudioContextState) => void): () => void {
+  const ctx = getContext();
+  if (!ctx) return () => {};
+  const handler = () => cb(ctx.state as AudioContextState);
+  ctx.addEventListener('statechange', handler);
+  return () => ctx.removeEventListener('statechange', handler);
+}
+
 // ============ UTILITY FUNCTIONS ============
 
 function playTone(
@@ -1456,6 +1494,324 @@ export function isEnabled(): boolean {
   return state.enabled;
 }
 
+// ============ BEAT-ALIGNED SOUND ============
+
+/**
+ * Short percussive "tick" played when obstacle pass is on-beat.
+ * Tuned to be satisfying without masking the kick drum.
+ */
+export function playBeatHit() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Bright tap
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.06);
+  gain.gain.setValueAtTime(0.18, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.06);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.06);
+
+  // Tiny click noise
+  playNoise(0.03, 6000, 'highpass', 0.06);
+}
+
+// ============ LAYERED PROCEDURAL MUSIC ============
+// 4 layers: Kick (downbeat) · Hi-hat (1/8) · Bass (1/4) · Arp (accents)
+// All scheduled via Web Audio clock for sample-accurate timing.
+
+import { BEAT_MUSIC_CONFIG } from '../constants';
+
+interface MusicLayerState {
+  kickGain: GainNode | null;
+  hihatGain: GainNode | null;
+  bassGain: GainNode | null;
+  arpGain: GainNode | null;
+  isPlaying: boolean;
+  currentBPM: number;
+  /** Active score for layer unlock decisions */
+  currentScore: number;
+  /** Scheduled oscillator/source nodes for cleanup — auto-pruned via onended */
+  _scheduledNodes: Set<AudioScheduledSourceNode>;
+}
+
+const musicState: MusicLayerState = {
+  kickGain: null,
+  hihatGain: null,
+  bassGain: null,
+  arpGain: null,
+  isPlaying: false,
+  currentBPM: 90,
+  currentScore: 0,
+  _scheduledNodes: new Set(),
+};
+
+/** Track a scheduled node and auto-remove when it finishes playing */
+function _trackNode(node: AudioScheduledSourceNode): void {
+  musicState._scheduledNodes.add(node);
+  node.onended = () => {
+    musicState._scheduledNodes.delete(node);
+  };
+}
+
+// Bass note pattern — pentatonic feel (MIDI-ish, relative to 55 Hz A1)
+const BASS_PATTERN = [55, 65.4, 73.4, 82.4, 98, 82.4, 73.4, 65.4]; // A1 C2 D2 E2 G2 …
+const ARP_PATTERN = [440, 523, 587, 659, 784, 659, 587, 523]; // A4 C5 D5 E5 G5 …
+
+function _ensureMusicGains(): boolean {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return false;
+
+  if (!musicState.kickGain) {
+    musicState.kickGain = ctx.createGain();
+    musicState.kickGain.gain.value = BEAT_MUSIC_CONFIG.kickGain;
+    musicState.kickGain.connect(master);
+  }
+  if (!musicState.hihatGain) {
+    musicState.hihatGain = ctx.createGain();
+    musicState.hihatGain.gain.value = BEAT_MUSIC_CONFIG.hihatGain;
+    musicState.hihatGain.connect(master);
+  }
+  if (!musicState.bassGain) {
+    musicState.bassGain = ctx.createGain();
+    musicState.bassGain.gain.value = 0; // fades in at score threshold
+    musicState.bassGain.connect(master);
+  }
+  if (!musicState.arpGain) {
+    musicState.arpGain = ctx.createGain();
+    musicState.arpGain.gain.value = 0;
+    musicState.arpGain.connect(master);
+  }
+  return true;
+}
+
+/**
+ * Schedule a single kick drum hit at a precise AudioContext time.
+ * Low sine burst 60→30 Hz with fast exponential decay.
+ */
+function _scheduleKick(time: number): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.kickGain) return;
+
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(60, time);
+  osc.frequency.exponentialRampToValueAtTime(30, time + 0.12);
+  env.gain.setValueAtTime(1, time);
+  env.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+  osc.connect(env);
+  env.connect(musicState.kickGain);
+  osc.start(time);
+  osc.stop(time + 0.16);
+  _trackNode(osc);
+}
+
+/**
+ * Schedule a hi-hat tick — short burst of high-pass-filtered noise.
+ */
+function _scheduleHihat(time: number, accent: boolean): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.hihatGain) return;
+
+  const dur = accent ? 0.06 : 0.04;
+  const vol = accent ? 1.0 : 0.5;
+  const bufSize = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = accent ? 8000 : 10000;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vol, time);
+  env.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  src.connect(hp);
+  hp.connect(env);
+  env.connect(musicState.hihatGain);
+  src.start(time);
+  _trackNode(src);
+}
+
+/**
+ * Schedule a bass note — sine wave with a short envelope.
+ */
+function _scheduleBass(time: number, beatIndex: number): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.bassGain) return;
+
+  const freq = BASS_PATTERN[beatIndex % BASS_PATTERN.length];
+  const dur = 60 / musicState.currentBPM * 0.8; // 80% of beat duration
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, time);
+  env.gain.setValueAtTime(0.8, time);
+  env.gain.setValueAtTime(0.8, time + dur * 0.6);
+  env.gain.linearRampToValueAtTime(0, time + dur);
+  osc.connect(env);
+  env.connect(musicState.bassGain);
+  osc.start(time);
+  osc.stop(time + dur + 0.01);
+  _trackNode(osc);
+}
+
+/**
+ * Schedule an arp note — triangle wave, short & bright.
+ */
+function _scheduleArp(time: number, beatIndex: number): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.arpGain) return;
+
+  const freq = ARP_PATTERN[beatIndex % ARP_PATTERN.length];
+  const dur = 0.08;
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, time);
+  env.gain.setValueAtTime(0.7, time);
+  env.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  osc.connect(env);
+  env.connect(musicState.arpGain);
+  osc.start(time);
+  osc.stop(time + dur + 0.01);
+  _trackNode(osc);
+}
+
+/**
+ * Master beat callback — called by beatEngine's schedule-ahead loop.
+ * Schedules the appropriate music layer hits for `beatIndex`.
+ * `audioTime` is the precise AudioContext time for this beat, provided by the scheduler.
+ */
+export function _onBeatScheduleMusic(beatIndex: number, _isDownbeat: boolean, audioTime?: number): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.isPlaying) return;
+
+  const beatDur = 60 / musicState.currentBPM;
+  // Use precise audio time from scheduler, fallback to approximation
+  const baseTime = audioTime ?? (ctx.currentTime + 0.005);
+
+  // Kick on every downbeat (beat 0 of each 4-beat bar)
+  if (beatIndex % 4 === 0) {
+    _scheduleKick(baseTime);
+  }
+
+  // Hi-hat: on every beat, accent on beats 0 and 2
+  const isAccent = beatIndex % 2 === 0;
+  _scheduleHihat(baseTime, isAccent);
+  // Off-beat hi-hat (1/8 subdivision) — halfway between this beat and next
+  _scheduleHihat(baseTime + beatDur / 2, false);
+
+  // Bass: every beat if score >= threshold
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.bassUnlockScore) {
+    _scheduleBass(baseTime, beatIndex);
+  }
+
+  // Arp: beats 0 and 2 of bar, only if score >= threshold
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.arpUnlockScore && beatIndex % 2 === 0) {
+    _scheduleArp(baseTime, beatIndex);
+  }
+}
+
+/**
+ * Start the layered beat music.  Called by beatEngine.start().
+ */
+export function startBeatMusic(bpm: number): void {
+  if (!state.enabled) return;
+  if (!_ensureMusicGains()) return;
+
+  musicState.currentBPM = bpm;
+  musicState.currentScore = 0;
+  musicState.isPlaying = true;
+
+  // Reset layer gains to initial state
+  const ctx = getContext();
+  if (ctx) {
+    musicState.kickGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.kickGain, ctx.currentTime);
+    musicState.hihatGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.hihatGain, ctx.currentTime);
+    musicState.bassGain!.gain.setValueAtTime(0, ctx.currentTime);
+    musicState.arpGain!.gain.setValueAtTime(0, ctx.currentTime);
+  }
+}
+
+/**
+ * Update the music system when BPM or score changes.
+ * Smoothly fades in new layers when score thresholds are crossed.
+ */
+export function updateBeatMusic(bpm: number, score: number): void {
+  if (!musicState.isPlaying) return;
+  musicState.currentBPM = bpm;
+  musicState.currentScore = score;
+
+  const ctx = getContext();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const fadeSec = BEAT_MUSIC_CONFIG.layerFadeInDuration / 1000;
+
+  // Fade in bass layer
+  if (score >= BEAT_MUSIC_CONFIG.bassUnlockScore && musicState.bassGain) {
+    const current = musicState.bassGain.gain.value;
+    if (current < BEAT_MUSIC_CONFIG.bassGain * 0.9) {
+      musicState.bassGain.gain.setValueAtTime(current, now);
+      musicState.bassGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.bassGain, now + fadeSec);
+    }
+  }
+
+  // Fade in arp layer
+  if (score >= BEAT_MUSIC_CONFIG.arpUnlockScore && musicState.arpGain) {
+    const current = musicState.arpGain.gain.value;
+    if (current < BEAT_MUSIC_CONFIG.arpGain * 0.9) {
+      musicState.arpGain.gain.setValueAtTime(current, now);
+      musicState.arpGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.arpGain, now + fadeSec);
+    }
+  }
+}
+
+/**
+ * Stop all music layers.  Called by beatEngine.stop().
+ */
+export function stopBeatMusic(): void {
+  musicState.isPlaying = false;
+
+  const ctx = getContext();
+  if (ctx) {
+    const fadeOut = 0.3;
+    const now = ctx.currentTime;
+    if (musicState.kickGain) {
+      musicState.kickGain.gain.setValueAtTime(musicState.kickGain.gain.value, now);
+      musicState.kickGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    }
+    if (musicState.hihatGain) {
+      musicState.hihatGain.gain.setValueAtTime(musicState.hihatGain.gain.value, now);
+      musicState.hihatGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    }
+    if (musicState.bassGain) {
+      musicState.bassGain.gain.setValueAtTime(musicState.bassGain.gain.value, now);
+      musicState.bassGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    }
+    if (musicState.arpGain) {
+      musicState.arpGain.gain.setValueAtTime(musicState.arpGain.gain.value, now);
+      musicState.arpGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    }
+  }
+
+  // Clean up scheduled nodes that haven't finished yet
+  for (const node of musicState._scheduledNodes) {
+    try { node.stop(); } catch { /* already stopped */ }
+  }
+  musicState._scheduledNodes.clear();
+}
+
 /**
  * Initialize audio context (call on first user interaction)
  */
@@ -1535,6 +1891,17 @@ export const AudioSystem = {
   // Start Sequence - Countdown sounds
   playCountdown,
   playCountdownGo,
+
+  // Beat / Rhythm Music - BPM Engine integration
+  playBeatHit,
+  startBeatMusic,
+  updateBeatMusic,
+  stopBeatMusic,
+
+  // Mobile lifecycle — AudioContext suspend/resume
+  suspendAudioContext,
+  resumeAudioContext,
+  onAudioContextStateChange,
 };
 
 export default AudioSystem;
