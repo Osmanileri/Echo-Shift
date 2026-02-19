@@ -11,6 +11,17 @@
 import { AudioSystem } from './audioSystem';
 import * as EnemySpriteCache from './EnemySpriteCache';
 
+// PERF: Cached timestamp for draw calls - set once per frame from GameEngine
+let _cachedDrawTime = 0;
+
+/**
+ * Set the cached draw time for this frame.
+ * Call once per frame before drawEnemy().
+ */
+export function setDrawTime(t: number): void {
+    _cachedDrawTime = t;
+}
+
 // =============================================================================
 // CYBER ENEMY ANIMATION SYSTEM
 // Procedural animated enemy - no image loading needed
@@ -179,61 +190,67 @@ function calculateNextCooldown(scheduler: SpawnSchedulerState): number {
 /**
  * Update spawn scheduler - determines when next enemy should spawn
  */
+// Pre-allocated scheduler result to avoid per-frame object creation
+const _schedulerResult = { scheduler: null as unknown as SpawnSchedulerState, shouldSpawn: false };
+
 function updateSpawnScheduler(
     scheduler: SpawnSchedulerState,
     deltaTime: number,
     currentGameTime: number
 ): { scheduler: SpawnSchedulerState; shouldSpawn: boolean } {
     const config = ENEMY_CONFIG.SPAWN;
-    const newScheduler = { ...scheduler };
+    // PERF: Mutate scheduler in place instead of spread copy
     let shouldSpawn = false;
 
     // Update wave timer
-    newScheduler.waveTimer -= deltaTime;
+    scheduler.waveTimer -= deltaTime;
 
     // Handle wave phase transitions
-    if (newScheduler.waveTimer <= 0) {
-        if (newScheduler.wavePhase === 'active') {
+    if (scheduler.waveTimer <= 0) {
+        if (scheduler.wavePhase === 'active') {
             // Transition to rest phase
-            newScheduler.wavePhase = 'rest';
-            newScheduler.waveTimer = config.WAVE_REST_DURATION;
-            newScheduler.attackCount = 0; // Reset attack count for next wave
+            scheduler.wavePhase = 'rest';
+            scheduler.waveTimer = config.WAVE_REST_DURATION;
+            scheduler.attackCount = 0; // Reset attack count for next wave
         } else {
             // Transition to active phase
-            newScheduler.wavePhase = 'active';
-            newScheduler.waveTimer = config.WAVE_ACTIVE_DURATION;
+            scheduler.wavePhase = 'active';
+            scheduler.waveTimer = config.WAVE_ACTIVE_DURATION;
             // Schedule first attack quickly
-            newScheduler.nextSpawnTime = currentGameTime + 500 + Math.random() * 1000;
+            scheduler.nextSpawnTime = currentGameTime + 500 + Math.random() * 1000;
         }
     }
 
     // Check if should spawn based on phase
-    if (newScheduler.wavePhase === 'active') {
+    if (scheduler.wavePhase === 'active') {
         // Active phase: spawn based on scheduled time
-        if (currentGameTime >= newScheduler.nextSpawnTime) {
+        if (currentGameTime >= scheduler.nextSpawnTime) {
             // Check if we haven't exceeded wave attack limit
-            if (newScheduler.attackCount < config.ATTACKS_PER_WAVE_MAX) {
+            if (scheduler.attackCount < config.ATTACKS_PER_WAVE_MAX) {
                 shouldSpawn = true;
-                newScheduler.attackCount++;
-                newScheduler.totalAttacks++;
-                newScheduler.lastSpawnGameTime = currentGameTime;
+                scheduler.attackCount++;
+                scheduler.totalAttacks++;
+                scheduler.lastSpawnGameTime = currentGameTime;
 
                 // Calculate next spawn time
-                const nextCooldown = calculateNextCooldown(newScheduler);
-                newScheduler.nextSpawnTime = currentGameTime + nextCooldown;
+                const nextCooldown = calculateNextCooldown(scheduler);
+                scheduler.nextSpawnTime = currentGameTime + nextCooldown;
             }
         }
     } else {
         // Rest phase: rare chance to spawn (keeps player alert)
-        const timeSinceLastAttack = currentGameTime - newScheduler.lastSpawnGameTime;
+        const timeSinceLastAttack = currentGameTime - scheduler.lastSpawnGameTime;
         if (timeSinceLastAttack > config.COOLDOWN_MAX && Math.random() < config.REST_PHASE_SPAWN_CHANCE * (deltaTime / 1000)) {
             shouldSpawn = true;
-            newScheduler.totalAttacks++;
-            newScheduler.lastSpawnGameTime = currentGameTime;
+            scheduler.totalAttacks++;
+            scheduler.lastSpawnGameTime = currentGameTime;
         }
     }
 
-    return { scheduler: newScheduler, shouldSpawn };
+    // PERF: Reuse pre-allocated result object
+    _schedulerResult.scheduler = scheduler;
+    _schedulerResult.shouldSpawn = shouldSpawn;
+    return _schedulerResult;
 }
 
 /**
@@ -269,21 +286,17 @@ export function createEnemyManagerState(canvasWidth: number, canvasHeight: numbe
  * Reset enemy to idle state at screen edge
  */
 export function resetDart(state: EnemyManagerState, canvasWidth: number, canvasHeight: number): EnemyManagerState {
-    return {
-        ...state,
-        dart: {
-            ...state.dart,
-            state: 'idle',
-            x: canvasWidth,
-            y: canvasHeight / 2,
-            targetY: canvasHeight / 2,
-            timer: 0,
-            // Reset knockback state for new attack cycle
-            knockbackActive: false,
-            knockbackProgress: 0,
-            hasBeenKnockedBack: false, // Reset immunity for next attack
-        },
-    };
+    // PERF: Mutate in place instead of spread copies
+    state.dart.state = 'idle';
+    state.dart.x = canvasWidth;
+    state.dart.y = canvasHeight / 2;
+    state.dart.targetY = canvasHeight / 2;
+    state.dart.timer = 0;
+    // Reset knockback state for new attack cycle
+    state.dart.knockbackActive = false;
+    state.dart.knockbackProgress = 0;
+    state.dart.hasBeenKnockedBack = false; // Reset immunity for next attack
+    return state;
 }
 
 // =============================================================================
@@ -328,7 +341,8 @@ export function applyKnockback(
     pushDistance: number,
     canvasWidth: number
 ): EnemyManagerState {
-    const dart = { ...state.dart };
+    // PERF: Mutate dart in place instead of spread copies
+    const dart = state.dart;
 
     // Set knockback physics parameters
     dart.knockbackStartX = dart.x;
@@ -345,7 +359,7 @@ export function applyKnockback(
     // If firing: enemy continues moving left from further away
     // If tracking: enemy re-tracks from pushed position
 
-    return { ...state, dart };
+    return state;
 }
 
 /**
@@ -397,15 +411,11 @@ function updateKnockbackPhysics(dart: GlitchDart, deltaTime: number): boolean {
  * Spawn a new dart attack
  */
 export function spawnDart(state: EnemyManagerState, canvasWidth: number): EnemyManagerState {
-    return {
-        ...state,
-        dart: {
-            ...state.dart,
-            state: 'tracking',
-            x: canvasWidth - 40,  // Warning icon position
-            timer: 0,
-        },
-    };
+    // PERF: Mutate in place instead of spread copies
+    state.dart.state = 'tracking';
+    state.dart.x = canvasWidth - 40;  // Warning icon position
+    state.dart.timer = 0;
+    return state;
 }
 
 /**
@@ -425,11 +435,14 @@ export function updateEnemy(
         currentScore >= ENEMY_CONFIG.SPAWN_THRESHOLD_SCORE;
 
     if (!shouldBeActive) {
-        return { ...state, isActive: false };
+        // PERF: Mutate in place instead of spread copy
+        state.isActive = false;
+        return state;
     }
 
-    const newState = { ...state, isActive: true };
-    const dart = { ...newState.dart };
+    // PERF: Mutate state in place instead of spread copies
+    state.isActive = true;
+    const dart = state.dart;
     dart.timer += deltaTime;
 
     // ========================================
@@ -451,11 +464,11 @@ export function updateEnemy(
             // Use professional spawn scheduler for variable, wave-based spawning
             const currentGameTime = Date.now();
             const schedulerResult = updateSpawnScheduler(
-                newState.spawnScheduler,
+                state.spawnScheduler,
                 deltaTime,
                 currentGameTime
             );
-            newState.spawnScheduler = schedulerResult.scheduler;
+            state.spawnScheduler = schedulerResult.scheduler;
 
             // Check if spawn scheduler says it's time to attack
             if (schedulerResult.shouldSpawn) {
@@ -529,7 +542,8 @@ export function updateEnemy(
         }
     }
 
-    return { ...newState, dart };
+    // PERF: state is already mutated in place, just return it
+    return state;
 }
 
 /**
@@ -590,16 +604,12 @@ export function isDartInCounterRange(
  * Mark dart as countered (destroyed by Pokemon)
  */
 export function counterDart(state: EnemyManagerState): EnemyManagerState {
-    return {
-        ...state,
-        dart: {
-            ...state.dart,
-            state: 'cooldown',
-            timer: 0,
-            x: -500, // Move off screen immediately
-        },
-        lastCounterTime: Date.now(),
-    };
+    // PERF: Mutate in place instead of spread copies
+    state.dart.state = 'cooldown';
+    state.dart.timer = 0;
+    state.dart.x = -500; // Move off screen immediately
+    state.lastCounterTime = Date.now();
+    return state;
 }
 
 /**
@@ -607,23 +617,34 @@ export function counterDart(state: EnemyManagerState): EnemyManagerState {
  */
 function updateEnemyAnimation(deltaTime: number): void {
     const dt = deltaTime / 1000;
+    // PERF: Use cached time instead of 3 separate Date.now() calls
+    const t = _cachedDrawTime;
 
     // Glow pulse (sine wave 0-1)
-    enemyAnimState.glowPulse = (Math.sin(Date.now() * 0.006) + 1) / 2;
+    enemyAnimState.glowPulse = (Math.sin(t * 0.006) + 1) / 2;
 
     // Rotation wobble
-    enemyAnimState.rotationAngle = Math.sin(Date.now() * 0.003) * 0.1;
+    enemyAnimState.rotationAngle = Math.sin(t * 0.003) * 0.1;
 
     // Scale breathing
-    enemyAnimState.scaleWobble = 1 + Math.sin(Date.now() * 0.004) * 0.05;
+    enemyAnimState.scaleWobble = 1 + Math.sin(t * 0.004) * 0.05;
 
     // Shield rotation
     enemyAnimState.shieldRotation += dt * 2;
 
-    // Update trail alphas
-    enemyAnimState.trailPositions = enemyAnimState.trailPositions
-        .map(t => ({ ...t, alpha: t.alpha - dt * 2 }))
-        .filter(t => t.alpha > 0);
+    // Update trail alphas - PERF: In-place update instead of .map().filter()
+    let writeIdx = 0;
+    for (let i = 0; i < enemyAnimState.trailPositions.length; i++) {
+        const t = enemyAnimState.trailPositions[i];
+        t.alpha -= dt * 2;
+        if (t.alpha > 0) {
+            if (writeIdx !== i) {
+                enemyAnimState.trailPositions[writeIdx] = t;
+            }
+            writeIdx++;
+        }
+    }
+    enemyAnimState.trailPositions.length = writeIdx;
 }
 
 // =============================================================================
@@ -851,7 +872,8 @@ export function drawEnemy(
 
     ctx.save();
 
-    const time = Date.now();
+    // PERF: Cache Date.now() once for entire draw call
+    const time = _cachedDrawTime;
     const jitterX = (Math.random() - 0.5) * 3;
     const jitterY = (Math.random() - 0.5) * 3;
 
@@ -1011,22 +1033,20 @@ export function drawEnemy(
         }
 
         // === MOTION TRAIL ===
+        // PERF: Use solid color circles instead of per-trail gradients
         ctx.save();
         for (let i = 0; i < enemyAnimState.trailPositions.length; i++) {
             const trail = enemyAnimState.trailPositions[i];
             const trailScale = 0.3 + (i / enemyAnimState.trailPositions.length) * 0.5;
+            const trailAlpha = trail.alpha * 0.5;
+            if (trailAlpha < 0.02) continue;
 
-            ctx.globalAlpha = trail.alpha * 0.5;
-
-            // Trail glow
-            const trailGlow = ctx.createRadialGradient(trail.x, trail.y, 0, trail.x, trail.y, spriteSize * trailScale);
-            trailGlow.addColorStop(0, 'rgba(255, 100, 100, 0.6)');
-            trailGlow.addColorStop(0.5, 'rgba(255, 50, 50, 0.3)');
-            trailGlow.addColorStop(1, 'rgba(255, 0, 0, 0)');
-
+            ctx.globalAlpha = trailAlpha;
+            ctx.fillStyle = 'rgba(255, 80, 80, 0.5)';
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 10;
             ctx.beginPath();
             ctx.arc(trail.x, trail.y, spriteSize * trailScale, 0, Math.PI * 2);
-            ctx.fillStyle = trailGlow;
             ctx.fill();
         }
         ctx.restore();

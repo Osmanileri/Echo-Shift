@@ -492,6 +492,12 @@ export interface GlitchShard {
 }
 
 /**
+ * Wave pattern types for Quantum Lock variety
+ * Each activation randomly selects a pattern for fresh gameplay
+ */
+export type WavePatternType = 'sine' | 'zigzag' | 'doubleSine' | 'staircase' | 'pulse';
+
+/**
  * Glitch Mode state tracking
  * Requirements 4.1, 7.1: Define state for Quantum Lock mode
  */
@@ -501,6 +507,7 @@ export interface GlitchModeState {
   duration: number;             // 8000ms
   originalConnectorLength: number;
   waveOffset: number;           // For sinusoidal wave animation
+  wavePattern: WavePatternType; // Randomly selected wave pattern
   phase: GlitchPhase;
   ghostModeEndTime: number;
   // Paused mode tracking for priority system

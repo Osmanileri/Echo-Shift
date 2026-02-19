@@ -2418,7 +2418,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
             playerX,
             glitchModeState.current.waveOffset,
             waveAmplitude,
-            height / 2
+            height / 2,
+            glitchModeState.current.wavePattern
           );
         }
       }
@@ -2601,9 +2602,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const timeSinceSpecialEnd = frameTime - (lastSpecialAbilityEndTime.current || 0);
         const isInGracePeriod = timeSinceSpecialEnd < 1000;
 
-        // Finish Approach: activate clear runway at 88% - stop spawning, start clearing obstacles
+        // Finish Approach: activate clear runway at 93% - stop spawning, start clearing obstacles
         const isInFinishApproach = distanceStateRef.current.targetDistance > 0 &&
-          distanceStateRef.current.progressPercent >= 88;
+          distanceStateRef.current.progressPercent >= 93;
         if (isInFinishApproach && !finishApproachActive.current) {
           finishApproachActive.current = true;
           finishApproachStartTime.current = frameTime;
@@ -3547,7 +3548,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
             glitchModeState.current.waveOffset,
             width,
             height / 2,
-            120 // Wave amplitude
+            120, // Wave amplitude
+            glitchModeState.current.wavePattern
           );
 
           // Pause Overdrive if active
@@ -3638,6 +3640,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
             glitchModeState.current.originalConnectorLength
           );
 
+          // INSTANT obstacle clear — coincides with screen flash VFX so it feels
+          // like a dramatic "reset" rather than a delayed jarring wipe.
+          // Fresh obstacles will naturally spawn during the 1.5 s ghost-mode
+          // invulnerability window, giving the player a smooth transition back.
+          framesSinceSpawn.current = 0;
+          obstacles.current = [];
+          blockSystemState.current = BlockSystem.createBlockSystemState();
+          patternManagerState.current = PatternManager.createPatternManagerState();
+          patternStartTime.current = 0;
+          obstaclePool.current.reset();
+
           scorePopups.current.push({
             x: width / 2,
             y: height / 2 - 40,
@@ -3650,30 +3663,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Handle ghost mode ending - Requirements 7.7
         if (previousPhase === 'ghost' && currentPhase === 'inactive') {
-          // Normal gameplay restored
-          // BUG FIX: Reset spawn timer to prevent immediate "burst" of obstacles
-          framesSinceSpawn.current = 0;
-          // BUG FIX: Ensure no invisible obstacles are lingering
-          obstacles.current = [];
-          // BUG FIX: Reset block system state to prevent stale polarity/gap overlap
-          blockSystemState.current = BlockSystem.createBlockSystemState();
-          // BUG FIX: Reset pattern manager to start fresh patterns
-          patternManagerState.current = PatternManager.createPatternManagerState();
-          patternStartTime.current = 0;
-          // Reset object pool to release stale pooled objects
-          obstaclePool.current.reset();
-
-          // Grace Period Tracker
+          // Normal gameplay restored — obstacles were already cleared at ghost-mode
+          // entry (exiting→ghost) so no jarring delayed wipe here.
+          // Just set the grace period to avoid immediate enemy swarm.
           lastSpecialAbilityEndTime.current = frameTime;
-
-          scorePopups.current.push({
-            x: width / 2,
-            y: height / 2 - 40,
-            text: "NORMAL MODE",
-            color: "#FFFFFF",
-            life: 1.0,
-            vy: -1,
-          });
         }
 
         // Update connector length animation during Quantum Lock - Requirements 4.2, 4.3
@@ -3714,7 +3707,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
             waveAmplitude,
             height / 2,
             speed.current, // Pass game speed for horizontal movement
-            width // Canvas width for respawning
+            width, // Canvas width for respawning
+            glitchModeState.current.wavePattern
           );
 
           // --- MIDLINE COLLISION DETECTION ---
@@ -3725,13 +3719,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
               whiteOrbX,
               glitchModeState.current.waveOffset,
               waveAmplitude,
-              height / 2
+              height / 2,
+              glitchModeState.current.wavePattern
             );
             const blackOrbWaveY = GlitchSystem.calculateWaveY(
               blackOrbX,
               glitchModeState.current.waveOffset,
               waveAmplitude,
-              height / 2
+              height / 2,
+              glitchModeState.current.wavePattern
             );
 
             const whiteHit = GlitchSystem.checkMidlineCollision(whiteOrbY, whiteOrbWaveY, 20);
@@ -4008,24 +4004,33 @@ const GameEngine: React.FC<GameEngineProps> = ({
         return true;
       });
 
-      // Filter Obstacles - Release back to pool if using object pooling
-      obstacles.current = obstacles.current.filter((obs) => {
-        const keep = obs.x + obs.width > -100;
-        if (!keep) {
-          // release is safe even if the item wasn't pooled (ignored gracefully)
-          obstaclePool.current.release(
-            obs as unknown as ObjectPool.PooledEngineObstacle
-          );
+      // Filter Obstacles - PERF: In-place compaction instead of .filter() new array
+      {
+        let writeIdx = 0;
+        for (let i = 0; i < obstacles.current.length; i++) {
+          const obs = obstacles.current[i];
+          const keep = obs.x + obs.width > -100;
+          if (keep) {
+            if (writeIdx !== i) {
+              obstacles.current[writeIdx] = obs;
+            }
+            writeIdx++;
+          } else {
+            // release is safe even if the item wasn't pooled (ignored gracefully)
+            obstaclePool.current.release(
+              obs as unknown as ObjectPool.PooledEngineObstacle
+            );
+          }
         }
-        return keep;
-      });
+        obstacles.current.length = writeIdx;
+      }
 
       // Finish Approach: accelerate objects off-screen to clear the runway
       // Smoothly ramp up from 1x to 3x over 1.5 seconds for a satisfying "clear" effect
       // Hoisted here so both shards and obstacles can use the same value
       let finishApproachSpeedBoost = 1.0;
       if (finishApproachActive.current && !isInFinishMode.current) {
-        const timeSinceApproach = Date.now() - finishApproachStartTime.current;
+        const timeSinceApproach = frameTime - finishApproachStartTime.current;
         const rampProgress = Math.min(1, timeSinceApproach / 1500); // 1.5s ramp
         finishApproachSpeedBoost = 1.0 + rampProgress * 2.0; // 1x → 3x
       }
@@ -5528,22 +5533,23 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ctx.globalAlpha = 1.0;
 
       // Render legacy particles with Zen Mode intensity
-      particles.current.forEach((p) => {
-        ctx.save();
-        ctx.globalAlpha = p.life * visualIntensity;
+      // PERF: for-loop, remove per-particle save/restore and gradient
+      for (let _pi = 0; _pi < particles.current.length; _pi++) {
+        const p = particles.current[_pi];
+        if (p.life <= 0) continue;
+        const alpha = p.life * visualIntensity;
+        if (alpha < 0.01) continue;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 8 * p.life;
         const size = (2 + p.life * 4) * (0.8 + Math.random() * 0.4);
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
-        gradient.addColorStop(0, p.color);
-        gradient.addColorStop(0.5, p.color);
-        gradient.addColorStop(1, "transparent");
-        ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
-      });
+      }
+      ctx.globalAlpha = 1.0;
+      ctx.shadowBlur = 0;
       ctx.restore();
 
       // Theme Effects - Requirements 5.4: Cyberpunk grid lines
@@ -5596,7 +5602,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Titreşim efekti - gerilim yüksekken çizgi hafifçe titrer
         const shake =
-          tension > 0.5 ? Math.sin(Date.now() * 0.05) * tension * 3 : 0;
+          tension > 0.5 ? Math.sin(frameTime * 0.05) * tension * 3 : 0;
 
         ctx.strokeStyle = tensionColor;
         ctx.lineWidth = lineWidth;
@@ -5626,7 +5632,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.strokeStyle = '#FF0000';
         ctx.lineWidth = 4;
         ctx.shadowColor = '#FF0000';
-        ctx.shadowBlur = 15 + Math.sin(Date.now() * 0.02) * 5; // Pulsing glow
+        ctx.shadowBlur = 15 + Math.sin(frameTime * 0.02) * 5; // Pulsing glow
         ctx.stroke();
 
         // Add "DO NOT TOUCH" warning text near midline
@@ -5776,7 +5782,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Render all blocks using BlockSystem
       BlockSystem.renderAllBlocks(obstacles.current, {
         ctx,
-        currentTime: Date.now(),
+        currentTime: frameTime,
         bpm: EnvironmentalEffects.getEnvironmentalEffectsState().currentBPM,
         whiteObstacleColor,
         blackObstacleColor,
@@ -5787,7 +5793,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       activeShards.current.forEach((shard) => {
         if (shard.collected) return;
 
-        const shardTime = Date.now() * 0.003;
+        const shardTime = frameTime * 0.003;
         const isBonus = (shard as ShardPlacement.PlacedShard).isBonus || shard.type === "bonus";
 
         // Bonus shardlar daha büyük ve daha hızlı pulse
@@ -5865,13 +5871,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
       });
 
       // --- GLITCH TOKEN RENDERING - Requirements 1.2 ---
-      const tokenTime = Date.now() * 0.001;
+      const tokenTime = frameTime * 0.001;
 
       // ==================================================================================
       // CINEMATIC QUANTUM LOCK VISUALS - 4 Phase Flow (Ultrathink)
       // ==================================================================================
       const glitchState = glitchModeState.current;
-      const progress = Math.min(1.0, Math.max(0.0, (Date.now() - glitchState.startTime) / glitchState.duration));
+      const progress = Math.min(1.0, Math.max(0.0, (frameTime - glitchState.startTime) / glitchState.duration));
 
       // 1. WARNING PHASE (0-20% of charging)
       // - Midline jitters and glows red to warn player
@@ -5881,6 +5887,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         obstacles.current = []; // Clear all active obstacles
 
         let displayMidlineY = currentMidlineY;
+        const chargingAccent = GlitchVFX.getPatternAccentColor(glitchState.wavePattern);
+        const chargingPatternName = (GLITCH_CONFIG.patternDisplayNames as Record<string, string>)[glitchState.wavePattern] || 'KUANTUM KİLİDİ';
 
         // EXTENDED WARNING PHASE (0-40% of charging)
         // User requested a slower, smoother slide for preparedness
@@ -5896,54 +5904,129 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           GlitchVFX.renderFieryMidline(ctx, width, displayMidlineY, intensity);
 
-          // Warning Text
+          // Warning Text with pattern-specific color pulse
           if (framesSinceSpawn.current % 30 < 20) {
+            const warningPulse = 0.7 + 0.3 * Math.sin(frameTime * 0.01);
             ctx.font = "bold 16px Arial";
-            ctx.fillStyle = `rgba(255, 0, 80, ${intensity})`;
+            ctx.fillStyle = `rgba(255, 0, 80, ${intensity * warningPulse})`;
             ctx.textAlign = "center";
             ctx.fillText("⚠ KUANTUM AKIŞI ALGILANDI", width / 2, displayMidlineY - 25);
           }
+
+          // Early pattern hint: faint accent-colored line at screen edge
+          if (intensity > 0.3) {
+            ctx.save();
+            ctx.globalAlpha = (intensity - 0.3) * 0.4;
+            ctx.strokeStyle = chargingAccent;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = chargingAccent;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.moveTo(width - 5, height * 0.3);
+            ctx.lineTo(width - 5, height * 0.7);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
         // 2. SNAKE IN PHASE (40% - 100% of charging)
-        // - Green wave snakes in from RIGHT to LEFT
+        // - Wave snakes in from RIGHT to LEFT with pattern-specific color
         else {
           const snakeProgress = (progress - 0.4) / 0.6; // 0.0 to 1.0
+          // Ease-out cubic for smoother deceleration as snake arrives
+          const easedProgress = 1 - Math.pow(1 - snakeProgress, 3);
 
           // Head moves from Width to 0
-          const headX = width - (width * snakeProgress);
+          const headX = width - (width * easedProgress);
           const tailX = width;
 
           GlitchVFX.renderDynamicWave(ctx, headX, tailX, width, height, glitchState);
           GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0); // Full fire
+
+          // Energy spark particles trailing the snake head during entry
+          const sparkCount = 6;
+          const sparkTime = frameTime * 0.005;
+          ctx.save();
+          for (let i = 0; i < sparkCount; i++) {
+            const sparkAngle = sparkTime * 3 + i * (Math.PI * 2 / sparkCount);
+            const sparkRadius = 15 + Math.sin(sparkTime * 2 + i) * 8;
+            const headWaveY = GlitchSystem.calculateWaveY(headX, glitchState.waveOffset, 120, height / 2, glitchState.wavePattern);
+            const sparkX = headX + Math.cos(sparkAngle) * sparkRadius;
+            const sparkY = headWaveY + Math.sin(sparkAngle) * sparkRadius;
+            const sparkAlpha = 0.4 + 0.3 * Math.sin(sparkTime * 4 + i * 2);
+
+            ctx.globalAlpha = sparkAlpha * snakeProgress;
+            ctx.fillStyle = chargingAccent;
+            ctx.shadowColor = chargingAccent;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(sparkX, sparkY, 2 + Math.random() * 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+
+          // Pattern name announcement during snake entry
+          if (snakeProgress > 0.3 && snakeProgress < 0.9) {
+            const textAlpha = snakeProgress < 0.6
+              ? (snakeProgress - 0.3) / 0.3  // fade in
+              : (0.9 - snakeProgress) / 0.3;  // fade out
+            ctx.save();
+            ctx.font = "bold 20px Arial";
+            ctx.fillStyle = chargingAccent;
+            ctx.globalAlpha = textAlpha * 0.9;
+            ctx.textAlign = "center";
+            ctx.shadowColor = chargingAccent;
+            ctx.shadowBlur = 15;
+            ctx.fillText(chargingPatternName, width / 2, height / 2 - 80);
+            ctx.restore();
+          }
         }
       }
 
       // 3. ACTIVE PHASE
       // - Full wave visible (Head at 0, Tail at Width)
       // - Midline is dangerous (Fire)
+      // - Energy particles pulse along wave with pattern-specific accent
       else if (glitchState.phase === 'active') {
-        const activeElapsed = Date.now() - glitchState.startTime;
-        const activeDuration = glitchState.duration;
-
         // Render Full Wave
         GlitchVFX.renderDynamicWave(ctx, 0, width, width, height, glitchState);
         GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0);
+
+        // Floating energy particles along the wave (ambient VFX)
+        const activeAccent = GlitchVFX.getPatternAccentColor(glitchState.wavePattern);
+        const particleTime = frameTime * 0.001;
+        ctx.save();
+        const particleCount = 10;
+        for (let i = 0; i < particleCount; i++) {
+          // Distribute particles across the wave
+          const px = ((particleTime * 40 + i * (width / particleCount)) % (width + 60)) - 30;
+          const py = GlitchSystem.calculateWaveY(px, glitchState.waveOffset, 120, height / 2, glitchState.wavePattern);
+          // Float above/below the wave with oscillation
+          const floatOffset = Math.sin(particleTime * 2 + i * 1.8) * 12;
+          const pAlpha = 0.15 + 0.15 * Math.sin(particleTime * 3 + i * 0.7);
+          const pSize = 2 + Math.sin(particleTime * 4 + i) * 1;
+
+          ctx.globalAlpha = pAlpha;
+          ctx.fillStyle = activeAccent;
+          ctx.shadowColor = activeAccent;
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(px, py + floatOffset, pSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
       }
 
       // 4. SNAKE OUT PHASE (Exiting)
       // - Tail follows head off-screen (Width -> 0)
+      // - Dissolve particles trail behind the retreating tail
       else if (glitchState.phase === 'exiting') {
-        // Determine progress within the exiting phase
-        // The exiting phase is triggered by GlitchSystem (e.g. at >80% progress)
-        // We need to map global progress (0.8 -> 1.0) to local exit progress (0.0 -> 1.0)
-
-        // If GlitchSystem doesn't provide explicit exiting start time, we derive from duration
-        // Assuming exiting starts at 80% mark (defined in constants as flattenThreshold)
         const exitThreshold = 0.8;
         const exitProgress = Math.max(0, (progress - exitThreshold) / (1.0 - exitThreshold));
+        // Ease-in cubic for accelerating exit
+        const easedExit = exitProgress * exitProgress * exitProgress;
 
         // Tail moves: Width -> 0
-        const tailX = width - (width * exitProgress);
+        const tailX = width - (width * easedExit);
 
         // Head is already at 0 (or technically further left)
         const headX = 0;
@@ -5952,6 +6035,27 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Fade out fire intensity as it leaves
         GlitchVFX.renderFieryMidline(ctx, width, currentMidlineY, 1.0 - exitProgress);
+
+        // Dissolve particles where the tail was
+        const exitAccent = GlitchVFX.getPatternAccentColor(glitchState.wavePattern);
+        ctx.save();
+        const dissolveCount = Math.floor(8 * (1 - exitProgress));
+        for (let i = 0; i < dissolveCount; i++) {
+          const dx = tailX + Math.random() * 40;
+          const dy = GlitchSystem.calculateWaveY(dx, glitchState.waveOffset, 120 * (1 - exitProgress), height / 2, glitchState.wavePattern);
+          const driftY = (Math.random() - 0.5) * 30;
+          const dAlpha = (1 - exitProgress) * 0.3 * Math.random();
+          const dSize = 1 + Math.random() * 3;
+
+          ctx.globalAlpha = dAlpha;
+          ctx.fillStyle = exitAccent;
+          ctx.shadowColor = exitAccent;
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(dx, dy + driftY, dSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
       }
 
       glitchTokens.current.forEach((token) => {
@@ -6030,7 +6134,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         let activeVisualWidth = width;
         if (glitchModeState.current.phase === 'exiting') {
           const exitThreshold = 0.8;
-          const progress = Math.min(1.0, Math.max(0.0, (Date.now() - glitchModeState.current.startTime) / glitchModeState.current.duration));
+          const progress = Math.min(1.0, Math.max(0.0, (frameTime - glitchModeState.current.startTime) / glitchModeState.current.duration));
           const exitProgress = Math.max(0, (progress - exitThreshold) / (1.0 - exitThreshold));
           activeVisualWidth = width - (width * exitProgress);
         }
@@ -6056,7 +6160,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
               width,
               height,
               glitchModeState.current.waveOffset,
-              waveAmplitude
+              waveAmplitude,
+              glitchModeState.current.wavePattern
             );
           }
           ctx.restore();
@@ -6081,15 +6186,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Hide shards that are "left behind" by the exiting snake
           if (glitchModeState.current.phase === 'exiting' && shard.x > activeVisualWidth) return;
 
-          const shardTime = Date.now() * 0.003;
+          const shardTime = frameTime * 0.003;
           const pulseScale = 1 + Math.sin(shardTime * 2) * 0.15;
           const shardSize = 10 * pulseScale;
 
           ctx.save();
           ctx.translate(shard.x, shard.y);
 
-          // Green glow for wave path shards
-          ctx.shadowColor = "#00FF00";
+          // Pattern-specific glow for wave path shards
+          const shardAccent = GlitchVFX.getPatternAccentColor(glitchModeState.current.wavePattern);
+          ctx.shadowColor = shardAccent;
           ctx.shadowBlur = 15 + Math.sin(shardTime * 3) * 5;
 
           // Draw diamond shape
@@ -6100,11 +6206,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.lineTo(-shardSize, 0);
           ctx.closePath();
 
-          // Green gradient
+          // Pattern-colored gradient
           const gradient = ctx.createLinearGradient(-shardSize, -shardSize, shardSize, shardSize);
-          gradient.addColorStop(0, "#00FF00");
-          gradient.addColorStop(0.5, "#00FFFF");
-          gradient.addColorStop(1, "#00FF00");
+          gradient.addColorStop(0, shardAccent);
+          gradient.addColorStop(0.5, "#FFFFFF");
+          gradient.addColorStop(1, shardAccent);
           ctx.fillStyle = gradient;
           ctx.fill();
 
@@ -6116,9 +6222,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         });
 
         // Quantum Lock timer indicator
-        const remainingMs = glitchModeState.current.duration - (Date.now() - glitchModeState.current.startTime);
+        const remainingMs = glitchModeState.current.duration - (frameTime - glitchModeState.current.startTime);
         const remainingSeconds = Math.ceil(remainingMs / 1000);
         const timerProgress = 1 - glitchProgress;
+        const patternAccent = GlitchVFX.getPatternAccentColor(glitchModeState.current.wavePattern);
+        const patternName = (GLITCH_CONFIG.patternDisplayNames as Record<string, string>)[glitchModeState.current.wavePattern] || 'KUANTUM KİLİDİ';
 
         // Draw timer bar at top
         const barWidth = 200;
@@ -6130,21 +6238,21 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.fillStyle = "#333333";
         ctx.fillRect(barX, barY, barWidth, barHeight);
 
-        // Progress bar with green glow
-        ctx.shadowColor = "#00FF00";
+        // Progress bar with pattern-specific glow
+        ctx.shadowColor = patternAccent;
         ctx.shadowBlur = 10;
         ctx.fillStyle = glitchModeState.current.phase === 'warning' || glitchModeState.current.phase === 'exiting'
           ? "#FFFF00"
-          : "#00FF00";
+          : patternAccent;
         ctx.fillRect(barX, barY, barWidth * timerProgress, barHeight);
         ctx.shadowBlur = 0;
 
-        // Timer text
-        ctx.font = "bold 16px Arial";
-        ctx.fillStyle = "#00FF00";
+        // Timer text with pattern name
+        ctx.font = "bold 14px Arial";
+        ctx.fillStyle = patternAccent;
         ctx.textAlign = "center";
         ctx.fillText(
-          `⚡ KUANTUM KİLİDİ ⚡ ${remainingSeconds}s`,
+          `⚡ ${patternName} ⚡ ${remainingSeconds}s`,
           width / 2,
           barY - 10
         );
@@ -6181,7 +6289,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const hudY = 28;
       const letterSpacing = 28;
       const letters = ShiftProtocol.TARGET_WORD;
-      const hudTime = Date.now() * 0.001;
+      const hudTime = frameTime * 0.001;
       const hudPulse = 0.5 + 0.5 * Math.sin(hudTime * 3);
 
       // HUD arka plan çerçevesi
@@ -6288,13 +6396,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // Create visual orb positions including the offset for RENDERING
-      const visualWhiteOrb = { ...whiteOrb, y: whiteOrb.y + dashVisualYOffset };
-      const visualBlackOrb = { ...blackOrb, y: blackOrb.y + dashVisualYOffset };
+      // PERF: Instead of spread-copying orb objects, temporarily modify y and restore after rendering
+      const _savedWhiteOrbY = whiteOrb.y;
+      const _savedBlackOrbY = blackOrb.y;
+      whiteOrb.y += dashVisualYOffset;
+      blackOrb.y += dashVisualYOffset;
+      // PERF: Orb Y positions temporarily modified for visual offset; restored after rendering
 
       // Calculate center point (using visual position)
-      const centerX = (visualWhiteOrb.x + visualBlackOrb.x) / 2;
-      const centerY = (visualWhiteOrb.y + visualBlackOrb.y) / 2;
-      const time = Date.now() * 0.003;
+      const centerX = (whiteOrb.x + blackOrb.x) / 2;
+      const centerY = (whiteOrb.y + blackOrb.y) / 2;
+      const time = frameTime * 0.003;
 
       // 1. Draw Connector - Theme System Integration - Requirements 5.1, 5.2, 5.3
       // During dash, fade out normal connector and show neon spin instead
@@ -6312,12 +6424,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ctx.globalAlpha = normalOpacity;
           SpiritRenderer.renderElementalConnector(
             ctx,
-            visualWhiteOrb.x,
-            visualWhiteOrb.y,
-            visualBlackOrb.x,
-            visualBlackOrb.y,
+            whiteOrb.x,
+            whiteOrb.y,
+            blackOrb.x,
+            blackOrb.y,
             activeCharacter.types,
-            Date.now()
+            frameTime
           );
           ctx.restore();
         } else {
@@ -6328,10 +6440,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const pulseScale = glitchConnectorOptions.pulseScale;
 
           const gradient = ctx.createLinearGradient(
-            visualWhiteOrb.x,
-            visualWhiteOrb.y,
-            visualBlackOrb.x,
-            visualBlackOrb.y
+            whiteOrb.x,
+            whiteOrb.y,
+            blackOrb.x,
+            blackOrb.y
           );
 
           // Apply green tint during Quantum Lock - Requirements 4.5
@@ -6350,8 +6462,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
 
           ctx.beginPath();
-          ctx.moveTo(visualWhiteOrb.x, visualWhiteOrb.y);
-          ctx.lineTo(visualBlackOrb.x, visualBlackOrb.y);
+          ctx.moveTo(whiteOrb.x, whiteOrb.y);
+          ctx.lineTo(blackOrb.x, blackOrb.y);
           ctx.lineWidth = INITIAL_CONFIG.connectorWidth * pulseScale;
           ctx.strokeStyle = gradient;
           ctx.stroke();
@@ -6368,15 +6480,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (fluxPhase !== 'inactive') {
         // Get pulse intensity for visual (1.0 = bright/danger, 0.15 = dim/safe)
         const pulseIntensity = fluxPhase === 'active'
-          ? FluxOverload.getPulseIntensity(fluxOverloadState.current.phaseStartTime, Date.now())
+          ? FluxOverload.getPulseIntensity(fluxOverloadState.current.phaseStartTime, frameTime)
           : 0.7; // Warning phase = steady medium brightness
 
         // Check if any orb is near the midline (for danger indicator)
         const whiteNearMidline = FluxOverload.isOrbTouchingMidline(
-          visualWhiteOrb.y, visualWhiteOrb.radius, currentMidlineY
+          whiteOrb.y, whiteOrb.radius, currentMidlineY
         );
         const blackNearMidline = FluxOverload.isOrbTouchingMidline(
-          visualBlackOrb.y, visualBlackOrb.radius, currentMidlineY
+          blackOrb.y, blackOrb.radius, currentMidlineY
         );
         const isInDanger = whiteNearMidline || blackNearMidline;
 
@@ -6386,7 +6498,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           { x: 0, y: currentMidlineY },           // Left edge of screen
           { x: width, y: currentMidlineY },       // Right edge of screen
           fluxPhase as 'warning' | 'active',
-          Date.now(),
+          frameTime,
           isInDanger,
           pulseIntensity                          // Pass pulse intensity for visual
         );
@@ -6529,7 +6641,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           if (activeCharacter && spiritSpriteRef.current) {
             const types = activeCharacter.types;
             const primaryType = types[0] || 'normal';
-            const now = Date.now();
+            const now = frameTime;
 
             // Update trails - Requirements 9.2: Trailing Soul
             // Use velocity-based emission and LOD optimization
@@ -6642,8 +6754,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Emit trail particles from current orb positions (using visual position)
       if (trailConfig.enabled) {
-        OrbTrailSystem.emitTrail(visualWhiteOrb.x, visualWhiteOrb.y, true, trailConfig);
-        OrbTrailSystem.emitTrail(visualBlackOrb.x, visualBlackOrb.y, false, trailConfig);
+        OrbTrailSystem.emitTrail(whiteOrb.x, whiteOrb.y, true, trailConfig);
+        OrbTrailSystem.emitTrail(blackOrb.x, blackOrb.y, false, trailConfig);
         OrbTrailSystem.updateTrails(1 / 60, trailConfig); // Assume 60fps
       }
 
@@ -6653,7 +6765,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // --- FINISH APPROACH VFX --- Clear runway atmosphere before finish line
       // Creates a dramatic "the end is near" feel with speed lines and a pulsing glow
       if (finishApproachActive.current && !isInFinishMode.current) {
-        const timeSinceApproach = Date.now() - finishApproachStartTime.current;
+        const timeSinceApproach = frameTime - finishApproachStartTime.current;
         const approachProgress = Math.min(1, timeSinceApproach / 3000); // 3s total approach phase
 
         ctx.save();
@@ -6750,6 +6862,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // HIDDEN during special abilities: Phase Dash and Quantum Lock (diamond collection)
       const isInSpecialAbilityRender = PhaseDash.isDashActive(phaseDashState.current) || glitchModeState.current.isActive;
       if (enemyManagerState.current && enemyManagerState.current.isActive && !isInSpecialAbilityRender) {
+        // PERF: Set cached draw time once for entire enemy render
+        EnemyManager.setDrawTime(frameTime);
         EnemyManager.drawEnemy(ctx, enemyManagerState.current, width);
 
         // Draw knockback VFX (impact flash, speed lines, shockwave)
@@ -6765,7 +6879,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             counterRender.endX,
             counterRender.endY,
             counterRender.type,
-            Date.now()
+            frameTime
           );
           // Clear after rendering
           (enemyManagerState.current as any).counterAttackRender = null;
@@ -6794,7 +6908,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const activeConstruct = constructSystemState.current.activeConstruct;
       const isConstructInvulnerable = ConstructSystem.isInvulnerable(
         constructSystemState.current,
-        Date.now()
+        frameTime
       );
 
       if (activeConstruct !== 'NONE') {
@@ -6823,8 +6937,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
         if (orbOpacity > 0) {
           ctx.save();
           ctx.globalAlpha = orbOpacity;
-          drawOrb(visualBlackOrb, false);
-          drawOrb(visualWhiteOrb, true);
+          drawOrb(blackOrb, false);
+          drawOrb(whiteOrb, true);
           ctx.restore();
         }
       }
@@ -6845,14 +6959,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Glow around white orb
           ctx.beginPath();
-          ctx.arc(visualWhiteOrb.x, visualWhiteOrb.y, visualWhiteOrb.radius + 5, 0, Math.PI * 2);
+          ctx.arc(whiteOrb.x, whiteOrb.y, whiteOrb.radius + 5, 0, Math.PI * 2);
           ctx.strokeStyle = "#00F0FF";
           ctx.lineWidth = 3;
           ctx.stroke();
 
           // Glow around black orb
           ctx.beginPath();
-          ctx.arc(visualBlackOrb.x, visualBlackOrb.y, visualBlackOrb.radius + 5, 0, Math.PI * 2);
+          ctx.arc(blackOrb.x, blackOrb.y, blackOrb.radius + 5, 0, Math.PI * 2);
           ctx.stroke();
 
           ctx.restore();
@@ -6876,15 +6990,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // --- CONSTRUCT INVINCIBILITY VFX - Requirements 6.6 ---
       // Flashing effect when invulnerable after transformation or Second Chance
-      if (ConstructSystem.isInvulnerable(constructSystemState.current, Date.now())) {
+      if (ConstructSystem.isInvulnerable(constructSystemState.current, frameTime)) {
         const remainingInvincibility = ConstructSystem.getRemainingInvincibility(
           constructSystemState.current,
-          Date.now()
+          frameTime
         );
 
         // Pulsing magenta glow around orbs
-        const pulseIntensity = 15 + 10 * Math.sin(Date.now() * 0.02);
-        const flashOpacity = 0.3 + 0.4 * Math.sin(Date.now() * 0.015);
+        const pulseIntensity = 15 + 10 * Math.sin(frameTime * 0.02);
+        const flashOpacity = 0.3 + 0.4 * Math.sin(frameTime * 0.015);
 
         ctx.save();
         ctx.shadowColor = "#FF00FF";
@@ -6907,7 +7021,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         // Show active construct indicator
         if (constructSystemState.current.activeConstruct !== 'NONE') {
-          ctx.fillStyle = `rgba(255, 0, 255, ${0.5 + 0.3 * Math.sin(Date.now() * 0.01)})`;
+          ctx.fillStyle = `rgba(255, 0, 255, ${0.5 + 0.3 * Math.sin(frameTime * 0.01)})`;
           ctx.font = "bold 20px monospace";
           ctx.textAlign = "center";
           ctx.fillText(
@@ -6928,6 +7042,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       if (SecondChanceVFX.isSecondChanceVFXActive(secondChanceVFXState.current)) {
         SecondChanceVFX.renderSecondChanceVFX(ctx, secondChanceVFXState.current);
       }
+
+      // PERF: Restore original orb Y positions after rendering
+      whiteOrb.y = _savedWhiteOrbY;
+      blackOrb.y = _savedBlackOrbY;
 
 
       // Draw Visual Effects - Requirements 3.4, 3.9
@@ -7059,7 +7177,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
       // Warning text during warning phase
       if (fluxOverloadState.current.isWarningPhase) {
-        SpiritRenderer.drawFluxOverloadWarning(ctx, width, Date.now());
+        SpiritRenderer.drawFluxOverloadWarning(ctx, width, frameTime);
       }
 
       // --- PHASE DASH VFX RENDERING ---
@@ -7127,15 +7245,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
         };
 
         // Create obstacle info for tutorial system
-        const tutorialObstacles: InteractiveTutorial.TutorialObstacle[] = obstacles.current.map(obs => ({
-          id: `obs-${obs.x}-${obs.y}`,
-          x: obs.x,
-          y: obs.y,
-          lane: obs.y < height / 2 ? 'top' : 'bottom',
-          polarity: (obs as any).polarity === 'white' ? 'white' : 'black',
-          passed: obs.x < width / 8,
-          requiresSwap: (obs as any).requiresSwap, // Pass the flag from the pattern
-        }));
+        // PERF: Reuse array by truncating and filling in-place
+        const tutorialObstacles: InteractiveTutorial.TutorialObstacle[] = [];
+        for (let i = 0; i < obstacles.current.length; i++) {
+          const obs = obstacles.current[i];
+          tutorialObstacles.push({
+            id: `obs-${obs.x}-${obs.y}`,
+            x: obs.x,
+            y: obs.y,
+            lane: obs.y < height / 2 ? 'top' : 'bottom',
+            polarity: (obs as any).polarity === 'white' ? 'white' : 'black',
+            passed: obs.x < width / 8,
+            requiresSwap: (obs as any).requiresSwap,
+          });
+        }
 
         // Get previous phase for phase change detection
         const prevPhase = tutorialState.current.currentPhase;
@@ -7229,7 +7352,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             type: 'safe',
             value: 1,
             collected: false,
-            spawnTime: Date.now(),
+            spawnTime: frameTime,
             movement: movement,
             isBonus: false
           };
@@ -7244,7 +7367,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             tutorialState.current = {
               ...tutorialState.current,
               inFinishMode: true,
-              finishModeStartTime: Date.now(),
+              finishModeStartTime: frameTime,
             };
             // Victory sound
             AudioSystem.playNewHighScore();
@@ -7253,7 +7376,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Finish mode animation
           if (tutorialState.current.inFinishMode) {
-            const finishElapsed = Date.now() - tutorialState.current.finishModeStartTime;
+            const finishElapsed = frameTime - tutorialState.current.finishModeStartTime;
             const FINISH_DURATION = 1500; // 1.5 seconds
 
             if (finishElapsed < FINISH_DURATION) {
@@ -7341,7 +7464,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           if (isIntroPhase) {
             // Use modular intro renderer
             const introState = TutorialIntroRenderer.calculateIntroState(
-              tutorialState.current.introStoryStartTime || Date.now(),
+              tutorialState.current.introStoryStartTime || frameTime,
               msg.text
             );
             if (introState) {
@@ -7485,7 +7608,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           );
 
           // Mission System: Emit final STAY_LANE event on game end - Requirements 7.5
-          const finalLaneStayDuration = Date.now() - laneStayStartTime.current;
+          const finalLaneStayDuration = frameTime - laneStayStartTime.current;
           if (finalLaneStayDuration > 0) {
             onMissionEvent?.({ type: 'STAY_LANE', value: finalLaneStayDuration });
           }

@@ -98,9 +98,13 @@ export function generateOscillationProps(
   };
 }
 
+// PERF: Pre-allocated result object for oscillation transform
+const _oscResult = { scale: 1.0, verticalOffset: 0 };
+
 /**
  * Calculate oscillation transform for rendering
  * Creates a smooth, flowing vertical motion for oscillating blocks
+ * PERF: Returns pre-allocated object - do NOT store reference
  */
 export function calculateOscillationTransform(
   obs: Obstacle,
@@ -112,7 +116,9 @@ export function calculateOscillationTransform(
   verticalOffset: number;
 } {
   if (!obs.shouldOscillate || !obs.oscillationIntensity) {
-    return { scale: 1.0, verticalOffset: 0 };
+    _oscResult.scale = 1.0;
+    _oscResult.verticalOffset = 0;
+    return _oscResult;
   }
 
   const phase = obs.oscillationPhase || 0;
@@ -130,7 +136,9 @@ export function calculateOscillationTransform(
   const rawBob = Math.sin(bobPhase);
   const verticalOffset = rawBob * config.oscillationMaxBob * intensity;
 
-  return { scale, verticalOffset };
+  _oscResult.scale = scale;
+  _oscResult.verticalOffset = verticalOffset;
+  return _oscResult;
 }
 
 // ============================================================================
@@ -403,7 +411,7 @@ export function spawnPatternObstaclePair(
 // ============================================================================
 
 /**
- * Update block positions
+ * Update block positions - PERF: for-loop instead of forEach
  */
 export function updateBlockPositions(
   obstacles: Obstacle[],
@@ -412,9 +420,11 @@ export function updateBlockPositions(
   constructSpeedMultiplier: number,
   dashSpeedMultiplier: number
 ): void {
-  obstacles.forEach((obs) => {
+  const combinedSpeed = speed * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier;
+  for (let i = 0; i < obstacles.length; i++) {
+    const obs = obstacles[i];
     // Horizontal movement
-    obs.x -= speed * slowMotionMultiplier * constructSpeedMultiplier * dashSpeedMultiplier;
+    obs.x -= combinedSpeed;
 
     // Vertical animation (entry)
     if (Math.abs(obs.y - obs.targetY) > 0.5) {
@@ -422,23 +432,31 @@ export function updateBlockPositions(
     } else {
       obs.y = obs.targetY;
     }
-  });
+  }
 }
 
 /**
- * Filter out off-screen blocks
+ * Filter out off-screen blocks - PERF: In-place compaction, no new array
  */
 export function filterOffscreenBlocks(
   obstacles: Obstacle[],
   pool?: ObjectPool.ObjectPool<ObjectPool.PooledEngineObstacle>
 ): Obstacle[] {
-  return obstacles.filter((obs) => {
+  let writeIdx = 0;
+  for (let i = 0; i < obstacles.length; i++) {
+    const obs = obstacles[i];
     const keep = obs.x + obs.width > -100;
-    if (!keep && pool) {
+    if (keep) {
+      if (writeIdx !== i) {
+        obstacles[writeIdx] = obs;
+      }
+      writeIdx++;
+    } else if (pool) {
       pool.release(obs as ObjectPool.PooledEngineObstacle);
     }
-    return keep;
-  });
+  }
+  obstacles.length = writeIdx;
+  return obstacles;
 }
 
 // ============================================================================
@@ -532,12 +550,14 @@ export function renderBlock(
 }
 
 /**
- * Render all blocks
+ * Render all blocks - PERF: for-loop instead of forEach
  */
 export function renderAllBlocks(
   obstacles: Obstacle[],
   renderCtx: RenderContext,
   config: BlockSystemConfig = DEFAULT_BLOCK_CONFIG
 ): void {
-  obstacles.forEach((obs) => renderBlock(obs, renderCtx, config));
+  for (let i = 0; i < obstacles.length; i++) {
+    renderBlock(obstacles[i], renderCtx, config);
+  }
 }

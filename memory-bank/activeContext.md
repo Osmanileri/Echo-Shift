@@ -2,6 +2,76 @@
 
 ## Mevcut Odak
 
+- **Comprehensive Performance Optimization for Mobile 60fps** - TAMAMLANDI ✅
+  - Hedef: App Store deployment için mobilde donma/takılma olmadan 60fps
+  - **32 Issue Tespit Edildi** (12 CRITICAL, 11 HIGH, 9 MEDIUM)
+  - **Uygulanan Optimizasyonlar:**
+    - `systems/performanceUtils.ts`: Pre-allocated reusable objects + utility functions modülü
+    - **EnemyManager.ts** (6 optimizasyon):
+      - `updateEnemy()`: Spread-copy → in-place mutation (3-5 spread kopyası/frame eliminasyonu)
+      - `updateSpawnScheduler()`: Spread-copy → in-place mutation + pre-allocated result object
+      - `spawnDart()`, `resetDart()`, `counterDart()`, `applyKnockback()`: Spread → in-place
+      - `updateEnemyAnimation()`: Trail `.map().filter()` → in-place swap-and-truncate loop
+      - Trail rendering: Per-trail `createRadialGradient` → solid color circles
+      - 3x `Date.now()` → cached `_cachedDrawTime` + `setDrawTime()` API
+    - **blockSystem.ts** (4 optimizasyon):
+      - `calculateOscillationTransform()`: New object → pre-allocated `_oscResult`
+      - `filterOffscreenBlocks()`: `.filter()` new array → in-place compaction
+      - `updateBlockPositions()`: `forEach` → `for` loop + pre-computed `combinedSpeed`
+      - `renderAllBlocks()`: `forEach` → `for` loop
+    - **particleSystem.ts** (3 optimizasyon):
+      - `update()`: `forEach` → `for` loop with `continue`
+      - `draw()`: `forEach` → `for` loop with `continue`
+      - `getParticleCount()`: `filter().length` → direct counting `for` loop
+    - **GlitchVFX.ts** (5 optimizasyon):
+      - `generateJitterOffset()`: New object → pre-allocated `_jitterResult`
+      - `generateDistortedPolygon()`: New array + N objects → pre-allocated buffer
+      - `getConnectorRenderOptions()`: New object → pre-allocated `_connectorOpts`
+      - `renderSinusTunnel()`: Step sizes artırıldı (5→8, 2→3/4) - ~40% daha az iterasyon
+      - `renderFieryMidline()`: Step sizes artırıldı (10→15, 20→30)
+      - `renderQuantumLockAmbiance()`: Scanline step 4→6
+    - **GameEngine.tsx** (5 optimizasyon):
+      - `visualWhiteOrb/visualBlackOrb` spread copies → temp-modify-restore pattern
+      - **32x `Date.now()` → `frameTime`** (rendering path boyunca)
+      - Legacy particle `createRadialGradient` per particle → solid fill
+      - Legacy particle per-particle `save/restore` → single outer save/restore
+      - Obstacle filtering: `.filter()` new array → in-place compaction
+      - `EnemyManager.setDrawTime(frameTime)` called before enemy rendering
+  - **Test**: 720/747 (baseline korundu, 27 pre-existing fail)
+
+- **Quantum Lock Wave Pattern Variety & VFX Polish** - TAMAMLANDI ✅
+  - **5 Farklı Dalga Deseni**: Her QL aktivasyonunda rastgele seçim
+    - `sine`: Klasik düz sinüs dalgası (orijinal davranış)
+    - `zigzag`: Keskin açılı zigzag — üçgen dalga
+    - `doubleSine`: Çift frekanslı karmaşık hareket (birincil + 2.3x harmonik)
+    - `staircase`: Basamaklı plato deseni (4 seviye, %70 stepped + %30 smooth)
+    - `pulse`: Dar keskin tepeler, geniş düz vadiler (sin^5 spike)
+  - **Desen-Spesifik Renkler**: Her desen kendi accent rengine sahip
+    - sine: #00FF00 (matrix yeşil), zigzag: #00FFFF (cyan), doubleSine: #FF00FF (magenta)
+    - staircase: #FFAA00 (amber), pulse: #FF3366 (hot pink)
+  - **Geliştirilmiş Giriş Animasyonu (Charging)**:
+    - Warning fazında desen renk ipucu (sağ kenarda faint accent çizgi)
+    - Snake entry'de ease-out cubic (yavaşlayarak gelen yılan)
+    - Snake başında dönen enerji spark parçacıkları
+    - Desen ismi announce (fade in/out text)
+  - **Geliştirilmiş Aktif Faz VFX**:
+    - Dalga boyunca yüzen enerji parçacıkları (ambient particles)
+    - Desen-spesifik accent rengiyle parçacık rendering
+  - **Geliştirilmiş Çıkış Animasyonu (Exiting)**:
+    - Ease-in cubic (hızlanarak çıkan kuyruk)
+    - Kuyruk ardında dissolve parçacıkları
+  - **UI İyileştirmeleri**:
+    - Timer bar desen accent rengiyle glow
+    - HUD'da desen Türkçe ismi gösterimi
+    - Wave path shard'ları desen accent rengiyle gradient
+  - **Bonus**: constants.ts'deki duplicate warningThreshold/flattenThreshold düzeltildi
+  - **Test**: 720/747 (baseline korundu, 27 pre-existing fail)
+
+- **Quantum Lock Exit Block Reset Fix** - TAMAMLANDI ✅
+  - Sorun: QL çıkışında bloklar 1-2 saniye gecikmeli reset oluyordu
+  - Çözüm: Obstacle clearing `ghost→inactive`'dan `exiting→ghost`'a taşındı
+  - Ghost→inactive artık sadece grace period ayarlıyor
+
 - **GameEngine Code Review & Bug Fixes (12 Fix)** - TAMAMLANDI ✅
   - 15 sorun tespit edildi, 3'ü non-issue olarak dismiss edildi, 12'si uygulandı
   - **Kritik Düzeltmeler:**

@@ -7,7 +7,7 @@
  */
 
 import { GLITCH_CONFIG } from '../constants';
-import { GlitchModeState, GlitchPhase, GlitchShard, InputState, Obstacle, ShiftProtocolState } from '../types';
+import { GlitchModeState, GlitchPhase, GlitchShard, InputState, Obstacle, ShiftProtocolState, WavePatternType } from '../types';
 import { ResonanceState } from './resonanceSystem';
 
 // ============================================================================
@@ -25,6 +25,7 @@ export function createInitialGlitchModeState(): GlitchModeState {
     duration: GLITCH_CONFIG.duration, // 8000ms - Requirements 7.1
     originalConnectorLength: 0,
     waveOffset: 0,
+    wavePattern: 'sine',
     phase: 'inactive',
     ghostModeEndTime: 0,
     pausedOverdriveTime: 0,
@@ -32,6 +33,15 @@ export function createInitialGlitchModeState(): GlitchModeState {
     midlineHits: 0,
     lastMidlineHitTime: 0,
   };
+}
+
+/**
+ * Selects a random wave pattern for Quantum Lock variety
+ * Each activation feels fresh with different wave movement
+ */
+export function selectRandomWavePattern(): WavePatternType {
+  const patterns = GLITCH_CONFIG.wavePatterns;
+  return patterns[Math.floor(Math.random() * patterns.length)] as WavePatternType;
 }
 
 /**
@@ -50,6 +60,7 @@ export function activateQuantumLock(
     duration: GLITCH_CONFIG.chargingDuration, // Start with charging duration
     originalConnectorLength: currentConnectorLength,
     waveOffset: 0,
+    wavePattern: selectRandomWavePattern(), // Random pattern each activation
     phase: 'charging', // Start in charging phase
     ghostModeEndTime: 0,
     midlineHits: 0,
@@ -596,37 +607,94 @@ export function isConnectorLocked(state: GlitchModeState): boolean {
 // ============================================================================
 
 /**
- * Calculates the Y position on the sinusoidal wave at a given X position
+ * Calculates the Y position on the wave at a given X position
  * Requirements 5.1: Replace normal midline with sinusoidal wave
  * 
- * The wave follows the formula: y = centerY + amplitude * sin((x + horizontalOffset) * frequency)
- * The horizontalOffset increases over time, making the wave appear to move towards the player.
+ * Supports multiple wave patterns for variety:
+ * - sine: Classic smooth sinusoidal wave
+ * - zigzag: Sharp angular zigzag pattern
+ * - doubleSine: Two overlapping frequencies for complex motion
+ * - staircase: Stepped pattern with smooth transitions
+ * - pulse: Mostly flat with sharp narrow peaks
  * 
  * @param x - X position on the canvas
- * @param offset - Wave offset for animation (increases over time) - controls horizontal movement
+ * @param offset - Wave offset for animation (increases over time)
  * @param amplitude - Wave amplitude in pixels
  * @param centerY - Center Y position of the wave
+ * @param pattern - Wave pattern type (defaults to 'sine')
  * @returns Y position on the wave at the given X
  */
 export function calculateWaveY(
   x: number,
   offset: number,
   amplitude: number,
-  centerY: number
+  centerY: number,
+  pattern: WavePatternType = 'sine'
 ): number {
-  // Frequency determines how many wave cycles fit across the screen
-  // Lower frequency = wider, smoother waves
-  const frequency = 0.008; // Wider waves for smoother appearance
+  // Shared parameters
+  const frequency = 0.008;
+  const horizontalWaveSpeed = 20;
+  const phase = (x + offset * horizontalWaveSpeed) * frequency;
 
-  // Horizontal offset makes the wave appear to move towards the player (left)
-  // Lower multiplier = smoother, more gradual movement
-  const horizontalWaveSpeed = 20; // Reduced for smoother flow
-  const horizontalOffset = offset * horizontalWaveSpeed;
+  let waveValue: number; // -1 to 1 range
 
-  // Calculate sinusoidal Y position with smooth horizontal wave movement
-  const waveY = centerY + amplitude * Math.sin((x + horizontalOffset) * frequency);
+  switch (pattern) {
+    case 'zigzag': {
+      // Sharp linear zigzag — triangle wave
+      // Creates angular peaks instead of smooth curves
+      const normalized = (phase % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      // Triangle wave: linear ramp up then down
+      if (normalized < Math.PI) {
+        waveValue = -1 + (2 * normalized / Math.PI);
+      } else {
+        waveValue = 1 - (2 * (normalized - Math.PI) / Math.PI);
+      }
+      break;
+    }
 
-  return waveY;
+    case 'doubleSine': {
+      // Two overlapping frequencies — creates a wobble-within-wobble
+      // Primary wave + secondary harmonic at 2.3x frequency, 40% amplitude
+      const primary = Math.sin(phase);
+      const secondary = Math.sin(phase * 2.3) * 0.4;
+      waveValue = (primary + secondary) / 1.4; // Normalize to ~[-1, 1]
+      break;
+    }
+
+    case 'staircase': {
+      // Stepped pattern — flat plateaus with smooth transitions between them
+      // Creates 4 distinct levels that the wave "clicks" between
+      const steps = 4;
+      const rawSin = Math.sin(phase);
+      // Quantize to step levels, then smooth slightly
+      const stepped = Math.round(rawSin * steps) / steps;
+      // Blend 70% stepped + 30% smooth for playability
+      waveValue = stepped * 0.7 + rawSin * 0.3;
+      break;
+    }
+
+    case 'pulse': {
+      // Narrow sharp peaks with flat valleys — spike dodge pattern
+      // Uses sin^5 to create thin spikes that test reflexes
+      const sinVal = Math.sin(phase);
+      // Odd power preserves sign, creates narrow peaks
+      waveValue = Math.sign(sinVal) * Math.pow(Math.abs(sinVal), 5);
+      // Boost amplitude to compensate for narrowing
+      waveValue *= 1.6;
+      // Clamp to valid range
+      waveValue = Math.max(-1, Math.min(1, waveValue));
+      break;
+    }
+
+    case 'sine':
+    default: {
+      // Classic smooth sine wave (original behavior)
+      waveValue = Math.sin(phase);
+      break;
+    }
+  }
+
+  return centerY + amplitude * waveValue;
 }
 
 /**
@@ -698,7 +766,8 @@ export function generateWavePathShards(
   waveOffset: number,
   canvasWidth: number,
   centerY: number,
-  amplitude: number
+  amplitude: number,
+  pattern: WavePatternType = 'sine'
 ): WavePathShard[] {
   const shards: WavePathShard[] = [];
 
@@ -710,7 +779,7 @@ export function generateWavePathShards(
     // Start from right edge and extend off-screen to the right
     const x = canvasWidth + (i * spacing);
     // Calculate Y position on the wave at this X
-    const y = calculateWaveY(x, waveOffset, amplitude, centerY);
+    const y = calculateWaveY(x, waveOffset, amplitude, centerY, pattern);
 
     shards.push({
       x,
@@ -741,7 +810,8 @@ export function updateWavePathShards(
   amplitude: number,
   centerY: number,
   gameSpeed: number = 5,
-  canvasWidth: number = 400
+  canvasWidth: number = 400,
+  pattern: WavePatternType = 'sine'
 ): WavePathShard[] {
   // Diamond movement speed - 80% of game speed
   const diamondSpeed = gameSpeed * 0.8;
@@ -767,7 +837,7 @@ export function updateWavePathShards(
       x: newX,
       collected,
       // Recalculate Y position based on new wave offset and new X
-      y: calculateWaveY(newX, waveOffset, amplitude, centerY),
+      y: calculateWaveY(newX, waveOffset, amplitude, centerY, pattern),
     };
   });
 }

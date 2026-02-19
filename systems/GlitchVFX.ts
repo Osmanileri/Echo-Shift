@@ -13,7 +13,7 @@
  */
 
 import { GLITCH_CONFIG } from '../constants';
-import type { GlitchModeState, GlitchPhase, GlitchShard } from '../types';
+import type { GlitchModeState, GlitchPhase, GlitchShard, WavePatternType } from '../types';
 import { calculateWaveY, getGhostModeOpacity, getGlitchProgress } from './glitchSystem';
 
 // ============================================================================
@@ -77,50 +77,63 @@ export function getFlickerColor(colorTimer: number): string {
   return GLITCH_CONFIG.colors[colorIndex];
 }
 
+// PERF: Pre-allocated jitter result object
+const _jitterResult = { x: 0, y: 0 };
+
 /**
  * Generates jitter offset for the current frame
  * Requirements 1.1: ±5 pixels random offset per frame
+ * PERF: Returns pre-allocated object - do NOT store reference
  * 
- * @returns Object with x and y jitter offsets
+ * @returns Pre-allocated object with x and y jitter offsets
  */
 export function generateJitterOffset(): { x: number; y: number } {
   const range = GLITCH_VFX_CONFIG.jitterRange;
-  return {
-    x: (Math.random() * 2 - 1) * range,
-    y: (Math.random() * 2 - 1) * range,
-  };
+  _jitterResult.x = (Math.random() * 2 - 1) * range;
+  _jitterResult.y = (Math.random() * 2 - 1) * range;
+  return _jitterResult;
 }
+
+// PERF: Pre-allocated polygon vertex buffer (max 12 vertices)
+const _polygonVertices: Array<{ x: number; y: number }> = [];
+for (let _i = 0; _i < 12; _i++) {
+  _polygonVertices.push({ x: 0, y: 0 });
+}
+let _polygonVertexCount = 0;
 
 /**
  * Generates distorted polygon vertices
  * Requirements 1.3: Distorted polygon shape with random vertex offsets
+ * PERF: Uses pre-allocated buffer - do NOT store reference
  * 
  * @param centerX - Center X position
  * @param centerY - Center Y position
  * @param radius - Base radius of the polygon
- * @returns Array of vertex positions
+ * @returns Pre-allocated array of vertex positions (use _polygonVertexCount for length)
  */
 export function generateDistortedPolygon(
   centerX: number,
   centerY: number,
   radius: number
 ): Array<{ x: number; y: number }> {
-  const vertices: Array<{ x: number; y: number }> = [];
   const numVertices = GLITCH_VFX_CONFIG.polygonVertices;
   const offsetRange = GLITCH_VFX_CONFIG.vertexOffsetRange;
+  _polygonVertexCount = numVertices;
 
   for (let i = 0; i < numVertices; i++) {
     const angle = (i / numVertices) * Math.PI * 2;
     const distortion = (Math.random() * 2 - 1) * offsetRange;
     const r = radius + distortion;
-
-    vertices.push({
-      x: centerX + Math.cos(angle) * r,
-      y: centerY + Math.sin(angle) * r,
-    });
+    _polygonVertices[i].x = centerX + Math.cos(angle) * r;
+    _polygonVertices[i].y = centerY + Math.sin(angle) * r;
   }
 
-  return vertices;
+  return _polygonVertices;
+}
+
+/** Get the actual vertex count from the last generateDistortedPolygon call */
+export function getPolygonVertexCount(): number {
+  return _polygonVertexCount;
 }
 
 /**
@@ -318,6 +331,7 @@ export function renderGlitchShard(
   // Generate and draw distorted polygon - Requirements 1.3
   const radius = Math.max(shard.width, shard.height) / 2;
   const vertices = generateDistortedPolygon(renderX, renderY, radius);
+  const vertexCount = getPolygonVertexCount();
 
   ctx.fillStyle = color;
   ctx.strokeStyle = '#FFFFFF';
@@ -325,7 +339,7 @@ export function renderGlitchShard(
 
   ctx.beginPath();
   ctx.moveTo(vertices[0].x, vertices[0].y);
-  for (let i = 1; i < vertices.length; i++) {
+  for (let i = 1; i < vertexCount; i++) {
     ctx.lineTo(vertices[i].x, vertices[i].y);
   }
   ctx.closePath();
@@ -358,6 +372,14 @@ export function renderGlitchShard(
 // ============================================================================
 
 /**
+ * Gets the accent color for the current wave pattern
+ * Each pattern has a unique color identity
+ */
+export function getPatternAccentColor(pattern: WavePatternType): string {
+  return (GLITCH_CONFIG.patternAccentColors as Record<string, string>)[pattern] || '#00FF00';
+}
+
+/**
  * Renders the sinusoidal tunnel (wave midline) during Quantum Lock
  * Requirements 5.3: Matrix green color (#00FF00)
  * Requirements 5.4: Glow effect (10px shadow blur)
@@ -368,35 +390,38 @@ export function renderGlitchShard(
  * @param height - Canvas height
  * @param offset - Wave animation offset
  * @param amplitude - Wave amplitude in pixels
+ * @param pattern - Wave pattern type
  */
 export function renderSinusTunnel(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   offset: number,
-  amplitude: number
+  amplitude: number,
+  pattern: WavePatternType = 'sine'
 ): void {
   const centerY = height / 2;
   const config = GLITCH_VFX_CONFIG;
+  const accentColor = getPatternAccentColor(pattern);
 
   ctx.save();
 
   // Draw guide path first (behind the main wave) - Requirements 5.5
   ctx.globalAlpha = config.guidePathOpacity;
-  ctx.fillStyle = config.tunnelColor;
+  ctx.fillStyle = accentColor;
 
   ctx.beginPath();
   ctx.moveTo(0, centerY + amplitude + config.guidePathWidth / 2);
 
-  // Draw top edge of guide path
-  for (let x = 0; x <= width; x += 5) {
-    const y = calculateWaveY(x, offset, amplitude, centerY);
+  // Draw top edge of guide path - PERF: increased step from 5 to 8
+  for (let x = 0; x <= width; x += 8) {
+    const y = calculateWaveY(x, offset, amplitude, centerY, pattern);
     ctx.lineTo(x, y - config.guidePathWidth / 2);
   }
 
-  // Draw bottom edge of guide path (reverse direction)
-  for (let x = width; x >= 0; x -= 5) {
-    const y = calculateWaveY(x, offset, amplitude, centerY);
+  // Draw bottom edge of guide path (reverse direction) - PERF: increased step from 5 to 8
+  for (let x = width; x >= 0; x -= 8) {
+    const y = calculateWaveY(x, offset, amplitude, centerY, pattern);
     ctx.lineTo(x, y + config.guidePathWidth / 2);
   }
 
@@ -405,14 +430,14 @@ export function renderSinusTunnel(
 
   // Draw main wave line with glow - Requirements 5.3, 5.4
   ctx.globalAlpha = 1.0;
-  ctx.strokeStyle = config.tunnelColor;
+  ctx.strokeStyle = accentColor;
   ctx.lineWidth = 3;
-  ctx.shadowColor = config.tunnelColor;
+  ctx.shadowColor = accentColor;
   ctx.shadowBlur = config.tunnelGlowBlur;
 
   ctx.beginPath();
-  for (let x = 0; x <= width; x += 2) {
-    const y = calculateWaveY(x, offset, amplitude, centerY);
+  for (let x = 0; x <= width; x += 3) {
+    const y = calculateWaveY(x, offset, amplitude, centerY, pattern);
     if (x === 0) {
       ctx.moveTo(x, y);
     } else {
@@ -421,14 +446,14 @@ export function renderSinusTunnel(
   }
   ctx.stroke();
 
-  // Draw secondary glow line (thinner, brighter)
+  // Draw secondary glow line (thinner, brighter) - PERF: increased step from 2 to 4
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 1;
   ctx.shadowBlur = 5;
 
   ctx.beginPath();
-  for (let x = 0; x <= width; x += 2) {
-    const y = calculateWaveY(x, offset, amplitude, centerY);
+  for (let x = 0; x <= width; x += 4) {
+    const y = calculateWaveY(x, offset, amplitude, centerY, pattern);
     if (x === 0) {
       ctx.moveTo(x, y);
     } else {
@@ -663,43 +688,49 @@ export interface ConnectorRenderOptions {
   opacity: number;             // Requirements 7.5: Opacity (0.5 during Ghost Mode)
 }
 
+// PERF: Pre-allocated connector render options object
+const _connectorOpts: ConnectorRenderOptions = {
+  greenTint: false,
+  pulseScale: 1.0,
+  opacity: 1.0,
+};
+
 /**
  * Gets connector render options based on glitch mode state
  * Requirements 4.5: Green tint during Quantum Lock
  * Requirements 4.6: Pulse animation during Quantum Lock
  * Requirements 7.5: Semi-transparent during Ghost Mode
+ * PERF: Returns pre-allocated object - do NOT store reference
  * 
  * @param state - Current glitch mode state
- * @returns Connector render options
+ * @returns Pre-allocated connector render options
  */
 export function getConnectorRenderOptions(state: GlitchModeState): ConnectorRenderOptions {
   const config = GLITCH_VFX_CONFIG;
 
-  // Default options (normal gameplay)
-  const options: ConnectorRenderOptions = {
-    greenTint: false,
-    pulseScale: 1.0,
-    opacity: 1.0,
-  };
+  // PERF: Reset pre-allocated object instead of creating new one
+  _connectorOpts.greenTint = false;
+  _connectorOpts.pulseScale = 1.0;
+  _connectorOpts.opacity = 1.0;
 
   if (state.isActive) {
     // Requirements 4.5: Green tint during Quantum Lock
-    options.greenTint = true;
+    _connectorOpts.greenTint = true;
 
     // Requirements 4.6: Pulse animation
     const pulseTime = Date.now() * config.connectorPulseSpeed;
     const pulseValue = (Math.sin(pulseTime) + 1) / 2; // 0 to 1
-    options.pulseScale = config.connectorPulseMin +
+    _connectorOpts.pulseScale = config.connectorPulseMin +
       (config.connectorPulseMax - config.connectorPulseMin) * pulseValue;
   }
 
   if (state.phase === 'ghost') {
     // Requirements 7.5: Semi-transparent during Ghost Mode
-    options.opacity = getGhostModeOpacity(state, true);
-    options.greenTint = false; // No green tint during ghost mode
+    _connectorOpts.opacity = getGhostModeOpacity(state, true);
+    _connectorOpts.greenTint = false; // No green tint during ghost mode
   }
 
-  return options;
+  return _connectorOpts;
 }
 
 /**
@@ -774,7 +805,7 @@ export function renderGlitchVFX(
     // Render sinus tunnel
     const amplitude = GLITCH_CONFIG.waveAmplitude * getWaveAmplitudeMultiplier(state.phase, progress);
     if (amplitude > 0) {
-      renderSinusTunnel(ctx, width, height, state.waveOffset, amplitude);
+      renderSinusTunnel(ctx, width, height, state.waveOffset, amplitude, state.wavePattern);
     }
 
     // Render static noise
@@ -844,7 +875,8 @@ export function renderDynamicWave(
   if (headX < -200 && tailX < 0) return;
 
   const waveAmplitude = 120; // Full amplitude
-  const waveColor = '#00FF00'; // Matrix Green
+  const accentColor = getPatternAccentColor(state.wavePattern);
+  const pattern = state.wavePattern;
 
   ctx.save();
   ctx.beginPath();
@@ -856,31 +888,30 @@ export function renderDynamicWave(
   if (endX - startX <= 0 && headX > width) {
     // Setup for potential offscreen head rendering if needed, 
     // but if segment is invisible and head is far, return.
-    // Special handling: if head is just arriving, we might need to draw it even if path is short
   }
 
   // === 1. Draw The Wave Body (The "Snake") ===
-  // We'll use a path for the sine wave
-  for (let x = startX; x <= endX; x += 5) { // Higher resolution for smoothness
+  for (let x = startX; x <= endX; x += 5) {
     const y = calculateWaveY(
       x,
       state.waveOffset,
       waveAmplitude,
-      height / 2
+      height / 2,
+      pattern
     );
     if (x === startX) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
 
-  // Visual Styling: Neon Green "Laser" look
-  ctx.strokeStyle = waveColor;
+  // Visual Styling: Pattern-specific accent color with neon look
+  ctx.strokeStyle = accentColor;
   ctx.lineWidth = 8;
-  ctx.shadowColor = waveColor;
+  ctx.shadowColor = accentColor;
   ctx.shadowBlur = 25;
   ctx.lineCap = 'round';
   ctx.stroke();
 
-  // Inner core (white/bright green)
+  // Inner core (white/bright)
   ctx.strokeStyle = '#CCFFCC';
   ctx.lineWidth = 3;
   ctx.shadowBlur = 5;
@@ -890,13 +921,11 @@ export function renderDynamicWave(
   // Only draw if head is within reasonable bounds (even slightly offscreen for entry)
   if (headX >= -100 && headX <= width + 100) {
     const centerY = height / 2;
-    const headY = calculateWaveY(headX, state.waveOffset, waveAmplitude, centerY);
+    const headY = calculateWaveY(headX, state.waveOffset, waveAmplitude, centerY, pattern);
 
     // Calculate Wave Derivative/Slope to rotate the head
-    // y = A * sin(kx + w) -> y' = A * k * cos(kx + w)
-    // Or simple numeric derivative:
     const prevX = headX - 5;
-    const prevY = calculateWaveY(prevX, state.waveOffset, waveAmplitude, centerY);
+    const prevY = calculateWaveY(prevX, state.waveOffset, waveAmplitude, centerY, pattern);
     const angle = Math.atan2(headY - prevY, headX - prevX);
 
     ctx.translate(headX, headY);
@@ -915,9 +944,9 @@ export function renderDynamicWave(
 
     ctx.fillStyle = '#003300';
     ctx.fill();
-    ctx.strokeStyle = '#00FF00';
+    ctx.strokeStyle = accentColor;
     ctx.lineWidth = 2;
-    ctx.shadowColor = '#00FF00';
+    ctx.shadowColor = accentColor;
     ctx.shadowBlur = 15;
     ctx.stroke();
 
@@ -976,9 +1005,10 @@ export function renderFieryMidline(
   // We want a line that ripples dangerously
 
   // Layer 1: The Core (Hot White/Yellow) - Fast, tight ripples
+  // PERF: increased step from 10 to 15
   ctx.beginPath();
   ctx.moveTo(0, y);
-  for (let x = 0; x <= width; x += 10) {
+  for (let x = 0; x <= width; x += 15) {
     // Mix of 3 sine waves for "noise" look
     const noise = Math.sin(x * 0.05 + time * 5) * Math.sin(x * 0.01 - time * 2) * 2;
     const ripples = Math.sin(x * 0.2 + time * 10) * 3;
@@ -992,9 +1022,10 @@ export function renderFieryMidline(
   ctx.stroke();
 
   // Layer 2: The Outer Flame (Red/Magenta) - Slower, wider swells
+  // PERF: increased step from 20 to 30
   ctx.beginPath();
   ctx.moveTo(0, y);
-  for (let x = 0; x <= width; x += 20) {
+  for (let x = 0; x <= width; x += 30) {
     // Wider waves
     const swell = Math.sin(x * 0.02 + time * 2) * 10 * intensity; // Large slow swell
     const jitter = (Math.random() - 0.5) * 4 * intensity; // Slight static
@@ -1155,10 +1186,10 @@ export function renderQuantumLockAmbiance(
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
-  // Scanlines (Subtle)
+  // Scanlines (Subtle) - PERF: increased step from 4 to 6, reduced fillRect calls
   if (state.isActive) {
     ctx.fillStyle = 'rgba(0, 255, 0, 0.05)';
-    for (let y = 0; y < height; y += 4) {
+    for (let y = 0; y < height; y += 6) {
       ctx.fillRect(0, y, width, 1);
     }
   }

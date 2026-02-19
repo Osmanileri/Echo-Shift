@@ -6,6 +6,9 @@
 - **10 spec** tamamlandı
 - **Dokümantasyon** güncel
 - **Storage key'ler** standardize
+- **Performance Optimization for Mobile 60fps** tamamlandı
+- **Quantum Lock Wave Pattern Variety & VFX Polish** tamamlandı
+- **Quantum Lock Exit Block Reset Fix** tamamlandı
 - **GameEngine Code Review & 12 Bug Fix** tamamlandı
 - **Finish Approach System & Restore Fix** tamamlandı
 - **Pro-Grade Progression & Pacing** tamamlandı
@@ -17,7 +20,31 @@
 
 ## Tamamlanan Spec'ler
 
-### 0. Pro-Grade Progression & Pacing System ✅ (YENİ)
+### 0-A. Comprehensive Performance Optimization for Mobile 60fps ✅ (YENİ)
+
+**Amaç**: App Store mobil dağıtımda 60fps akıcı oyun deneyimi — GC baskısı, gereksiz allocations ve yavaş syscall'lar elimine edildi.
+
+**Yeni Modül**:
+- `systems/performanceUtils.ts`: Pre-allocated reusable nesneler ve yardımcı fonksiyonlar
+  - `_jitterResult`, `_oscillationResult`, `_polygonBuffer`, `_connectorOptions`
+  - `compactInPlace()`, `countWhere()`, `forEachWhere()`
+  - `setFrameTime()` / `getFrameTime()` — frame-level Date.now() cache
+
+**Optimize Edilen Dosyalar (6 dosya, 28+ değişiklik)**:
+
+| Dosya | Değişiklik | Kazanım |
+|-------|------------|---------|
+| EnemyManager.ts | 6 değişiklik: spread-copy → in-place mutation, trail swap-and-truncate, gradient → solid+shadowBlur, `_cachedDrawTime` | ~8 allocation/frame → 0 |
+| blockSystem.ts | 4 değişiklik: pre-allocated `_oscResult`, in-place compaction, `for` loops | ~N allocation/frame → 0 (N=block count) |
+| particleSystem.ts | 3 değişiklik: `for`+`continue`, direct count loop | `filter().length` allocation → 0 |
+| GlitchVFX.ts | 5 değişiklik: pre-allocated jitter/polygon/connector, step size ↑ ~40% | ~100 obj/frame → 0 during QL mode |
+| GameEngine.tsx | 5 büyük değişiklik: temp-modify-restore orbs, **32× Date.now() → frameTime**, gradient → solid color, save/restore elimination, in-place obstacle compaction | 32 syscall/frame → 1, ~50 gradient/frame → 0 |
+| performanceUtils.ts | YENİ modül | Shared pre-allocated buffers |
+
+**Test Sonuçları**: 720 pass / 27 fail (aynı baseline) — sıfır regresyon
+**Build**: Sıfır TypeScript hatası
+
+### 0-B. Pro-Grade Progression & Pacing System ✅
 - Level Unlock Celebration System
   - `systems/LevelUnlockManager.ts`: 8-milestone unlock schedule with persistence
   - `components/UnlockModal/UnlockModal.tsx`: In-game visual demo celebration modal (actual game rendering: split bg, orbs+connector, obstacles)

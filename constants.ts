@@ -163,16 +163,12 @@ export const GLITCH_CONFIG = {
   waveSpeed: 0.025,               // Wave offset increment per frame (slower, heavier oscillation)
   waveAmplitude: 120,             // Sinusoidal wave amplitude (pixels)
 
-  // Phase Thresholds
+  // Phase Thresholds - Requirements 7.2, 7.3
   warningThreshold: 0.65,         // Start warning at 65%
   flattenThreshold: 0.70,         // Start exiting (Snake Out) at 70%
 
   // Ghost Mode - Requirements 7.4
   ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)
-
-  // Phase Thresholds - Requirements 7.2, 7.3
-  warningThreshold: 0.65,        // 65% - start exit warning
-  flattenThreshold: 0.70,        // 70% - start wave flattening
 
   // Shard Value - Requirements 6.5
   shardMultiplier: 2,            // 2x shard value during Quantum Lock
@@ -235,4 +231,25 @@ export const GLITCH_CONFIG = {
     hitCooldownMs: 500,            // Cooldown between registering hits (ms)
     burnEffectDuration: 300,       // Burn effect duration (ms)
   },
+
+  // Wave Pattern Variety - Random pattern selection each Quantum Lock activation
+  wavePatterns: ['sine', 'zigzag', 'doubleSine', 'staircase', 'pulse'] as const,
+
+  // Pattern-specific accent colors (used for wave glow tint)
+  patternAccentColors: {
+    sine:       '#00FF00',   // Classic matrix green
+    zigzag:     '#00FFFF',   // Cyan — sharp electric feel
+    doubleSine: '#FF00FF',   // Magenta — complex/exotic
+    staircase:  '#FFAA00',   // Amber — digital/mechanical
+    pulse:      '#FF3366',   // Hot pink — danger spikes
+  } as Record<string, string>,
+
+  // Pattern-specific display names (for UI indicator)
+  patternDisplayNames: {
+    sine:       'SİNÜS DALGASI',
+    zigzag:     'ZİGZAG KESİCİ',
+    doubleSine: 'ÇİFT SARMAL',
+    staircase:  'MERDİVEN AKIŞI',
+    pulse:      'NABIZ DARBESİ',
+  } as Record<string, string>,
 };

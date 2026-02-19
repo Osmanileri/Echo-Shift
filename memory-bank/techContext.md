@@ -11,6 +11,7 @@
 | PWA | vite-plugin-pwa (autoUpdate) |
 | Persistence | localStorage (güvenli adapter + fallback) |
 | Audio | Web Audio API (procedural sound generation) |
+| Mobile | Capacitor (iOS App Store deployment) |
 
 ## Çalıştırma
 
@@ -57,9 +58,26 @@ export const STORAGE_KEYS = {
 - Performans kritik kodlar `GameEngine.tsx` içinde
 - Backend yok, tüm kalıcılık localStorage ile
 - Audio dosya gerektirmez, procedural üretilir
+- **Performance-critical code MUST avoid per-frame allocations** (see systemPatterns.md > Performance Optimization Patterns)
+- Hot-path fonksiyonlar pre-allocated singleton nesneler döndürmeli (caller store etmemeli)
+- `Date.now()` frame başında 1 kez çağrılmalı, geri kalan tüm kullanımlar cache'den okunmalı
 
 ## Test Durumu
 
-- **364 test** geçiyor
+- **747 test** toplam (720 pass, 27 pre-existing fail)
+- 27 fail: 21 glitchSystem + 6 particleSystem (pre-existing, optimizasyon sonrası değişmedi)
 - Property-based testing (fast-check) kullanılıyor
 - Tüm ana sistemler test edilmiş
+
+## Performance Modülü
+
+| Dosya | Amaç |
+|-------|------|
+| `systems/performanceUtils.ts` | Pre-allocated buffers, in-place utils, frame time cache |
+
+### Optimize Edilmiş Dosyalar
+- `systems/EnemyManager.ts` — In-place mutation, trail optimization, cached draw time
+- `systems/blockSystem.ts` — Pre-allocated oscillation, in-place filtering, for-loops
+- `systems/particleSystem.ts` — For-loops, direct count (no filter allocation)
+- `systems/GlitchVFX.ts` — Pre-allocated jitter/polygon/connector, reduced iterations
+- `components/GameEngine.tsx` — Temp-modify-restore orbs, 32× Date.now()→frameTime, gradient removal, in-place obstacle compaction

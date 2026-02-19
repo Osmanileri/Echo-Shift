@@ -56,7 +56,35 @@
 // constants.ts
 export const RHYTHM_CONFIG = { toleranceMs: 200, streakForX2: 3, ... };
 export const SHIFT_CONFIG = { overdriveDuration: 10000, magnetRadius: 150, ... };
+export const GLITCH_CONFIG = { 
+  wavePatterns: ['sine', 'zigzag', 'doubleSine', 'staircase', 'pulse'],
+  patternAccentColors: { sine: '#00FF00', zigzag: '#00FFFF', ... },
+  patternDisplayNames: { sine: 'SİNÜS DALGASI', zigzag: 'ZİGZAG KESİCİ', ... },
+};
 ```
+
+## Quantum Lock Wave Pattern System
+
+```
+Activation → selectRandomWavePattern() → pattern stored in GlitchModeState.wavePattern
+                                              │
+                    ┌─────────────────────────┼────────────────────────────┐
+                    ▼                         ▼                           ▼
+            calculateWaveY()          renderSinusTunnel()          renderDynamicWave()
+            (5-pattern dispatch)      (pattern-aware color)        (pattern-aware color)
+                    │
+    ┌───────────────┼───────────────────┬────────────────────┐
+    ▼               ▼                   ▼                    ▼
+  sine          zigzag             doubleSine            staircase        pulse
+  (sin)    (triangle wave)    (sin + 0.4*sin(2.3x))  (quantized+smooth)  (sin^5)
+```
+
+### Pattern Formula'ları
+- **sine**: `sin(phase)` — Klasik yumuşak dalga
+- **zigzag**: Triangle wave — Keskin açılı zigzag 
+- **doubleSine**: `(sin(φ) + 0.4*sin(2.3φ)) / 1.4` — Çift frekanslı karmaşık hareket
+- **staircase**: `round(sin(φ)*4)/4 * 0.7 + sin(φ) * 0.3` — Basamaklı plato deseni
+- **pulse**: `sign(sin(φ)) * |sin(φ)|^5 * 1.6` — Dar keskin tepeler
 
 ### Mode Activation
 ```typescript
@@ -120,7 +148,56 @@ safeLoad(key, default)  // JSON deserialize + fallback
 - `vitest` ile unit/property test
 - `fast-check` ile property-based testing
 - Her sistem için `*.test.ts` dosyası
-- 526 test geçiyor
+- 747 test (720 pass, 27 pre-existing fail)
+
+## Performance Optimization Patterns (Mobile 60fps)
+
+### Pre-Allocated Reusable Objects
+```typescript
+// systems/performanceUtils.ts
+// Hot-path fonksiyonlar her frame yeni obje döndürmez; 
+// module-level singleton'ları mutate edip döndürür.
+const _jitterResult = { x: 0, y: 0 };
+export function generateJitterOffset(...): { x: number; y: number } {
+  _jitterResult.x = computed_x;
+  _jitterResult.y = computed_y;
+  return _jitterResult; // CALLER MUST NOT STORE REFERENCE
+}
+```
+
+### In-Place Compaction (filter → mutate)
+```typescript
+// .filter() yerine in-place swap ile GC baskısı sıfırlanır
+let writeIdx = 0;
+for (let i = 0; i < arr.length; i++) {
+  if (keepCondition(arr[i])) { arr[writeIdx++] = arr[i]; }
+}
+arr.length = writeIdx;
+```
+
+### Temp-Modify-Restore (spread-copy elimination)
+```typescript
+// { ...orb, y: newY } spread yerine:
+const savedY = orb.y;
+orb.y = tempY;
+renderOrb(orb);   // render with temp value
+orb.y = savedY;   // restore original
+```
+
+### Cached Frame Time (Date.now() elimination)
+```typescript
+// Frame başında 1 kez Date.now() çağrılır, tüm sistemler cache kullanır
+const frameTime = Date.now();
+setFrameTime(frameTime);           // performanceUtils
+EnemyManager.setDrawTime(frameTime); // EnemyManager
+// Geri kalan 32 kullanım → getFrameTime() / frameTime değişkeni
+```
+
+### Rendering Optimizations
+- **Gradient elimination**: Per-particle `createRadialGradient` → solid `fillStyle` + `shadowBlur`
+- **Step size increase**: VFX render loop step ↑40% (5→8, 2→3, 10→15 vb.)
+- **save/restore elimination**: Toplu particle rendering tek outer save/restore ile
+- **for-loop**: `forEach` + closure → düz `for` + `continue`
 
 ## Campaign Update v2.5 Sistemi
 

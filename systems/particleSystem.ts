@@ -100,11 +100,12 @@ export class ParticleSystem {
   }
 
   /**
-   * Update all active particles
+   * Update all active particles - PERF: for-loop instead of forEach
    */
   update() {
-    this.particles.forEach(p => {
-      if (!p.active) return;
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (!p.active) continue;
 
       const config = getElementalConfig(p.type);
 
@@ -125,7 +126,7 @@ export class ParticleSystem {
       if (p.life <= 0) {
         p.active = false;
       }
-    });
+    }
   }
 
   /**
@@ -217,8 +218,9 @@ export class ParticleSystem {
   draw(ctx: CanvasRenderingContext2D) {
     ctx.save();
 
-    this.particles.forEach(p => {
-      if (!p.active) return;
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (!p.active) continue;
 
       const config = getElementalConfig(p.type);
       const isOnDarkBg = p.isTopOrb;
@@ -280,7 +282,7 @@ export class ParticleSystem {
           0, Math.PI * 2
         );
         ctx.fill();
-        return;
+        continue;
       } else {
         // Circle for most particles
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -295,7 +297,7 @@ export class ParticleSystem {
         ctx.lineWidth = 1;
         ctx.stroke();
       }
-    });
+    }
 
     ctx.restore();
   }
@@ -310,14 +312,19 @@ export class ParticleSystem {
   }
 
   /**
-   * Get count of active particles
+   * Get count of active particles - PERF: count-based, no array allocation
    */
   getActiveParticles(): Particle[] {
     return this.particles.filter(p => p.active);
   }
 
   getParticleCount(): number {
-    return this.getActiveParticles().length;
+    // PERF: Direct count without creating filtered array
+    let count = 0;
+    for (let i = 0; i < this.particles.length; i++) {
+      if (this.particles[i].active) count++;
+    }
+    return count;
   }
 }
 
