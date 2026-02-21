@@ -1,63 +1,63 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  GLITCH_CONFIG,
-  GRAVITY_CONFIG,
-  INITIAL_CONFIG,
-  MIDLINE_CONFIG,
-  PHANTOM_CONFIG,
+    GLITCH_CONFIG,
+    GRAVITY_CONFIG,
+    INITIAL_CONFIG,
+    MIDLINE_CONFIG,
+    PHANTOM_CONFIG,
 } from "../constants";
 import { getSkinById } from "../data/skins";
 import { useCharacterStore } from "../store/characterStore";
 import { useGameStore } from "../store/gameStore";
 import { applyTheme, getColor, hasEffect } from "../systems/themeSystem";
 import {
-  EnhancedResonanceState,
-  GameState,
-  GravityState,
-  MidlineConfig,
-  MidlineState,
-  MissionEvent,
-  NearMissState,
-  Obstacle,
-  Particle,
-  RhythmState,
-  ScorePopup,
-  SnapshotBuffer,
-  VisualEffect
+    EnhancedResonanceState,
+    GameState,
+    GravityState,
+    MidlineConfig,
+    MidlineState,
+    MissionEvent,
+    NearMissState,
+    Obstacle,
+    Particle,
+    RhythmState,
+    ScorePopup,
+    SnapshotBuffer,
+    VisualEffect
 } from "../types";
 import {
-  checkCollision,
-  checkNearMiss,
-  createInitialGravityState,
-  createInitialNearMissState,
-  mirrorPlayerPosition,
-  randomRange,
-  shouldTriggerFlip,
-  updateNearMissState
+    checkCollision,
+    checkNearMiss,
+    createInitialGravityState,
+    createInitialNearMissState,
+    mirrorPlayerPosition,
+    randomRange,
+    shouldTriggerFlip,
+    updateNearMissState
 } from "../utils/gameMath";
 import {
-  calculateDynamicAmplitude,
-  calculateDynamicFrequency,
-  calculateMidlineY,
-  calculateMovementBounds,
-  calculateNormalBounds,
-  calculateNormalizedOffset,
-  calculateTensionIntensity,
-  createInitialMidlineState,
-  getOrbZone,
-  isAtPeak,
-  isCriticalSpace,
-  predictPeakTime,
-  shouldApplyMicroPhasing,
+    calculateDynamicAmplitude,
+    calculateDynamicFrequency,
+    calculateMidlineY,
+    calculateMovementBounds,
+    calculateNormalBounds,
+    calculateNormalizedOffset,
+    calculateTensionIntensity,
+    createInitialMidlineState,
+    getOrbZone,
+    isAtPeak,
+    isCriticalSpace,
+    predictPeakTime,
+    shouldApplyMicroPhasing,
 } from "../utils/midlineSystem";
 import {
-  calculatePhantomBonus
+    calculatePhantomBonus
 } from "../utils/phantomSystem";
 import {
-  calculateExpectedInterval,
-  checkRhythmTiming,
-  createInitialRhythmState,
-  updateRhythmState,
+    calculateExpectedInterval,
+    checkRhythmTiming,
+    createInitialRhythmState,
+    updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
 import { calculateCharacterModifiers } from "../utils/statMapper";
