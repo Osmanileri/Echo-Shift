@@ -118,6 +118,8 @@ import * as GlitchTokenSpawner from "../systems/GlitchTokenSpawner";
 import * as SecondChanceSystem from "../systems/SecondChanceSystem";
 // Holographic Gate System Integration - Finish line visualization
 import * as HolographicGate from "../systems/holographicGate";
+// Bonus VFX System - Professional visual effects for scoring events
+import * as BonusVFX from "../systems/bonusVFX";
 import type { InputState } from "../types";
 // Echo Constructs VFX Integration - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.6, 6.8
 import * as ConstructRenderer from "../systems/constructs/ConstructRenderer";
@@ -896,6 +898,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Enemy Death VFX
     EnemyDeathVFX.resetDeathVFX();
 
+    // Reset Bonus VFX
+    BonusVFX.reset();
+
     // Reset Tutorial State - Level 0 Tutorial System
     if (tutorialMode?.enabled) {
       tutorialState.current = InteractiveTutorial.startTutorial(
@@ -1325,15 +1330,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
       ScreenShake.triggerNearMiss();
     }
 
-    // Requirements 3.3: Floating score popup (+20)
-    scorePopups.current.push({
-      x: orbX,
-      y: orbY - 20,
-      text: "+20",
-      color: accentColor,
-      life: 1.0,
-      vy: -2,
-    });
+    // Requirements 3.3: Near-miss visual feedback
+    // Score popup is handled in scoring logic with actual calculated amount
 
     // Requirements 3.4: Accent glow pulse effect around the orb
     visualEffects.current.push({
@@ -3037,7 +3035,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
       }
 
-      const playerX = basePlayerX + finishModePlayerX.current + dashXOffset + tutorialSlideOffset;
+      const playerX = basePlayerX + finishModePlayerX.current + dashXOffset + tutorialSlideOffset + (tutorialState.current?.finishPlayerXOffset ?? 0);
 
       // During dash, use spin angle for clockwise rotation effect
       const dashSpinAngle = PhaseDash.getSpinAngle(phaseDashState.current);
@@ -4160,7 +4158,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Check collection with both orbs
         // In finish mode, player moves right. During dash, player also moves forward.
         const shardDashXOffset = PhaseDash.getPlayerXOffset(phaseDashState.current);
-        const shardPlayerX = (width / 8) + finishModePlayerX.current + shardDashXOffset;
+        const shardPlayerX = (width / 8) + finishModePlayerX.current + shardDashXOffset + (tutorialState.current?.finishPlayerXOffset ?? 0);
         const xRotOffset = Math.sin(rotationAngle.current) * 15;
         const whiteOrbX = shardPlayerX - xRotOffset;
         const blackOrbX = shardPlayerX + xRotOffset;
@@ -4244,8 +4242,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
             shardsCollectedRef.current += 1;
           }
 
-          // Award Echo Shards
-          useGameStore.getState().addEchoShards(finalValue);
+          // Award Echo Shards (skip during tutorial)
+          if (!(tutorialMode?.enabled && tutorialState.current.isActive)) {
+            useGameStore.getState().addEchoShards(finalValue);
+          }
 
           // Phase Dash: Energy gain from shard collection
           const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
@@ -4480,38 +4480,51 @@ const GameEngine: React.FC<GameEngineProps> = ({
             let earnedScore = baseScore * multiplier;
 
             // --- PHANTOM BONUS - Requirements 5.7, 14.1 ---
-            // Award +20 bonus for passing phantom obstacles (total 30 points base)
+            // Award +20 bonus for passing phantom obstacles
             if (obs.isLatent) {
               const phantomBonus = calculatePhantomBonus(false, PHANTOM_CONFIG);
               earnedScore += phantomBonus;
 
               // Daily Rituals: Track phantom pass event - Requirements 3.8
               ritualTracking?.onPhantomPass?.();
+            }
 
-              // Visual feedback for phantom bonus - Requirements 14.1
-              // Show total score (+30) with purple/pink color for phantom obstacles
-              const phantomTotalScore = baseScore + phantomBonus; // 10 + 20 = 30
+            // Apply shop score multiplier upgrade to ALL base scoring - Requirements 6.2
+            earnedScore = Math.floor(earnedScore * scoreMultiplierUpgrade.current);
+
+            // Zen Mode: Skip score tracking - Requirements 9.1
+            if (!zenMode?.enabled && !(tutorialMode?.enabled && tutorialState.current.isActive)) {
+              score.current += earnedScore;
+              onScoreUpdate(score.current);
+            }
+
+            // Score popup - show earned amount with color based on quality
+            if (obs.isLatent) {
+              // Phantom obstacle - purple popup
               scorePopups.current.push({
                 x: playerX + 30,
                 y: playerY.current * height - 20,
-                text: `+${phantomTotalScore}`,
-                color: "#9B59B6", // Purple color for phantom bonus
+                text: `+${earnedScore}`,
+                color: "#9B59B6",
                 life: 1.0,
                 vy: -1.5,
               });
-            }
-
-            // Apply score multiplier upgrade - Requirements 6.2
-            // Zen Mode: Skip score tracking - Requirements 9.1
-            if (!zenMode?.enabled) {
-              const finalScore = Math.floor(
-                earnedScore * scoreMultiplierUpgrade.current
-              );
-              score.current += finalScore;
-              onScoreUpdate(score.current);
-
-              // Daily Rituals: Track score accumulation - Requirements 3.9
-              ritualTracking?.onScoreAccumulate?.(score.current);
+              // Phantom pass VFX & SFX
+              BonusVFX.spawnPhantomPass(playerX, playerY.current * height);
+              AudioSystem.playPhantomPass();
+            } else if (multiplier > 1) {
+              // Rhythm bonus active - show colored popup
+              scorePopups.current.push({
+                x: playerX + 30,
+                y: playerY.current * height - 20,
+                text: `+${earnedScore}`,
+                color: multiplier >= 3 ? "#FFD700" : "#00F0FF",
+                life: 0.8,
+                vy: -1.5,
+              });
+              // Rhythm multiplier VFX & SFX
+              BonusVFX.spawnRhythmBonus(playerX, playerY.current * height, multiplier);
+              AudioSystem.playRhythmScore(multiplier);
             }
 
             // Campaign Mode: Check for level completion - Requirements 7.3
@@ -4624,23 +4637,35 @@ const GameEngine: React.FC<GameEngineProps> = ({
               );
               ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
-              // Screen shake for impact
-              ScreenShake.triggerNearMiss();
+              // Overdrive destroy VFX & SFX
+              ScreenShake.triggerOverdriveDestroy();
+              BonusVFX.spawnOverdriveDestroy(obs.x + obs.width / 2, obs.y + obs.height / 2);
+              AudioSystem.playOverdriveDestroy();
 
               // Haptic feedback
               getHapticSystem().trigger("medium");
 
-              // Award bonus points
-              if (!zenMode?.enabled) {
-                score.current += 25;
+              // Award bonus points with shop multiplier
+              const overdriveBonus = Math.floor(25 * scoreMultiplierUpgrade.current);
+              if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+                score.current += overdriveBonus;
                 onScoreUpdate(score.current);
+
+                // Campaign completion check
+                const campMode = campaignModeRef.current;
+                if (campMode?.enabled && campMode.targetScore && !campMode.useDistanceMode && !levelCompleted.current) {
+                  if (score.current >= campMode.targetScore) {
+                    levelCompleted.current = true;
+                    campMode.onLevelComplete?.(score.current);
+                  }
+                }
               }
 
               // Show destruction popup
               scorePopups.current.push({
                 x: obs.x + obs.width / 2,
                 y: obs.y + obs.height / 2,
-                text: "+25 💥",
+                text: `+${overdriveBonus} 💥`,
                 color: "#FFD700",
                 life: 1.0,
                 vy: -2,
@@ -4676,7 +4701,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           glitchInvincible ||
           pendingRestore.current ||
           isRestoreAnimating.current ||
-          isInFinishMode.current  // Skip collision in finish mode
+          isInFinishMode.current ||  // Skip collision in finish mode
+          (tutorialState.current?.inFinishMode)  // Skip collision in tutorial finish mode
         )
           continue;
 
@@ -4773,17 +4799,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 );
                 ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
-                // Requirements 1.5: Award 50 bonus points
-                if (!zenMode?.enabled) {
-                  score.current += result.bonus;
+                // Resonance destroy VFX & SFX
+                BonusVFX.spawnResonanceDestroy(obs.x + obs.width / 2, obs.y + obs.height / 2);
+                AudioSystem.playResonanceDestroy();
+                ScreenShake.triggerResonanceDestroy();
+
+                // Requirements 1.5: Award bonus points with shop multiplier
+                const resonanceBonus = Math.floor(result.bonus * scoreMultiplierUpgrade.current);
+                if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+                  score.current += resonanceBonus;
                   onScoreUpdate(score.current);
+
+                  // Campaign completion check
+                  const campMode = campaignModeRef.current;
+                  if (campMode?.enabled && campMode.targetScore && !campMode.useDistanceMode && !levelCompleted.current) {
+                    if (score.current >= campMode.targetScore) {
+                      levelCompleted.current = true;
+                      campMode.onLevelComplete?.(score.current);
+                    }
+                  }
                 }
 
                 // Show bonus popup
                 scorePopups.current.push({
                   x: obs.x + obs.width / 2,
                   y: obs.y + obs.height / 2,
-                  text: `+${result.bonus}`,
+                  text: `+${resonanceBonus}`,
                   color: "#00F0FF",
                   life: 1.0,
                   vy: -2,
@@ -4840,18 +4881,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
                 ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
-                ScreenShake.triggerNearMiss();
+                ScreenShake.triggerConstructStomp();
                 getHapticSystem().trigger("medium");
                 // Audio for Titan stomp - Requirements 6.5
                 AudioSystem.playTitanStomp();
-                if (!zenMode?.enabled) {
-                  score.current += 25;
+                // Construct stomp VFX
+                BonusVFX.spawnConstructStomp(obs.x + obs.width / 2, obs.y + obs.height / 2);
+                const stompBonus = Math.floor(25 * scoreMultiplierUpgrade.current);
+                if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+                  score.current += stompBonus;
                   onScoreUpdate(score.current);
+
+                  // Campaign completion check
+                  const campMode = campaignModeRef.current;
+                  if (campMode?.enabled && campMode.targetScore && !campMode.useDistanceMode && !levelCompleted.current) {
+                    if (score.current >= campMode.targetScore) {
+                      levelCompleted.current = true;
+                      campMode.onLevelComplete?.(score.current);
+                    }
+                  }
                 }
                 scorePopups.current.push({
                   x: obs.x + obs.width / 2,
                   y: obs.y + obs.height / 2,
-                  text: "+25 💥",
+                  text: `+${stompBonus} 💥`,
                   color: "#FFD700",
                   life: 1.0,
                   vy: -2,
@@ -5013,17 +5066,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 );
                 ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
 
-                // Requirements 1.5: Award 50 bonus points
-                if (!zenMode?.enabled) {
-                  score.current += result.bonus;
+                // Resonance destroy VFX & SFX (black orb)
+                BonusVFX.spawnResonanceDestroy(obs.x + obs.width / 2, obs.y + obs.height / 2);
+                AudioSystem.playResonanceDestroy();
+                ScreenShake.triggerResonanceDestroy();
+
+                // Requirements 1.5: Award bonus points with shop multiplier
+                const resonanceBonusBlack = Math.floor(result.bonus * scoreMultiplierUpgrade.current);
+                if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+                  score.current += resonanceBonusBlack;
                   onScoreUpdate(score.current);
+
+                  // Campaign completion check
+                  const campMode = campaignModeRef.current;
+                  if (campMode?.enabled && campMode.targetScore && !campMode.useDistanceMode && !levelCompleted.current) {
+                    if (score.current >= campMode.targetScore) {
+                      levelCompleted.current = true;
+                      campMode.onLevelComplete?.(score.current);
+                    }
+                  }
                 }
 
                 // Show bonus popup
                 scorePopups.current.push({
                   x: obs.x + obs.width / 2,
                   y: obs.y + obs.height / 2,
-                  text: `+${result.bonus}`,
+                  text: `+${resonanceBonusBlack}`,
                   color: "#00F0FF",
                   life: 1.0,
                   vy: -2,
@@ -5077,18 +5145,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 // Titan stomp - destroy obstacle
                 createExplosion(obs.x + obs.width / 2, obs.y + obs.height / 2, "#FFD700");
                 ParticleSystem.emitBurst(obs.x + obs.width / 2, obs.y + obs.height / 2, activeCharacter?.types[0] || 'normal');
-                ScreenShake.triggerNearMiss();
+                ScreenShake.triggerConstructStomp();
                 getHapticSystem().trigger("medium");
                 // Audio for Titan stomp - Requirements 6.5
                 AudioSystem.playTitanStomp();
-                if (!zenMode?.enabled) {
-                  score.current += 25;
+                // Construct stomp VFX (black orb)
+                BonusVFX.spawnConstructStomp(obs.x + obs.width / 2, obs.y + obs.height / 2);
+                const stompBonusBlack = Math.floor(25 * scoreMultiplierUpgrade.current);
+                if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+                  score.current += stompBonusBlack;
                   onScoreUpdate(score.current);
+
+                  // Campaign completion check
+                  const campMode = campaignModeRef.current;
+                  if (campMode?.enabled && campMode.targetScore && !campMode.useDistanceMode && !levelCompleted.current) {
+                    if (score.current >= campMode.targetScore) {
+                      levelCompleted.current = true;
+                      campMode.onLevelComplete?.(score.current);
+                    }
+                  }
                 }
                 scorePopups.current.push({
                   x: obs.x + obs.width / 2,
                   y: obs.y + obs.height / 2,
-                  text: "+25 💥",
+                  text: `+${stompBonusBlack} 💥`,
                   color: "#FFD700",
                   life: 1.0,
                   vy: -2,
@@ -5278,39 +5358,52 @@ const GameEngine: React.FC<GameEngineProps> = ({
               let totalBonus = streakResult.totalBonusPoints;
 
               // --- PHANTOM + NEAR MISS COMBINATION - Requirements 5.10, 14.1 ---
-              // Near miss + phantom = x2 multiplier on phantom bonus (40 bonus + base = 60 total)
+              // Near miss + phantom = x2 multiplier on phantom bonus
               if (obs.isLatent) {
                 const phantomNearMissBonus = calculatePhantomBonus(
                   true,
                   PHANTOM_CONFIG
                 );
                 totalBonus += phantomNearMissBonus;
-
-                // Visual feedback for phantom + near miss combo - Requirements 14.1
-                // Show total score (+60) with pink/magenta color for phantom combo
-                // Total: 10 base + 10 near miss + 40 phantom near miss = 60
-                const phantomComboTotal = 60;
-                scorePopups.current.push({
-                  x: whiteOrb.x + 40,
-                  y: whiteOrb.y - 30,
-                  text: `+${phantomComboTotal}`,
-                  color: "#E91E63", // Pink/magenta for phantom combo
-                  life: 1.2,
-                  vy: -2,
-                });
               }
 
               // Apply score multiplier upgrade - Requirements 6.2
-              // Zen Mode: Skip score tracking - Requirements 9.1
-              if (!zenMode?.enabled) {
+              // Zen Mode / Tutorial: Skip score tracking
+              if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
                 const finalBonus = Math.floor(
                   totalBonus * scoreMultiplierUpgrade.current
                 );
+
+                // Phantom near-miss combo popup - show actual calculated value
+                if (obs.isLatent) {
+                  scorePopups.current.push({
+                    x: whiteOrb.x + 40,
+                    y: whiteOrb.y - 30,
+                    text: `+${finalBonus}`,
+                    color: "#E91E63",
+                    life: 1.2,
+                    vy: -2,
+                  });
+                  // Phantom combo VFX & SFX
+                  BonusVFX.spawnPhantomCombo(whiteOrb.x, whiteOrb.y);
+                  AudioSystem.playPhantomCombo();
+                } else {
+                  // Regular near-miss popup
+                  scorePopups.current.push({
+                    x: whiteOrb.x,
+                    y: whiteOrb.y - 20,
+                    text: `+${finalBonus}`,
+                    color: getColor("accent"),
+                    life: 1.0,
+                    vy: -2,
+                  });
+                  // Near-miss bonus VFX
+                  BonusVFX.spawnNearMissBonus(whiteOrb.x, whiteOrb.y, getColor("accent"), streakResult.streakBonusAwarded);
+                }
                 score.current += finalBonus;
                 onScoreUpdate(score.current);
 
                 // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
-                // Skip if using distance mode - distance completion is handled separately
                 const campMode = campaignModeRef.current;
                 if (
                   campMode?.enabled &&
@@ -5332,10 +5425,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 whiteNearMiss.closestPoint,
                 streakResult.streakBonusAwarded
               );
-
-              // Audio and Haptic Feedback for successful near-miss - User Request
-              AudioSystem.playNearMiss();
-              getHapticSystem().trigger('medium');
             }
           }
 
@@ -5387,39 +5476,52 @@ const GameEngine: React.FC<GameEngineProps> = ({
               let totalBonus = streakResult.totalBonusPoints;
 
               // --- PHANTOM + NEAR MISS COMBINATION - Requirements 5.10, 14.1 ---
-              // Near miss + phantom = x2 multiplier on phantom bonus (40 bonus + base = 60 total)
+              // Near miss + phantom = x2 multiplier on phantom bonus
               if (obs.isLatent) {
                 const phantomNearMissBonus = calculatePhantomBonus(
                   true,
                   PHANTOM_CONFIG
                 );
                 totalBonus += phantomNearMissBonus;
-
-                // Visual feedback for phantom + near miss combo - Requirements 14.1
-                // Show total score (+60) with pink/magenta color for phantom combo
-                // Total: 10 base + 10 near miss + 40 phantom near miss = 60
-                const phantomComboTotal = 60;
-                scorePopups.current.push({
-                  x: blackOrb.x + 40,
-                  y: blackOrb.y - 30,
-                  text: `+${phantomComboTotal}`,
-                  color: "#E91E63", // Pink/magenta for phantom combo
-                  life: 1.2,
-                  vy: -2,
-                });
               }
 
               // Apply score multiplier upgrade - Requirements 6.2
-              // Zen Mode: Skip score tracking - Requirements 9.1
-              if (!zenMode?.enabled) {
+              // Zen Mode / Tutorial: Skip score tracking
+              if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
                 const finalBonusBlack = Math.floor(
                   totalBonus * scoreMultiplierUpgrade.current
                 );
+
+                // Phantom near-miss combo popup - show actual calculated value
+                if (obs.isLatent) {
+                  scorePopups.current.push({
+                    x: blackOrb.x + 40,
+                    y: blackOrb.y - 30,
+                    text: `+${finalBonusBlack}`,
+                    color: "#E91E63",
+                    life: 1.2,
+                    vy: -2,
+                  });
+                  // Phantom combo VFX & SFX (black orb)
+                  BonusVFX.spawnPhantomCombo(blackOrb.x, blackOrb.y);
+                  AudioSystem.playPhantomCombo();
+                } else {
+                  // Regular near-miss popup
+                  scorePopups.current.push({
+                    x: blackOrb.x,
+                    y: blackOrb.y - 20,
+                    text: `+${finalBonusBlack}`,
+                    color: getColor("accent"),
+                    life: 1.0,
+                    vy: -2,
+                  });
+                  // Near-miss bonus VFX (black orb)
+                  BonusVFX.spawnNearMissBonus(blackOrb.x, blackOrb.y, getColor("accent"), streakResult.streakBonusAwarded);
+                }
                 score.current += finalBonusBlack;
                 onScoreUpdate(score.current);
 
                 // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
-                // Skip if using distance mode - distance completion is handled separately
                 if (
                   campaignMode?.enabled &&
                   campaignMode.targetScore &&
@@ -5440,10 +5542,6 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 blackNearMiss.closestPoint,
                 streakResult.streakBonusAwarded
               );
-
-              // Audio and Haptic Feedback for successful near-miss - User Request
-              AudioSystem.playNearMiss();
-              getHapticSystem().trigger('medium');
             }
           }
         }
@@ -5473,6 +5571,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Update Particles - Requirements 12.4, 12.5
       // Update new ParticleSystem
       ParticleSystem.update();
+
+      // Update Bonus VFX system
+      BonusVFX.update();
 
       // Update Screen Shake - Requirements 10.3, 10.4
       ScreenShake.update(frameTime);
@@ -7241,7 +7342,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         ctx.globalAlpha = 1.0;
       });
 
+      // Draw Bonus VFX - Professional scoring effects overlay
+      BonusVFX.render(ctx, width, height);
+
       // Draw Score Popups - Requirements 3.3, 3.8 - VFX Polish Phase 4
+      // Skip score popups during tutorial
+      if (!(tutorialMode?.enabled && tutorialState.current.isActive)) {
       scorePopups.current.forEach((popup) => {
         ctx.save();
 
@@ -7277,6 +7383,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
         ctx.restore();
       });
+      } // end: skip score popups during tutorial
 
       // Restore canvas context after screen shake transform - Requirements 10.4
       ctx.restore();
@@ -7541,74 +7648,220 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
         }
 
-        // Check for tutorial completion - trigger finish mode
+        // Check for tutorial completion - trigger finish mode with holographic gate
         if (tutorialState.current.isComplete && onTutorialComplete) {
-          // Start finish mode animation if not already in it
-          if (!tutorialState.current.inFinishMode) {
+          const ts = tutorialState.current;
+
+          // --- INIT: Enter finish mode ---
+          if (!ts.inFinishMode) {
+            const finishX = width * 0.85;
             tutorialState.current = {
-              ...tutorialState.current,
+              ...ts,
               inFinishMode: true,
               finishModeStartTime: frameTime,
+              finishPlayerXOffset: 0,
+              finishLineReached: false,
+              finishExplosionDone: false,
+              showTutorialVictory: false,
             };
-            // Victory sound
-            AudioSystem.playNewHighScore();
+            // Initialize holographic gate at finish line
+            holographicGateState.current = {
+              ...HolographicGate.createHolographicGateState(),
+              visible: true,
+              distanceFromPlayer: finishX - (width / 8),
+            };
+            finishLineX.current = finishX;
             getHapticSystem().trigger('success');
           }
 
-          // Finish mode animation
-          if (tutorialState.current.inFinishMode) {
-            const finishElapsed = frameTime - tutorialState.current.finishModeStartTime;
-            const FINISH_DURATION = 1500; // 1.5 seconds
+          // --- ANIMATE ---
+          if (ts.inFinishMode && !ts.showTutorialVictory) {
+            const basePlayerX = width / 8;
+            const currentPlayerX = basePlayerX + ts.finishPlayerXOffset;
+            const targetFinishX = finishLineX.current;
 
-            if (finishElapsed < FINISH_DURATION) {
-              // Forward rush animation - player accelerates to the right
-              const progress = finishElapsed / FINISH_DURATION;
-              const easeIn = progress * progress; // Accelerating
+            // Phase 1: Player accelerates toward the gate
+            if (!ts.finishLineReached) {
+              const travelDistance = targetFinishX - basePlayerX;
+              const progress = travelDistance > 0 ? ts.finishPlayerXOffset / travelDistance : 1;
+              const acceleration = 1 + progress * 2.5;
+              tutorialState.current = {
+                ...tutorialState.current,
+                finishPlayerXOffset: ts.finishPlayerXOffset + 5 * acceleration,
+              };
 
-              // Offset player position to the right
-              const rushOffset = easeIn * (width * 0.8);
+              // Update holographic gate pulse
+              holographicGateState.current = HolographicGate.updateHolographicGate(
+                holographicGateState.current,
+                frameTime,
+                targetFinishX - currentPlayerX,
+                HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+              );
 
-              // Draw rush effect (speed lines)
+              // Render the gate
+              if (holographicGateState.current.visible && !holographicGateState.current.isShattered) {
+                HolographicGate.renderHolographicGate(
+                  ctx,
+                  holographicGateState.current,
+                  targetFinishX,
+                  height / 2,
+                  HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+                );
+                // "FINISH" text
+                ctx.save();
+                ctx.font = 'bold 24px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#00ffff';
+                ctx.shadowColor = '#00ffff';
+                ctx.shadowBlur = 15;
+                ctx.fillText('FINISH', targetFinishX, height / 2 - 180);
+                ctx.restore();
+              }
+
+              // Speed lines
               ctx.save();
-              ctx.globalAlpha = 0.3 * (1 - progress);
+              ctx.globalAlpha = 0.25;
               ctx.strokeStyle = '#00f0ff';
               ctx.lineWidth = 2;
-              for (let i = 0; i < 10; i++) {
+              for (let i = 0; i < 8; i++) {
                 const lineY = Math.random() * height;
-                const lineLength = 50 + Math.random() * 100;
+                const lineLength = 40 + Math.random() * 80;
                 ctx.beginPath();
-                ctx.moveTo(rushOffset - lineLength, lineY);
-                ctx.lineTo(rushOffset, lineY);
+                ctx.moveTo(currentPlayerX - lineLength, lineY);
+                ctx.lineTo(currentPlayerX, lineY);
                 ctx.stroke();
               }
               ctx.restore();
 
-              // Scale orbs smaller as they rush forward
-              const orbScale = 1 - (progress * 0.5);
-              ctx.save();
-              ctx.translate(rushOffset, 0);
-              ctx.scale(orbScale, orbScale);
-              ctx.restore();
+              // Check if player reached the gate
+              if (currentPlayerX >= targetFinishX - 20) {
+                tutorialState.current = {
+                  ...tutorialState.current,
+                  finishLineReached: true,
+                  finishModeStartTime: frameTime, // reset timer for post-explosion
+                };
 
-            } else {
-              // Burst effect complete - trigger tutorial complete callback
-              if (!tutorialState.current.isComplete) {
-                // Already handled below
+                // Trigger gate shatter
+                holographicGateState.current = HolographicGate.triggerGateShatter(
+                  holographicGateState.current,
+                  frameTime,
+                  targetFinishX,
+                  height / 2,
+                  HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+                );
+
+                // Explosion particles
+                ParticleSystem.emitBurst(targetFinishX, height / 2, activeCharacter?.types[0] || 'normal');
+                AudioSystem.playNewHighScore();
+                getHapticSystem().trigger('heavy');
+                ScreenShake.triggerCollision();
               }
-              // Add burst particles at center
-              const burstX = width * 0.9;
-              ctx.save();
-              ctx.globalAlpha = Math.max(0, 1 - (finishElapsed - FINISH_DURATION) / 500);
-              ctx.fillStyle = '#00f0ff';
-              ctx.shadowColor = '#00f0ff';
-              ctx.shadowBlur = 30;
-              ctx.beginPath();
-              ctx.arc(burstX, height / 2, 30 * (1 + (finishElapsed - FINISH_DURATION) / 200), 0, Math.PI * 2);
-              ctx.fill();
-              ctx.restore();
+            }
 
-              // Complete tutorial after burst (fire callback only once)
-              if (finishElapsed > FINISH_DURATION + 500 && !tutorialState.current.completionCallbackFired) {
+            // Phase 2: Post-explosion — shatter particles + player slides off, then victory screen
+            if (ts.finishLineReached) {
+              // Update shatter particles
+              holographicGateState.current = HolographicGate.updateHolographicGate(
+                holographicGateState.current,
+                frameTime,
+                0,
+                HolographicGate.DEFAULT_HOLOGRAPHIC_GATE_CONFIG
+              );
+
+              // Render shatter particles
+              if (holographicGateState.current.isShattered && holographicGateState.current.shatterParticles.length > 0) {
+                HolographicGate.renderShatterParticles(ctx, holographicGateState.current.shatterParticles);
+              }
+
+              // Keep player sliding forward a bit
+              tutorialState.current = {
+                ...tutorialState.current,
+                finishPlayerXOffset: ts.finishPlayerXOffset + 8,
+              };
+
+              // After 1.2s show victory screen
+              const timeSinceExplosion = frameTime - ts.finishModeStartTime;
+              if (timeSinceExplosion > 1200) {
+                tutorialState.current = {
+                  ...tutorialState.current,
+                  showTutorialVictory: true,
+                };
+              }
+            }
+          }
+
+          // Phase 3: Victory overlay — "Öğreticiyi Geçtin!" + "Devam Et" button
+          if (ts.showTutorialVictory && !ts.completionCallbackFired) {
+            const victoryElapsed = frameTime - (ts.finishModeStartTime + 1200);
+            const fadeIn = Math.min(1, victoryElapsed / 400);
+
+            // Dark overlay
+            ctx.save();
+            ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * fadeIn})`;
+            ctx.fillRect(0, 0, width, height);
+
+            // Title: "Öğreticiyi Geçtin!"
+            const titleY = height * 0.35;
+            ctx.globalAlpha = fadeIn;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `bold ${Math.round(width * 0.07)}px monospace`;
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowColor = '#00ffff';
+            ctx.shadowBlur = 25;
+            ctx.fillText('🎓 ÖĞRETİCİYİ GEÇTİN!', width / 2, titleY);
+
+            // Subtitle
+            ctx.shadowBlur = 0;
+            ctx.font = `${Math.round(width * 0.038)}px monospace`;
+            ctx.fillStyle = '#a5b4fc';
+            ctx.fillText('Artık gerçek bölümlere hazırsın.', width / 2, titleY + width * 0.09);
+
+            // "Devam Et" button
+            if (victoryElapsed > 600) {
+              const btnFade = Math.min(1, (victoryElapsed - 600) / 300);
+              const btnW = width * 0.5;
+              const btnH = 56;
+              const btnX = (width - btnW) / 2;
+              const btnY = height * 0.58;
+
+              // Pulsing glow
+              const pulse = 0.8 + Math.sin(frameTime * 0.004) * 0.2;
+
+              ctx.globalAlpha = btnFade;
+              ctx.shadowColor = '#6366f1';
+              ctx.shadowBlur = 20 * pulse;
+
+              // Button background
+              const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY + btnH);
+              btnGrad.addColorStop(0, '#6366f1');
+              btnGrad.addColorStop(1, '#8b5cf6');
+              ctx.fillStyle = btnGrad;
+
+              // Rounded rect
+              const r = 16;
+              ctx.beginPath();
+              ctx.moveTo(btnX + r, btnY);
+              ctx.lineTo(btnX + btnW - r, btnY);
+              ctx.quadraticCurveTo(btnX + btnW, btnY, btnX + btnW, btnY + r);
+              ctx.lineTo(btnX + btnW, btnY + btnH - r);
+              ctx.quadraticCurveTo(btnX + btnW, btnY + btnH, btnX + btnW - r, btnY + btnH);
+              ctx.lineTo(btnX + r, btnY + btnH);
+              ctx.quadraticCurveTo(btnX, btnY + btnH, btnX, btnY + btnH - r);
+              ctx.lineTo(btnX, btnY + r);
+              ctx.quadraticCurveTo(btnX, btnY, btnX + r, btnY);
+              ctx.closePath();
+              ctx.fill();
+
+              // Button text
+              ctx.shadowBlur = 0;
+              ctx.font = `bold ${Math.round(width * 0.045)}px monospace`;
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText('DEVAM ET →', width / 2, btnY + btnH / 2);
+
+              // Detect tap on button
+              const inp = inputStateRef.current;
+              if (inp.isTapFrame || inp.isReleaseFrame) {
                 tutorialState.current = {
                   ...tutorialState.current,
                   completionCallbackFired: true,
@@ -7616,6 +7869,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 onTutorialComplete();
               }
             }
+
+            ctx.restore();
           }
         }
 
@@ -7687,61 +7942,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Render progress indicator
         const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
 
-        // --- TUTORIAL INFO MODAL (Canvas-based) ---
-        if (tutorialState.current.showInfoModal) {
-          ctx.save();
-          // Dark overlay
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-          ctx.fillRect(0, 0, width, height);
-
-          // Modal panel
-          const modalW = Math.min(width * 0.85, 320);
-          const modalH = 200;
-          const modalX = (width - modalW) / 2;
-          const modalY = (height - modalH) / 2;
-
-          ctx.fillStyle = 'rgba(10, 10, 30, 0.95)';
-          ctx.shadowColor = '#00f0ff';
-          ctx.shadowBlur = 25;
-          ctx.beginPath();
-          if (ctx.roundRect) ctx.roundRect(modalX, modalY, modalW, modalH, 16);
-          else ctx.rect(modalX, modalY, modalW, modalH);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-
-          // Title
-          const modalTitle = tutorialState.current.currentPhase === 'SWAP_MECHANIC'
-            ? 'TERS RENK UYARISI!' : 'TEBRİKLER!';
-          ctx.font = 'bold 18px "Courier New", monospace';
-          ctx.fillStyle = '#00f0ff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(modalTitle, width / 2, modalY + 45);
-
-          // Description
-          const modalDesc = tutorialState.current.currentPhase === 'SWAP_MECHANIC'
-            ? 'Bu bloktan dönerek geçmemiz\ngerekiyor. Hazır mısın?'
-            : 'Hareket kontrollerini başarıyla\ntamamladın! Hazır mısın?';
-          ctx.font = '14px "Courier New", monospace';
-          ctx.fillStyle = '#cccccc';
-          const descLines = modalDesc.split('\n');
-          descLines.forEach((line, idx) => {
-            ctx.fillText(line, width / 2, modalY + 85 + idx * 22);
-          });
-
-          // Tap hint
-          const pulse = Math.sin(frameTime / 300) * 0.3 + 0.7;
-          ctx.globalAlpha = pulse;
-          ctx.font = 'bold 14px "Courier New", monospace';
-          ctx.fillStyle = '#00f0ff';
-          ctx.fillText('⟨ Devam etmek için dokun ⟩', width / 2, modalY + modalH - 30);
-          ctx.globalAlpha = 1;
-
-          ctx.restore();
-        }
+        // Info modal is rendered by TutorialVFX.render() — no duplicate here
         ctx.save();
         ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
         ctx.fillRect(0, height - 10, (width * progress) / 100, 10);

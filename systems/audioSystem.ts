@@ -1494,6 +1494,149 @@ export function isEnabled(): boolean {
   return state.enabled;
 }
 
+// ============ BONUS SCORING SOUNDS ============
+
+/**
+ * Overdrive destroy - powerful crunch with metallic resonance
+ */
+export function playOverdriveDestroy() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Metallic crunch
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(180, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.12);
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.15);
+
+  // Bright sparkle layer
+  setTimeout(() => playTone(1200, 0.08, 'sine', 0.12, 0.005, 0.02), 40);
+  setTimeout(() => playTone(1600, 0.06, 'sine', 0.1, 0.005, 0.02), 70);
+
+  // Impact noise burst
+  playNoise(0.1, 600, 'bandpass', 0.15);
+}
+
+/**
+ * Resonance destroy - ethereal shatter with harmonic overtones
+ */
+export function playResonanceDestroy() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Crystalline shatter — two detuned sines for "glass" timbre
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc1.type = 'sine';
+  osc2.type = 'sine';
+  osc1.frequency.setValueAtTime(880, ctx.currentTime);
+  osc1.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.15);
+  osc2.frequency.setValueAtTime(887, ctx.currentTime); // slight detune for shimmer
+  osc2.frequency.exponentialRampToValueAtTime(1767, ctx.currentTime + 0.15);
+
+  gain.gain.setValueAtTime(0.15, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.08);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(master);
+
+  osc1.start(ctx.currentTime);
+  osc2.start(ctx.currentTime);
+  osc1.stop(ctx.currentTime + 0.2);
+  osc2.stop(ctx.currentTime + 0.2);
+
+  // High shimmer tail
+  setTimeout(() => playNoise(0.12, 8000, 'highpass', 0.06), 80);
+  // Harmonic chime
+  setTimeout(() => playTone(1568, 0.12, 'triangle', 0.1, 0.01, 0.04), 100);
+}
+
+/**
+ * Phantom pass - eerie whisper whoosh
+ */
+export function playPhantomPass() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Ghostly descending sweep
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.2);
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.2);
+
+  // Breathy noise layer
+  playNoise(0.18, 2000, 'bandpass', 0.06);
+}
+
+/**
+ * Phantom near-miss combo - phantom + near miss layered sound
+ */
+export function playPhantomCombo() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Reverse-sweep sparkle
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(300, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(1800, ctx.currentTime + 0.15);
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.08);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.2);
+
+  // Ascending chime cascade
+  setTimeout(() => playTone(784, 0.1, 'triangle', 0.15, 0.005, 0.03), 50);
+  setTimeout(() => playTone(1047, 0.1, 'triangle', 0.12, 0.005, 0.03), 100);
+  setTimeout(() => playTone(1319, 0.08, 'sine', 0.1, 0.005, 0.02), 150);
+
+  // Sparkle noise
+  playNoise(0.12, 6000, 'highpass', 0.05);
+}
+
+/**
+ * Rhythm multiplier score - musical confirmation scaled by multiplier
+ */
+export function playRhythmScore(multiplier: number) {
+  if (multiplier >= 3) {
+    // x3 — triumphant major chord
+    playTone(523, 0.12, 'triangle', 0.15, 0.005, 0.04); // C5
+    setTimeout(() => playTone(659, 0.1, 'triangle', 0.12, 0.005, 0.03), 30); // E5
+    setTimeout(() => playTone(784, 0.1, 'sine', 0.1, 0.005, 0.03), 60);  // G5
+  } else {
+    // x2 — two-note confirmation
+    playTone(523, 0.1, 'triangle', 0.12, 0.005, 0.03);
+    setTimeout(() => playTone(659, 0.08, 'sine', 0.1, 0.005, 0.02), 40);
+  }
+}
+
 // ============ BEAT-ALIGNED SOUND ============
 
 /**
@@ -1891,6 +2034,13 @@ export const AudioSystem = {
   // Start Sequence - Countdown sounds
   playCountdown,
   playCountdownGo,
+
+  // Bonus Scoring Sounds
+  playOverdriveDestroy,
+  playResonanceDestroy,
+  playPhantomPass,
+  playPhantomCombo,
+  playRhythmScore,
 
   // Beat / Rhythm Music - BPM Engine integration
   playBeatHit,

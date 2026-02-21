@@ -47,6 +47,30 @@ export const SHAKE_CONFIGS = {
     frequency: 35,      // Medium-fast
     decay: true,        // Decays over time
   } as ShakeConfig,
+
+  // Overdrive destroy - punchy directional
+  overdriveDestroy: {
+    intensity: 10,
+    duration: 180,
+    frequency: 35,
+    decay: true,
+  } as ShakeConfig,
+
+  // Resonance destroy - crisp snap
+  resonanceDestroy: {
+    intensity: 7,
+    duration: 150,
+    frequency: 45,
+    decay: true,
+  } as ShakeConfig,
+
+  // Construct stomp - heavy thud
+  constructStomp: {
+    intensity: 12,
+    duration: 220,
+    frequency: 25,
+    decay: true,
+  } as ShakeConfig,
 };
 
 // Internal state
@@ -108,6 +132,27 @@ export function triggerNearMiss(): void {
  */
 export function triggerStreakBonus(): void {
   trigger(SHAKE_CONFIGS.streakBonus);
+}
+
+/**
+ * Triggers an overdrive destroy shake
+ */
+export function triggerOverdriveDestroy(): void {
+  trigger(SHAKE_CONFIGS.overdriveDestroy);
+}
+
+/**
+ * Triggers a resonance destroy shake
+ */
+export function triggerResonanceDestroy(): void {
+  trigger(SHAKE_CONFIGS.resonanceDestroy);
+}
+
+/**
+ * Triggers a construct stomp shake
+ */
+export function triggerConstructStomp(): void {
+  trigger(SHAKE_CONFIGS.constructStomp);
 }
 
 /**

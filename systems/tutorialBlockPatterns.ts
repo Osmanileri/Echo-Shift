@@ -127,25 +127,6 @@ const SWAP_MECHANIC_PATTERN: PhasePattern = {
 
 
 /**
- * Phase 5: SHARP_MANEUVER - Blocks that cross the center line
- * Requires quick vertical movement
- * Height is calculated dynamically in GameEngine (55% of screen height for crossesCenter)
- */
-const SHARP_MANEUVER_PATTERN: PhasePattern = {
-    phase: 'SHARP_MANEUVER',
-    blocks: [
-        // Blocks that cross center - player must dodge quickly
-        // crossesCenter: true -> GameEngine will use 55% of screen height
-        { id: 'sh-1', delay: 1000, lane: 'top', polarity: 'white', y: 0.45, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-2', delay: 2500, lane: 'bottom', polarity: 'black', y: 0.55, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-3', delay: 4000, lane: 'top', polarity: 'white', y: 0.48, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-4', delay: 5500, lane: 'bottom', polarity: 'black', y: 0.52, crossesCenter: true, requiresSwap: false },
-        { id: 'sh-5', delay: 7000, lane: 'top', polarity: 'white', y: 0.42, crossesCenter: true, requiresSwap: false },
-    ],
-    diamonds: [],
-};
-
-/**
  * Phase 6: SPEED_TEST - Mixed blocks at faster speed
  */
 const SPEED_TEST_PATTERN: PhasePattern = {
@@ -193,7 +174,6 @@ export const PHASE_PATTERNS: Record<TutorialPhase, PhasePattern> = {
     'NAVIGATION': NAVIGATION_PATTERN,
     'COLOR_MATCH': COLOR_MATCH_PATTERN,
     'SWAP_MECHANIC': SWAP_MECHANIC_PATTERN,
-    'SHARP_MANEUVER': SHARP_MANEUVER_PATTERN,
     'SPEED_TEST': SPEED_TEST_PATTERN,
     'DIAMOND_COLLECTION': DIAMOND_COLLECTION_PATTERN,
 };

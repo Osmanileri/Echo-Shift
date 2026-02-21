@@ -317,9 +317,6 @@ export function update(
         case 'SWAP_MECHANIC':
             updateSwapVFX(newState, tutorialState);
             break;
-        case 'SHARP_MANEUVER':
-            updateSharpManeuverVFX(newState, tutorialState);
-            break;
         case 'SPEED_TEST':
             updateSpeedTestVFX(newState, tutorialState, canvasWidth);
             break;
@@ -511,23 +508,6 @@ function updateSwapVFX(
 }
 
 
-
-function updateSharpManeuverVFX(
-    state: TutorialVFXState,
-    tutorial: TutorialState
-): void {
-    // Disable connector VFX
-    state.warningBanners.visible = false;
-    state.lightningArcs = [];
-
-    // Screen shake on near-miss maneuvers
-    state.screenShakeActive = true;
-
-    // Motion trails decay
-    state.motionTrails = state.motionTrails
-        .map(t => ({ ...t, alpha: t.alpha - 0.02 }))
-        .filter(t => t.alpha > 0);
-}
 
 function updateSpeedTestVFX(
     state: TutorialVFXState,
@@ -1102,16 +1082,19 @@ function renderInfoModal(
         }
     } // End animAlpha condition
 
-    // === STAGE 3: TAP TO CONTINUE (static, dim) ===
-    const continueY = modalY + modalHeight - 22;
-    ctx.globalAlpha = state.infoModal.alpha * 0.6; // Dimmed, no pulse
-    ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
-    ctx.fillStyle = '#00f0ff';
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 5;
-    ctx.textAlign = 'center';
-    ctx.fillText('[ EKRANA DOKUN ]', canvasWidth / 2, continueY);
-    ctx.shadowBlur = 0;
+    // === STAGE 3: TAP TO CONTINUE (only show after 6s when dismiss is allowed) ===
+    if (modalShowTime > 6000) {
+        const continueY = modalY + modalHeight - 22;
+        const continuePulse = 0.5 + Math.sin(state.time * 0.005) * 0.3;
+        ctx.globalAlpha = state.infoModal.alpha * continuePulse;
+        ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+        ctx.fillStyle = '#00f0ff';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 5;
+        ctx.textAlign = 'center';
+        ctx.fillText('[ EKRANA DOKUN ]', canvasWidth / 2, continueY);
+        ctx.shadowBlur = 0;
+    }
 
     ctx.restore();
 }

@@ -2,7 +2,7 @@
  * Interactive Tutorial System - Echo Shift
  * 7 Aşamalı Eğitim Sistemi (Tam Yeniden Yazım)
  * 
- * Akış: INTRO → NAVIGATION → SWAP_MECHANIC → COLOR_MATCH → SHARP_MANEUVER → DIAMOND_COLLECTION → SPEED_TEST
+ * Akış: INTRO → NAVIGATION → SWAP_MECHANIC → COLOR_MATCH → DIAMOND_COLLECTION → SPEED_TEST
  * 
  * Düzeltilen kritik hatalar:
  * - INTRO→NAVIGATION phaseIndex güncellenmiyordu → advanceToNextPhase kullanılıyor
@@ -24,7 +24,6 @@ export type TutorialPhase =
     | 'NAVIGATION'
     | 'SWAP_MECHANIC'
     | 'COLOR_MATCH'
-    | 'SHARP_MANEUVER'
     | 'DIAMOND_COLLECTION'
     | 'SPEED_TEST';
 
@@ -99,9 +98,13 @@ export interface TutorialState {
     // Scheduled messages tracking
     scheduledMessagesShown: Record<string, boolean>;
 
-    // Tutorial Finish Mode
+    // Tutorial Finish Mode (holographic gate + explosion)
     inFinishMode: boolean;
     finishModeStartTime: number;
+    finishPlayerXOffset: number;
+    finishLineReached: boolean;
+    finishExplosionDone: boolean;
+    showTutorialVictory: boolean;
     completionCallbackFired: boolean;
 
     // SWAP_MECHANIC sub-states
@@ -114,8 +117,6 @@ export interface TutorialState {
     // Persistent block-passed counters (blocks leave obstacles array after passing)
     colorMatchBlocksPassed: number;
     colorMatchPassedIds: Set<string>;
-    sharpManeuverBlocksPassed: number;
-    sharpManeuverPassedIds: Set<string>;
     speedTestBlocksPassed: number;
     speedTestPassedIds: Set<string>;
 }
@@ -175,14 +176,6 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
         message: 'Şimdi öğrendiklerini test edelim!\nAynı Renk Top → Aynı Renk Blok',
         targetGoal: 19,
         speedMultiplier: 0.55,
-        waitForInput: false,
-    },
-    {
-        phase: 'SHARP_MANEUVER',
-        title: 'Keskin Manevralar',
-        message: 'Biraz daha zorlaştıralım...\nKeskin manevralar yap!',
-        targetGoal: 5,
-        speedMultiplier: 0.8,
         waitForInput: false,
     },
     {
@@ -268,6 +261,10 @@ export function createInitialState(): TutorialState {
 
         inFinishMode: false,
         finishModeStartTime: 0,
+        finishPlayerXOffset: 0,
+        finishLineReached: false,
+        finishExplosionDone: false,
+        showTutorialVictory: false,
         completionCallbackFired: false,
 
         swapSubPhase: 0,
@@ -278,8 +275,6 @@ export function createInitialState(): TutorialState {
 
         colorMatchBlocksPassed: 0,
         colorMatchPassedIds: new Set<string>(),
-        sharpManeuverBlocksPassed: 0,
-        sharpManeuverPassedIds: new Set<string>(),
         speedTestBlocksPassed: 0,
         speedTestPassedIds: new Set<string>(),
     };
@@ -368,8 +363,6 @@ export function advanceToNextPhase(state: TutorialState): TutorialState {
         diamondsCollected: nextConfig.phase === 'DIAMOND_COLLECTION' ? 0 : state.diamondsCollected,
         colorMatchBlocksPassed: nextConfig.phase === 'COLOR_MATCH' ? 0 : state.colorMatchBlocksPassed,
         colorMatchPassedIds: nextConfig.phase === 'COLOR_MATCH' ? new Set<string>() : state.colorMatchPassedIds,
-        sharpManeuverBlocksPassed: nextConfig.phase === 'SHARP_MANEUVER' ? 0 : state.sharpManeuverBlocksPassed,
-        sharpManeuverPassedIds: nextConfig.phase === 'SHARP_MANEUVER' ? new Set<string>() : state.sharpManeuverPassedIds,
         speedTestBlocksPassed: nextConfig.phase === 'SPEED_TEST' ? 0 : state.speedTestBlocksPassed,
         speedTestPassedIds: nextConfig.phase === 'SPEED_TEST' ? new Set<string>() : state.speedTestPassedIds,
     };
@@ -408,6 +401,7 @@ export function failPhase(state: TutorialState): TutorialState {
         progress: 0,
         failedThisPhase: true,
         phaseStartTime: now,
+        speedMultiplier: currentConfig.speedMultiplier,
         currentMessage: {
             text: 'Tekrar dene! ' + currentConfig.message,
             duration: 3000,
@@ -420,14 +414,12 @@ export function failPhase(state: TutorialState): TutorialState {
         swapSuccessTime: 0,
         swapLocked: currentConfig.phase === 'SWAP_MECHANIC',
         swapSuccessCount: 0,
-        showTimeDistortion: currentConfig.phase === 'SWAP_MECHANIC',
+        showTimeDistortion: false,
 
         // Reset persistent counters for the current phase
         diamondsCollected: state.currentPhase === 'DIAMOND_COLLECTION' ? 0 : state.diamondsCollected,
         colorMatchBlocksPassed: state.currentPhase === 'COLOR_MATCH' ? 0 : state.colorMatchBlocksPassed,
         colorMatchPassedIds: state.currentPhase === 'COLOR_MATCH' ? new Set<string>() : state.colorMatchPassedIds,
-        sharpManeuverBlocksPassed: state.currentPhase === 'SHARP_MANEUVER' ? 0 : state.sharpManeuverBlocksPassed,
-        sharpManeuverPassedIds: state.currentPhase === 'SHARP_MANEUVER' ? new Set<string>() : state.sharpManeuverPassedIds,
         speedTestBlocksPassed: state.currentPhase === 'SPEED_TEST' ? 0 : state.speedTestBlocksPassed,
         speedTestPassedIds: state.currentPhase === 'SPEED_TEST' ? new Set<string>() : state.speedTestPassedIds,
     };
@@ -472,10 +464,6 @@ export function update(
 
         case 'COLOR_MATCH':
             newState = updateColorMatchPhase(newState, obstacles);
-            break;
-
-        case 'SHARP_MANEUVER':
-            newState = updateSharpManeuverPhase(newState, obstacles);
             break;
 
         case 'DIAMOND_COLLECTION':
@@ -661,7 +649,8 @@ function updateNavigationPhase(
         newState.showFocusMask = false;
 
         const modalDisplayTime = now - newState.phaseStartTime;
-        if (modalDisplayTime > 1200 && (input.isPressed || input.wasTapped)) {
+        // Wait at least 6s so all KRİTİK BİLGİ text lines are visible before allowing dismiss
+        if (modalDisplayTime > 6000 && (input.isPressed || input.wasTapped)) {
             playObstaclePass();
             newState.showInfoModal = false;
             newState.pausedForModal = false;
@@ -711,12 +700,12 @@ function updateSwapPhase(
     if (newState.swapSubPhase === 1) {
         newState.swapLocked = true;
 
-        if (targetBlock && targetBlock.x < playerX + 150 && !newState.showTimeDistortion) {
+        if (targetBlock && targetBlock.x < playerX + 80 && !newState.showTimeDistortion) {
             newState.showTimeDistortion = true;
             newState.speedMultiplier = 0.15;
         }
 
-        if (targetBlock && targetBlock.x < playerX + 35) {
+        if (targetBlock && targetBlock.x < playerX + 20) {
             newState.swapSubPhase = 2;
             newState.swapLocked = false;
             newState.swapBlockZoomActive = true;
@@ -767,6 +756,8 @@ function updateSwapPhase(
 
             newState.swapSubPhase = 0;
             newState.swapLocked = true;
+            newState.showTimeDistortion = false;
+            newState.swapBlockZoomActive = false;
             newState.currentMessage = {
                 text: 'Bir sonraki blok geliyor...',
                 duration: 3000,
@@ -805,34 +796,6 @@ function updateColorMatchPhase(
         swapLocked: false,
         colorMatchBlocksPassed: newBlocksPassed,
         colorMatchPassedIds: newPassedIds,
-        progress: newBlocksPassed,
-    };
-}
-
-// ============================================================================
-// PHASE: SHARP MANEUVER
-// ============================================================================
-
-function updateSharpManeuverPhase(
-    state: TutorialState,
-    obstacles: TutorialObstacle[]
-): TutorialState {
-    let newBlocksPassed = state.sharpManeuverBlocksPassed;
-    const newPassedIds = new Set(state.sharpManeuverPassedIds);
-
-    for (let i = 0; i < obstacles.length; i++) {
-        const obs = obstacles[i];
-        if (obs.passed && !newPassedIds.has(obs.id)) {
-            newPassedIds.add(obs.id);
-            newBlocksPassed++;
-        }
-    }
-
-    return {
-        ...state,
-        swapLocked: false,
-        sharpManeuverBlocksPassed: newBlocksPassed,
-        sharpManeuverPassedIds: newPassedIds,
         progress: newBlocksPassed,
     };
 }
