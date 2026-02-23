@@ -23,8 +23,37 @@
 - **Comprehensive Mobile Audit & Fixes** tamamlandı
 - **Mobile UI/UX Layout Overhaul** tamamlandı
 - **Android Platform Setup** tamamlandı
+- **PixiJS WebGL Engine Integration** tamamlandı
+- **Glitch Seeker Enemy (PixiJS GPU-Rendered)** tamamlandı
 
 ## Tamamlanan Spec'ler
+
+### 0-A-pre. Glitch Seeker Enemy — PixiJS GPU-Rendered Homing Ghost ✅ (YENİ)
+
+**Amaç**: Profesyonel, GPU-render'lı ikinci düşman tipi — dijital hayalet (bozuk Pac-Man ghost), homing mekanikleri, data trail, glitch efektleri.
+
+**Yeni Dosyalar**:
+- `engine/PixiGlitchSeeker.ts`: ~450 satır PixiJS GPU renderer (ghost body, eyes, scan lines, glitch slices, trail pool, shatter fragments)
+
+**Değiştirilen Dosyalar (7 dosya)**:
+
+| Dosya | Değişiklik | Etki |
+|-------|------------|------|
+| constants.ts | GLITCH_SEEKER_CONFIG (~50 config) | Tüm seeker parametreleri merkezi |
+| EnemyManager.ts | GlitchSeeker types, state machine, 12+ yeni fonksiyon | idle→entering→hunting→dying, LERP homing, teleport, knockback |
+| PixiGameBridge.ts | seekerRenderState param, initSeeker/destroySeeker | Bridge'e seeker entegrasyonu |
+| usePixiRenderer.ts | onSeekerTeleport, initSeeker API | React hook'a seeker API'si |
+| engine/index.ts | PixiGlitchSeeker barrel export | Module accessibility |
+| audioSystem.ts | 4 yeni prosedürel ses (enter, hunting, teleport, death) | Tam ses desteği |
+| GameEngine.tsx | initSeeker, playerX param, collision/counter-attack, syncFrame, ability reset | Oyun döngüsüne tam entegrasyon |
+
+**Mimari Kararlar**:
+- Parallel field (dart + seeker ayrı alanlar, refactor yok)
+- Sequential spawn (bir anda tek düşman tipi)
+- Full PixiJS rendering (OBSTACLES layer, Canvas2D arkası — ethereal efekt)
+- 300m mesafe + 500 skor unlock eşiği, %35 spawn şansı
+
+**Build**: Sıfır yeni TypeScript hatası
 
 ### 0-A. Mobile UI/UX Layout Overhaul ✅ (YENİ)
 

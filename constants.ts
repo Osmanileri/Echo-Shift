@@ -186,6 +186,60 @@ export const SHIFT_CONFIG = {
 };
 
 
+// ============================================================================
+// Glitch Seeker (Homing Ghost Enemy) — PixiJS Rendered
+// ============================================================================
+export const GLITCH_SEEKER_CONFIG = {
+  // Sprite / hitbox
+  BODY_WIDTH: 40,
+  BODY_HEIGHT: 48,
+
+  // Homing movement (deltaTime-normalized)
+  HOMING_LERP: 0.03,          // Yatay takip yumuşaklığı (lower = slower homing)
+  DESCENT_SPEED: 1.5,         // Dikey iniş hızı (px/frame @60fps)
+  WAVE_AMPLITUDE: 0.5,        // Dikey sinüs dalgası genliği
+
+  // State durations (ms)
+  ENTRY_DURATION: 1200,        // Entering animasyonu
+  MAX_HUNT_DURATION: 8000,     // Maksimum hunting süresi
+  DEATH_DURATION: 600,         // Ölüm animasyonu süresi
+
+  // Trail / particles
+  TRAIL_POOL_SIZE: 20,         // Pre-allocated trail objesi sayısı
+  TRAIL_SPAWN_INTERVAL: 60,    // Trail spawn aralığı (ms)
+  TRAIL_FADE_SPEED: 0.015,     // Trail alpha azalma hızı / frame
+
+  // Glitch teleport
+  GLITCH_TELEPORT_MIN: 2000,   // Min teleport aralığı (ms)
+  GLITCH_TELEPORT_MAX: 3000,   // Max teleport aralığı (ms)
+  GLITCH_TELEPORT_DISTANCE: 40, // Max teleport mesafesi (px)
+
+  // Spawn thresholds
+  SPAWN_THRESHOLD_DISTANCE: 300,  // 300m sonra aktif
+  SPAWN_THRESHOLD_SCORE: 500,     // veya 500 skor sonra
+  SPAWN_CHANCE: 0.35,             // Dart yerine seeker spawn olasılığı
+
+  // Combat
+  DANGER_RADIUS: 80,              // Counter-attack menzili (px)
+  KNOCKBACK_PUSH_Y: 150,          // Yukarı itme mesafesi (px)
+
+  // PixiJS render
+  GLOW_BLUR_STRENGTH: 4,
+  SCAN_LINE_COUNT: 24,
+  GLITCH_SLICE_COUNT: 4,
+  SHATTER_FRAGMENT_COUNT: 6,
+
+  // Colors
+  COLOR_BODY: 0x1a0a2e,
+  COLOR_BODY_LIGHT: 0x3d1e6d,
+  COLOR_EYES_HUNTING: 0xff3366,
+  COLOR_EYES_ENTERING: 0x00ffcc,
+  COLOR_TRAIL_NEW: 0x00ffcc,
+  COLOR_TRAIL_OLD: 0x6600cc,
+  COLOR_AURA_ENTERING: 0x00ffcc,
+  COLOR_AURA_HUNTING: 0xff3366,
+};
+
 // Glitch Protocol Configuration - Requirements 7.1, 6.5, 2.7, 2.6
 export const GLITCH_CONFIG = {
   // Duration - Requirements 7.1

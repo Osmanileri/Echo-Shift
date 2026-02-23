@@ -4,6 +4,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style as StatusBarStyle } from "@capacitor/status-bar";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
+import GameCanvas, { GameCanvasHandle } from "./components/GameCanvas";
 import GameEngine, {
     DailyChallengeMode,
     RestoreModeConfig
@@ -90,6 +91,9 @@ const App: React.FC = () => {
   const [score, setScore] = useState<number>(0);
   const [highScore, setHighScore] = useState<number>(0);
   const [gameSpeed, setGameSpeed] = useState<number>(0);
+
+  // PixiJS Engine Canvas ref
+  const gameCanvasRef = useRef<GameCanvasHandle>(null);
 
   // Analytics tracking - Requirements 5.1, 5.2, 5.6
   const sessionStartTime = useRef<number>(0);
@@ -1220,6 +1224,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden select-none touch-none">
+      <GameCanvas ref={gameCanvasRef} />
       <GameEngine
         gameState={gameState}
         onScoreUpdate={handleScoreUpdate}
@@ -1231,6 +1236,7 @@ const App: React.FC = () => {
         onSlowMotionStateUpdate={handleSlowMotionStateUpdate}
         onDashStateUpdate={handleDashStateUpdate}
         onQuantumLockStateUpdate={handleQuantumLockStateUpdate}
+        pixiApi={gameCanvasRef.current?.api}
         campaignMode={React.useMemo(() => campaignLevelConfig ? {
           enabled: true,
           levelConfig: campaignLevelConfig,

@@ -164,6 +164,8 @@ import * as StartSequence from "../systems/startSequenceSystem";
 import * as BeatEngine from "../systems/beatEngine";
 // AudioSystem - AudioContext lifecycle for mobile
 import { onAudioContextStateChange } from "../systems/audioSystem";
+// PixiJS Engine — WebGL rendering layer for backgrounds, particles, VFX
+import type { PixiRendererAPI } from "../engine/usePixiRenderer";
 
 // Campaign mode configuration for mechanics enable/disable
 // Campaign Update v2.5 - Distance-based progression
@@ -263,6 +265,8 @@ interface GameEngineProps {
   tutorialMode?: { enabled: boolean };
   onTutorialComplete?: () => void;
   onTutorialPhaseChange?: (phase: import('../systems/interactiveTutorialSystem').TutorialPhase, phaseIndex: number) => void;
+  // PixiJS Engine — WebGL rendering layer API
+  pixiApi?: PixiRendererAPI;
 }
 
 const GameEngine: React.FC<GameEngineProps> = ({
@@ -288,9 +292,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
   tutorialMode,
   onTutorialComplete,
   onTutorialPhaseChange,
+  pixiApi,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // PixiJS API ref — allows game loop to access latest API without re-creating loop
+  const pixiApiRef = useRef<PixiRendererAPI | undefined>(pixiApi);
+  useEffect(() => { pixiApiRef.current = pixiApi; }, [pixiApi]);
 
   // Canvas visibility state - hide until first proper frame is rendered
   // This prevents the flash of partial background during level transitions
@@ -775,6 +784,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
     particles.current = [];
     framesSinceSpawn.current = 0;
 
+    // PixiJS: Clean up all renderables for fresh start
+    pixiApiRef.current?.cleanupAllRenderables();
+
     // Reset block system state for clean polarity/gap tracking
     blockSystemState.current = BlockSystem.createBlockSystemState();
 
@@ -1033,6 +1045,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Pre-renders enemy sprites to off-screen canvas
     if (!EnemySpriteCache.isReady()) {
       EnemySpriteCache.initSpriteCaches(EnemyManager.ENEMY_CONFIG.SPRITE_SIZE);
+    }
+
+    // Initialize Glitch Seeker PixiJS sprites (GPU-rendered homing ghost)
+    if (pixiApiRef.current?.isReady) {
+      pixiApiRef.current.initSeeker();
     }
 
     // Reset Flux Overload State - Yasaklı Hat Mekaniği
@@ -1415,6 +1432,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     getHapticSystem().trigger("light");
     // Audio: Swap sound - Phase 4
     AudioSystem.playSwap();
+    // PixiJS: Swap flash effect
+    pixiApiRef.current?.onSwap(window.innerWidth / 4, playerY.current * window.innerHeight);
 
     // Mission System: Emit SWAP_COUNT event - Requirements 7.1
     onMissionEvent?.({ type: 'SWAP_COUNT', value: 1 });
@@ -3133,7 +3152,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Calculate deltaTime for enemy update (ms since last frame)
         const enemyDeltaTime = 16; // Approximate 60fps
 
-        // Update enemy state machine
+        // Update enemy state machine (dart + seeker coordinated)
         enemyManagerState.current = EnemyManager.updateEnemy(
           enemyManagerState.current,
           enemyDeltaTime,
@@ -3141,7 +3160,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           width,
           height,
           currentDistance,
-          score.current
+          score.current,
+          playerX    // playerX for seeker homing
         );
 
         // Reset counter-attack flag for new frame
@@ -3350,11 +3370,104 @@ const GameEngine: React.FC<GameEngineProps> = ({
             }
           }
         }
+
+        // --- GLITCH SEEKER: Counter-attack & Collision ---
+        if (EnemyManager.isSeekerActive(enemyManagerState.current) && enemyManagerState.current.seeker.state === 'hunting') {
+          const seekerPos = EnemyManager.getSeekerPosition(enemyManagerState.current);
+
+          // Counter-attack check (Pokemon defends player)
+          if (seekerPos && activeCharacter && !enemyManagerState.current.seeker.knockbackActive) {
+            const whiteClose = EnemyManager.isSeekerInCounterRange(enemyManagerState.current, whiteOrb.x, whiteOrb.y);
+            const blackClose = EnemyManager.isSeekerInCounterRange(enemyManagerState.current, blackOrb.x, blackOrb.y);
+
+            if (whiteClose || blackClose) {
+              const pokemonTier = activeCharacter.tier || 'common';
+
+              if (pokemonTier === 'legendary') {
+                // Legendary: instant kill
+                enemyManagerState.current = EnemyManager.counterSeeker(enemyManagerState.current);
+                if (seekerPos) {
+                  ParticleSystem.emitBurst(seekerPos.x, seekerPos.y, activeCharacter.types[0] || 'normal', 25);
+                  EnemyDeathVFX.triggerDeathExplosion(seekerPos.x, seekerPos.y, activeCharacter.types[0] || 'normal');
+                }
+                ScreenShake.triggerCollision();
+                getHapticSystem().trigger('heavy');
+                AudioSystem.playSeekerDeath('countered');
+                scorePopups.current.push({
+                  x: seekerPos?.x || playerX,
+                  y: (seekerPos?.y || playerYScreen) - 20,
+                  text: '👻 EXORCISED!',
+                  color: '#FF00FF',
+                  life: 2.0,
+                  vy: -3,
+                });
+              } else {
+                // Non-legendary: knockback
+                const pokemonLevel = Math.floor((activeCharacter.bst || 300) / 50);
+                const pokemonAttack = activeCharacter.stats?.attack || 50;
+                const pushDistance = EnemyManager.calculatePushDistance(pokemonLevel, pokemonAttack);
+                enemyManagerState.current = EnemyManager.applySeekerKnockback(enemyManagerState.current, pushDistance);
+                if (seekerPos) {
+                  ParticleSystem.emitBurst(seekerPos.x, seekerPos.y, activeCharacter.types[0] || 'normal', 10);
+                }
+                ScreenShake.triggerNearMiss();
+                getHapticSystem().trigger('medium');
+                AudioSystem.playSeekerTeleport();
+                scorePopups.current.push({
+                  x: seekerPos?.x || playerX,
+                  y: (seekerPos?.y || playerYScreen) - 20,
+                  text: '💨 REPELLED!',
+                  color: '#00FFCC',
+                  life: 1.5,
+                  vy: -2,
+                });
+              }
+            }
+          }
+
+          // Collision check (seeker hits orbs)
+          if (!enemyManagerState.current.seeker.knockbackActive) {
+            const collisionRadius = whiteOrb.radius * 2;
+            const whiteHit = EnemyManager.checkSeekerCollision(enemyManagerState.current, whiteOrb.x, whiteOrb.y, collisionRadius);
+            const blackHit = EnemyManager.checkSeekerCollision(enemyManagerState.current, blackOrb.x, blackOrb.y, collisionRadius);
+
+            if (whiteHit || blackHit) {
+              if (shieldChargesRemaining.current > 0) {
+                shieldChargesRemaining.current -= 1;
+                shieldInvincibleUntil.current = frameTime + 2000 + spiritModifiers.shieldTimeBonus;
+                enemyManagerState.current = EnemyManager.counterSeeker(enemyManagerState.current);
+                const hitOrb = whiteHit ? whiteOrb : blackOrb;
+                ParticleSystem.emitBurst(hitOrb.x, hitOrb.y, 'electric', 10);
+                ScreenShake.triggerNearMiss();
+                getHapticSystem().trigger('medium');
+                AudioSystem.playShieldBlock();
+                scorePopups.current.push({ x: hitOrb.x, y: hitOrb.y - 20, text: '🛡️ SHIELD', color: '#00F0FF', life: 1.0, vy: -2 });
+              } else {
+                // No shield — take damage (reset streaks)
+                const hitOrb = whiteHit ? whiteOrb : blackOrb;
+                createExplosion(hitOrb.x, hitOrb.y, '#FF0000');
+                enemyManagerState.current = EnemyManager.counterSeeker(enemyManagerState.current);
+                nearMissState.current = createInitialNearMissState();
+                onNearMissStateUpdate?.(0);
+                rhythmState.current = createInitialRhythmState();
+                onRhythmStateUpdate?.(1, 0);
+                ScreenShake.triggerCollision();
+                getHapticSystem().trigger('heavy');
+                AudioSystem.playGlitchDamage();
+                scorePopups.current.push({ x: hitOrb.x, y: hitOrb.y - 20, text: '👻 HAUNTED!', color: '#FF0066', life: 1.0, vy: -2 });
+              }
+            }
+          }
+        }
       } else if (enemyManagerState.current && isInSpecialAbility) {
         // Force reset enemy to idle state if it was active
         if (enemyManagerState.current.dart.state !== 'idle') {
           enemyManagerState.current = EnemyManager.resetDart(enemyManagerState.current, width, height);
           counterAttackActive.current = false;
+        }
+        // Also reset seeker during special abilities
+        if (enemyManagerState.current.seeker.state !== 'idle') {
+          enemyManagerState.current = EnemyManager.resetSeeker(enemyManagerState.current);
         }
       }  // NOTE: Enemy drawing moved to DRAW section (after orbs) to prevent being covered by background
 
@@ -3424,6 +3537,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Create explosion effect at midline
         const midX = (whiteOrbX + blackOrbX) / 2;
         createExplosion(midX, currentMidlineY, '#FF0055');
+        pixiApiRef.current?.onGameOver();
         onGameOver(score.current);
         return;
       }
@@ -4100,6 +4214,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Screen shake for dramatic effect
               ScreenShake.triggerStreakBonus();
+
+              // PixiJS: Overdrive activation VFX
+              pixiApiRef.current?.onOverdriveActivate();
             }
           }
 
@@ -4258,6 +4375,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           if (!(tutorialMode?.enabled && tutorialState.current.isActive)) {
             useGameStore.getState().addEchoShards(finalValue);
           }
+
+          // PixiJS: Shard collection VFX
+          pixiApiRef.current?.onShardCollected(shard.x, shard.y, finalValue);
 
           // Phase Dash: Energy gain from shard collection
           const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
@@ -4659,6 +4779,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
               BonusVFX.spawnOverdriveDestroy(obs.x + obs.width / 2, obs.y + obs.height / 2);
               AudioSystem.playOverdriveDestroy();
 
+              // PixiJS: Obstacle destroyed VFX
+              pixiApiRef.current?.onObstacleDestroyed?.(obs.x + obs.width / 2, obs.y + obs.height / 2);
+
               // Haptic feedback
               getHapticSystem().trigger("medium");
 
@@ -5015,6 +5138,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
 
+              // PixiJS: Collision VFX (fatal = true for white orb death)
+              pixiApiRef.current?.onCollision(whiteOrb.x, whiteOrb.y, true);
+
               // Campaign Update v2.5 - Track damage taken for star rating
               // Requirements: 4.3
               if (campaignModeRef.current?.enabled && campaignModeRef.current.useDistanceMode) {
@@ -5279,6 +5405,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
               collisionDetected = true;
 
+              // PixiJS: Collision VFX (fatal = true for black orb death)
+              pixiApiRef.current?.onCollision(blackOrb.x, blackOrb.y, true);
+
               // Campaign Update v2.5 - Track damage taken for star rating
               // Requirements: 4.3
               if (campaignModeRef.current?.enabled && campaignModeRef.current.useDistanceMode) {
@@ -5335,6 +5464,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 currentTime
               );
               nearMissState.current = streakResult.newState;
+
+              // PixiJS: Near miss spark VFX
+              pixiApiRef.current?.onNearMiss(whiteOrb.x, whiteOrb.y, nearMissState.current.streakCount);
 
               // Notify UI of near miss state change - Requirements 3.7
               onNearMissStateUpdate?.(nearMissState.current.streakCount);
@@ -5460,6 +5592,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 currentTime
               );
               nearMissState.current = streakResult.newState;
+
+              // PixiJS: Near miss spark VFX (black orb)
+              pixiApiRef.current?.onNearMiss(blackOrb.x, blackOrb.y, nearMissState.current.streakCount);
 
               // Notify UI of near miss state change - Requirements 3.7
               onNearMissStateUpdate?.(nearMissState.current.streakCount);
@@ -5661,6 +5796,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
             life: 1.5,
             vy: -0.5,
           });
+
+          // PixiJS: Overdrive deactivation
+          pixiApiRef.current?.onOverdriveDeactivate();
         }
       }
 
@@ -8066,12 +8204,32 @@ const GameEngine: React.FC<GameEngineProps> = ({
           setTimeout(() => {
             onGameOver(score.current);
           }, 50);
+
+          // PixiJS: Game over VFX
+          pixiApiRef.current?.onGameOver();
+
           return;
         }
       }
 
-
-
+      // PixiJS Engine: Sync frame — update backgrounds, particles, effects
+      if (pixiApiRef.current?.isReady) {
+        const dtMs = 1000 / 60; // ~16.67ms at 60fps
+        const seekerRender = enemyManagerState.current
+          ? EnemyManager.getSeekerRenderState(enemyManagerState.current, playerX)
+          : null;
+        pixiApiRef.current.syncFrame(
+          dtMs,
+          speed.current,
+          playerY.current * height,
+          whiteOrbX,
+          whiteOrbY,
+          blackOrbX,
+          blackOrbY,
+          shiftState.current.overdriveActive,
+          seekerRender,
+        );
+      }
 
       // Enable canvas visibility after first render
       if (!canvasReady) {

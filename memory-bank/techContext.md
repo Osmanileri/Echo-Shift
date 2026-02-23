@@ -4,8 +4,7 @@
 
 | Kategori | Teknoloji |
 |----------|-----------|
-| Frontend | React 18 + TypeScript |
-| Build/Dev | Vite 5 |
+| Frontend | React 18 + TypeScript || Rendering | PixiJS v8 (WebGL) + Canvas2D (hybrid) || Build/Dev | Vite 5 |
 | CSS | Tailwind CSS 4 (local PostCSS build — `@tailwindcss/postcss`) |
 | State | Zustand (subscribeWithSelector middleware) |
 | Test | Vitest + fast-check (property-based) |
@@ -92,6 +91,8 @@ export const STORAGE_KEYS = {
 
 - Game loop "hot path" React render ile değil, canvas + refs ile çalışıyor
 - Performans kritik kodlar `GameEngine.tsx` içinde
+- **PixiJS Hybrid Architecture**: WebGL canvas (backgrounds, particles, VFX) sits BEHIND Canvas2D (game objects). Bridge syncs per-frame.
+- `engine/` klasörü PixiJS katmanı: Renderer, Particles, Background, Effects, GameBridge, usePixiRenderer hook
 - Backend yok, tüm kalıcılık localStorage ile
 - Audio dosya gerektirmez, procedural üretilir
 - **Performance-critical code MUST avoid per-frame allocations** (see systemPatterns.md > Performance Optimization Patterns)

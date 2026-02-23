@@ -341,3 +341,23 @@ replayReward = newBaseReward - previousBaseReward; // Only if improved
 | MID | 21-30 | Shifting midrange | Moving obstacles |
 | HIGH | 31-40 | Higher frequencies | Rhythm |
 | PRESENCE | 41-50 | Presence zone | Gravity |
+
+## Enemy System — Dual Enemy Architecture
+
+```
+EnemyManagerState
+├── isActive: boolean
+├── dart: GlitchDart          (Canvas2D rendering)
+│   └── idle → tracking → locked → firing → cooldown
+├── seeker: GlitchSeeker       (PixiJS GPU rendering — OBSTACLES layer)
+│   └── idle → entering → hunting → dying
+└── spawnScheduler
+    └── nextEnemyType: 'dart' | 'seeker' (sequential spawn, one at a time)
+```
+
+- **Parallel field**: dart + seeker ayrı alanlar, bağımsız state machine'ler
+- **Sequential spawn**: `rollNextEnemyType()` ile sıralı — ikisi aynı anda spawn olmaz
+- **Seeker homing**: LERP 0.03 ile oyuncu X pozisyonuna tracking, descent 1.5px/frame
+- **Unlock**: distance ≥ 300m AND score ≥ 500, spawn chance %35
+- **PixiJS render**: `engine/PixiGlitchSeeker.ts` — OBSTACLES katmanı (ethereal, Canvas2D arkası)
+- **Pre-allocated**: Trail pool (20), shatter fragments (6), zero per-frame allocation

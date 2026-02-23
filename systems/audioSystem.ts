@@ -1277,6 +1277,138 @@ export function playCounterAttack(pokemonType: string) {
   }
 }
 
+// ============ GLITCH SEEKER SOUNDS ============
+
+/**
+ * Seeker enter — digital materialize: ascending granular noise + sine sweep
+ */
+export function playSeekerEnter() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // White noise burst (100ms)
+  playNoise(0.12, 6000, 'bandpass', 0.12);
+
+  // Ascending sine sweep 200→800Hz over 400ms
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(200, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.4);
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
+  gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.3);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.5);
+
+  // Eerie triangle undertone
+  setTimeout(() => {
+    playTone(120, 0.3, 'triangle', 0.08, 0.05, 0.15);
+  }, 100);
+}
+
+/**
+ * Seeker hunting ambient drone — proximity-based intensity
+ * Lower drone that intensifies as seeker gets closer to player
+ */
+export function playSeekerHunting(proximity: number = 0.5) {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Base frequency scales with proximity (80→160Hz)
+  const baseFreq = 80 + proximity * 80;
+  const vol = 0.04 + proximity * 0.06;
+
+  // Short drone pulse (200ms)
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(baseFreq * 1.02, ctx.currentTime + 0.15);
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.02);
+  gain.gain.linearRampToValueAtTime(vol * 0.5, ctx.currentTime + 0.12);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.22);
+}
+
+/**
+ * Seeker glitch teleport — ultra-short crackle snap
+ */
+export function playSeekerTeleport() {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  // Short square wave burst 1200Hz (30ms)
+  playTone(1200, 0.04, 'square', 0.15, 0.002, 0.01);
+
+  // Noise crackle
+  playNoise(0.03, 8000, 'highpass', 0.12);
+
+  // Quick pitch drop
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(2000, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.04);
+  gain.gain.setValueAtTime(0.1, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.05);
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.06);
+}
+
+/**
+ * Seeker death sound — different profile for countered vs escaped
+ */
+export function playSeekerDeath(reason: 'countered' | 'escaped' = 'escaped') {
+  const ctx = getContext();
+  const master = getMasterGain();
+  if (!ctx || !master) return;
+
+  if (reason === 'countered') {
+    // Aggressive noise burst + descending sawtooth
+    playNoise(0.15, 5000, 'bandpass', 0.2);
+    playTone(800, 0.2, 'sawtooth', 0.15, 0.005, 0.08);
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1200, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.25);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } else {
+    // Soft descending sine + fade ("power down")
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.25);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  }
+}
+
 // ============ FLUX OVERLOAD SOUNDS ============
 
 /**
@@ -2382,6 +2514,12 @@ export const AudioSystem = {
   playLockOn,
   playDartFire,
   playCounterAttack,
+
+  // Enemy Sounds - Glitch Seeker (Homing Ghost)
+  playSeekerEnter,
+  playSeekerHunting,
+  playSeekerTeleport,
+  playSeekerDeath,
 
   // Flux Overload Sounds - Yasaklı Hat Mekaniği
   playFluxOverloadWarning,

@@ -25,6 +25,7 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.0",
     "lucide-react": "^0.561.0",
+    "pixi.js": "^8.16.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^5.0.9"

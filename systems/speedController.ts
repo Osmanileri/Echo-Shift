@@ -46,7 +46,7 @@ export const SPEED_CONSTANTS = {
   KNEE_SQRT: 10,
   /** Distance compensation: multiplier for distance-tracker speed so level pacing stays unchanged
    *  despite slower visual speed ramp. Old curve ~3.34 at 150m, new ~2.42 → ratio ≈1.55 */
-  DISTANCE_COMPENSATION: 1.55,
+  DISTANCE_COMPENSATION: 1.70,
   /** Climax zone begins at this progress fraction (final 20% of level) */
   CLIMAX_ZONE_START: 0.80,
   /** Climax zone speed multiplier (15% boost near level end) */

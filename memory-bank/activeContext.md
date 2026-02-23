@@ -2,6 +2,31 @@
 
 ## Mevcut Odak
 
+- **Glitch Seeker Enemy — PixiJS GPU-Rendered Homing Ghost** - TAMAMLANDI ✅
+  - Hedef: Profesyonel, GPU-render'lı homing düşman — dijital hayalet (bozuk Pac-Man ghost), data trail, glitch efektleri
+  - **Mimari**: Parallel field in EnemyManagerState (dart + seeker eşzamanlı yönetim), sequential spawn (bir anda tek tür)
+  - **State Machine**: idle → entering → hunting → dying (tam durum makinesi)
+  - **PixiJS Rendering**: OBSTACLES katmanında (Layer 4), Canvas2D'nin arkasında ethereal ghost efekti
+  - **Homing Mekanik**: LERP 0.03 ile oyuncu X konumuna tracking, descent speed 1.5px/frame, teleport (her 3-5sn)
+  - **Unlock**: 300m mesafe + 500 skor eşiği, %35 spawn şansı
+  - **Pokemon Counter-Attack**: Legendary → instant kill (EXORCISED), diğerleri → knockback (REPELLED)
+  - **Görsel**: Prosedürel ghost body (yarım daire + 3 dalga alt), gözler (look-at), scan lines, glitch slices, aura, 20'lik trail pool, 6 shatter parçacığı
+  - **Ses**: 4 prosedürel ses fonksiyonu (enter, hunting proximity drone, teleport, death)
+  - **Değiştirilen Dosyalar**: constants.ts, EnemyManager.ts, audioSystem.ts, PixiGameBridge.ts, usePixiRenderer.ts, engine/index.ts, GameEngine.tsx
+  - **Yeni Dosya**: engine/PixiGlitchSeeker.ts (~450 satır)
+  - **Zero New TS Errors**, tüm pre-existing hatalar test dosyalarında
+
+- **PixiJS WebGL Engine Integration** - TAMAMLANDI ✅
+  - Hedef: Canvas2D oyununu profesyonel mobil oyun kalitesine yükseltmek için PixiJS v8 WebGL katmanı eklendi
+  - **Hybrid Mimari**: PixiJS (backgrounds, particles, VFX) + Canvas2D (game objects) + React DOM (UI)
+  - **6 Engine Modülü**: PixiRenderer, PixiParticles, PixiBackground, PixiEffects, PixiGameBridge, usePixiRenderer
+  - **10 Katmanlı Render Sistemi**: BACKGROUND → GRID → LANE_GLOW → PARTICLES_BACK → OBSTACLES → SHARDS → ORBS → PARTICLES_FRONT → EFFECTS → HUD
+  - **GPU Particle System**: 500 particle pool, 8 emitter (trail, collect, explosion, confetti, sparks, ambient, scorePopup, overdriveAura)
+  - **Parallax Background**: Star field (60 yıldız), scrolling grid, lane separator glow, 6 zone theme
+  - **Screen Effects**: Flash, damage, near-miss, vignette, overdrive hue rotation, glitch, swap flash
+  - **GameEngine Entegrasyonu**: syncFrame per-frame, onCollision, onNearMiss, onShardCollected, onOverdrive, onSwap, onGameOver
+  - **Zero New TS Errors**, production build başarılı (vendor: 141KB, main: 824KB)
+
 - **Procedural Music System v2 — Full Rhythm Engine** - TAMAMLANDI ✅
   - Hedef: Müzik sistemi tamamen yeniden yazıldı — hissedilir, efektif, profesyonel seviyede
   - **7 katmanlı müzik**: Kick + Snare + Hi-hat + Bass + Synth Pad + Lead Melody + Arp

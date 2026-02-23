@@ -8,6 +8,7 @@
  * 4. Can be countered by equipped Pokemon
  */
 
+import { GLITCH_SEEKER_CONFIG } from '../constants';
 import { AudioSystem } from './audioSystem';
 import * as EnemySpriteCache from './EnemySpriteCache';
 
@@ -64,8 +65,59 @@ export interface GlitchDart {
     hasBeenKnockedBack: boolean; // Once true, immune to further knockbacks this attack
 }
 
+// =============================================================================
+// GLITCH SEEKER (Homing Ghost Enemy) — State & Types
+// =============================================================================
+
+export type GlitchSeekerState = 'idle' | 'entering' | 'hunting' | 'dying';
+
+export interface GlitchSeeker {
+    state: GlitchSeekerState;
+    x: number;
+    y: number;
+    targetX: number;       // Oyuncunun X pozisyonu (homing hedef)
+    timer: number;         // State zamanlayıcısı (ms)
+    width: number;
+    height: number;
+    entryProgress: number; // 0→1 giriş animasyonu
+    opacity: number;       // Fade in/out
+    glitchPhase: number;   // Jitter/sin animasyon açısı (sürekli artar)
+    huntDuration: number;  // Hunting state'te geçen toplam süre
+    // Glitch teleport
+    teleportTimer: number;       // Sonraki teleport'a kalan ms
+    teleportCooldown: number;    // Mevcut teleport aralığı (rastgele)
+    // Trail data for PixiJS renderer — positions only, render is GPU-side
+    trailSpawnTimer: number;     // Son trail eklenmesinden beri geçen ms
+    // Knockback physics (yukarı doğru itme)
+    knockbackActive: boolean;
+    knockbackTargetY: number;
+    knockbackStartY: number;
+    knockbackProgress: number;
+    hasBeenKnockedBack: boolean;
+    // Death reason for VFX
+    deathReason: 'none' | 'escaped' | 'countered';
+}
+
+/**
+ * Render state passed to PixiJS each frame — no Canvas2D drawing here.
+ * Pure data struct, renderer consumes it.
+ */
+export interface GlitchSeekerRenderState {
+    state: GlitchSeekerState;
+    x: number;
+    y: number;
+    opacity: number;
+    entryProgress: number;
+    glitchPhase: number;
+    huntDuration: number;
+    deathReason: 'none' | 'escaped' | 'countered';
+    deathProgress: number;   // 0→1 dying animasyon ilerlemesi
+    playerScreenX: number;   // Göz yönlendirme için
+}
+
 export interface EnemyManagerState {
     dart: GlitchDart;
+    seeker: GlitchSeeker;        // Glitch Seeker (homing ghost)
     isActive: boolean;           // Whether enemy system is active
     spawnThreshold: number;      // Distance/score before enemies start spawning
     lastCounterTime: number;     // For visual effects timing
@@ -88,13 +140,14 @@ export interface SpawnSchedulerState {
     attackCount: number;         // Attacks in current wave
     totalAttacks: number;        // Total attacks spawned
     lastSpawnGameTime: number;   // Last spawn time for cooldown calculation
+    nextEnemyType: 'dart' | 'seeker'; // Sıralı spawn: hangi düşman tipi spawn olacak
 }
 
 // Configuration (adjustable for difficulty)
 export const ENEMY_CONFIG = {
     // Timing (milliseconds)
-    TRACKING_DURATION: 2000,    // 2 saniye takip (gerilimi artırır)
-    LOCK_DURATION: 1500,        // 1.5 saniye kilitli (daha uzun kaçış süresi)
+    TRACKING_DURATION: 1600,    // 1.6 saniye takip (gerilimi artırır)
+    LOCK_DURATION: 800,         // 0.8 saniye kilitli (daha kısa, akıcı)
 
     // Professional Spawn Algorithm Configuration
     SPAWN: {
@@ -117,7 +170,7 @@ export const ENEMY_CONFIG = {
 
     // Movement
     DART_SPEED: 6,             // Panik hızı (6 yavaş, 18 hızlıydı)
-    LERP_SMOOTHING: 0.04,       // Hantal takip (ani hareketle kandırılabilir)
+    LERP_SMOOTHING: 0.07,       // Akıcı takip (yine de ani hareketle kandırılabilir)
 
     // Spawn Threshold (aynı kalıyor - test için)
     SPAWN_THRESHOLD_DISTANCE: 50,   // 50m sonra başla
@@ -149,6 +202,7 @@ function createSpawnSchedulerState(): SpawnSchedulerState {
         attackCount: 0,
         totalAttacks: 0,
         lastSpawnGameTime: 0,
+        nextEnemyType: 'dart', // Always start with dart
     };
 }
 
@@ -254,6 +308,34 @@ function updateSpawnScheduler(
 }
 
 /**
+ * Create initial Glitch Seeker state
+ */
+function createInitialSeeker(): GlitchSeeker {
+    return {
+        state: 'idle',
+        x: 0,
+        y: -60,
+        targetX: 0,
+        timer: 0,
+        width: GLITCH_SEEKER_CONFIG.BODY_WIDTH,
+        height: GLITCH_SEEKER_CONFIG.BODY_HEIGHT,
+        entryProgress: 0,
+        opacity: 0,
+        glitchPhase: 0,
+        huntDuration: 0,
+        teleportTimer: 0,
+        teleportCooldown: GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN + Math.random() * (GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MAX - GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN),
+        trailSpawnTimer: 0,
+        knockbackActive: false,
+        knockbackTargetY: 0,
+        knockbackStartY: 0,
+        knockbackProgress: 0,
+        hasBeenKnockedBack: false,
+        deathReason: 'none',
+    };
+}
+
+/**
  * Create initial enemy manager state
  */
 export function createEnemyManagerState(canvasWidth: number, canvasHeight: number): EnemyManagerState {
@@ -273,6 +355,7 @@ export function createEnemyManagerState(canvasWidth: number, canvasHeight: numbe
             knockbackProgress: 0,
             hasBeenKnockedBack: false, // Reset each attack cycle
         },
+        seeker: createInitialSeeker(),
         isActive: false,
         spawnThreshold: ENEMY_CONFIG.SPAWN_THRESHOLD_DISTANCE,
         lastCounterTime: 0,
@@ -428,7 +511,8 @@ export function updateEnemy(
     canvasWidth: number,
     canvasHeight: number,
     currentDistance: number = 0,
-    currentScore: number = 0
+    currentScore: number = 0,
+    playerX: number = 0
 ): EnemyManagerState {
     // Check if enemy system should be active
     const shouldBeActive = currentDistance >= ENEMY_CONFIG.SPAWN_THRESHOLD_DISTANCE ||
@@ -461,6 +545,9 @@ export function updateEnemy(
 
     switch (dart.state) {
         case 'idle': {
+            // SEQUENTIAL SPAWN: Only attempt dart spawn if seeker is also idle
+            if (state.seeker.state !== 'idle') break;
+
             // Use professional spawn scheduler for variable, wave-based spawning
             const currentGameTime = Date.now();
             const schedulerResult = updateSpawnScheduler(
@@ -472,9 +559,20 @@ export function updateEnemy(
 
             // Check if spawn scheduler says it's time to attack
             if (schedulerResult.shouldSpawn) {
-                dart.state = 'tracking';
-                dart.timer = 0;
-                dart.x = canvasWidth - 40;
+                // Determine which enemy type to spawn
+                const enemyType = rollNextEnemyType(currentScore, currentDistance);
+                // Set next type for display/debug
+                state.spawnScheduler.nextEnemyType = enemyType;
+
+                if (enemyType === 'seeker') {
+                    // Spawn seeker instead of dart
+                    spawnSeeker(state, canvasWidth);
+                } else {
+                    // Spawn dart as usual
+                    dart.state = 'tracking';
+                    dart.timer = 0;
+                    dart.x = canvasWidth - 40;
+                }
             }
             break;
         }
@@ -505,7 +603,9 @@ export function updateEnemy(
         }
 
         case 'locked': {
-            // Position is frozen - player's escape window!
+            // Subtle oscillation so enemy doesn't look frozen
+            const lockProgress = dart.timer / ENEMY_CONFIG.LOCK_DURATION;
+            dart.y += Math.sin(dart.timer * 0.012) * 0.4 * (1 - lockProgress);
             if (dart.timer > ENEMY_CONFIG.LOCK_DURATION) {
                 dart.state = 'firing';
                 dart.timer = 0;
@@ -540,6 +640,14 @@ export function updateEnemy(
             }
             break;
         }
+    }
+
+    // ========================================
+    // GLITCH SEEKER UPDATE (separate state machine)
+    // Only process if seeker is not idle, or if dart is idle (spawn coordination)
+    // ========================================
+    if (state.seeker.state !== 'idle') {
+        updateSeeker(state, deltaTime, playerX, playerY, canvasWidth, canvasHeight);
     }
 
     // PERF: state is already mutated in place, just return it
@@ -1153,4 +1261,348 @@ export function drawEnemy(
 export function getDartPosition(state: EnemyManagerState): { x: number; y: number } | null {
     if (state.dart.state !== 'firing') return null;
     return { x: state.dart.x, y: state.dart.y };
+}
+
+// =============================================================================
+// GLITCH SEEKER — State Machine & Logic (no Canvas2D rendering)
+// Rendering delegated to engine/PixiGlitchSeeker.ts (GPU)
+// =============================================================================
+
+/**
+ * Determine next enemy type based on score thresholds
+ */
+function rollNextEnemyType(currentScore: number, currentDistance: number): 'dart' | 'seeker' {
+    const seekerEligible =
+        currentDistance >= GLITCH_SEEKER_CONFIG.SPAWN_THRESHOLD_DISTANCE ||
+        currentScore >= GLITCH_SEEKER_CONFIG.SPAWN_THRESHOLD_SCORE;
+
+    if (!seekerEligible) return 'dart';
+    return Math.random() < GLITCH_SEEKER_CONFIG.SPAWN_CHANCE ? 'seeker' : 'dart';
+}
+
+/**
+ * Check if the Glitch Seeker is currently active (not idle)
+ */
+export function isSeekerActive(state: EnemyManagerState): boolean {
+    return state.seeker.state !== 'idle';
+}
+
+/**
+ * Check if the Glitch Dart is currently active (not idle/cooldown)
+ */
+function isDartActive(state: EnemyManagerState): boolean {
+    const s = state.dart.state;
+    return s !== 'idle' && s !== 'cooldown';
+}
+
+/**
+ * Reset seeker to idle
+ */
+export function resetSeeker(state: EnemyManagerState): EnemyManagerState {
+    const sk = state.seeker;
+    sk.state = 'idle';
+    sk.x = 0;
+    sk.y = -60;
+    sk.opacity = 0;
+    sk.entryProgress = 0;
+    sk.timer = 0;
+    sk.huntDuration = 0;
+    sk.teleportTimer = 0;
+    sk.knockbackActive = false;
+    sk.knockbackProgress = 0;
+    sk.hasBeenKnockedBack = false;
+    sk.deathReason = 'none';
+    sk.trailSpawnTimer = 0;
+    return state;
+}
+
+/**
+ * Spawn seeker at random X position along top edge
+ */
+function spawnSeeker(state: EnemyManagerState, canvasWidth: number): void {
+    const sk = state.seeker;
+    // Random X in 20%–80% of screen
+    sk.x = canvasWidth * 0.2 + Math.random() * canvasWidth * 0.6;
+    sk.y = -60; // above screen
+    sk.state = 'entering';
+    sk.timer = 0;
+    sk.entryProgress = 0;
+    sk.opacity = 0;
+    sk.huntDuration = 0;
+    sk.glitchPhase = 0;
+    sk.teleportTimer = 0;
+    sk.teleportCooldown = GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN +
+        Math.random() * (GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MAX - GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN);
+    sk.trailSpawnTimer = 0;
+    sk.knockbackActive = false;
+    sk.knockbackProgress = 0;
+    sk.hasBeenKnockedBack = false;
+    sk.deathReason = 'none';
+}
+
+// Pre-allocated render state — reused each frame (zero allocation)
+const _seekerRenderState: GlitchSeekerRenderState = {
+    state: 'idle',
+    x: 0,
+    y: 0,
+    opacity: 0,
+    entryProgress: 0,
+    glitchPhase: 0,
+    huntDuration: 0,
+    deathReason: 'none',
+    deathProgress: 0,
+    playerScreenX: 0,
+};
+
+/**
+ * Get current seeker render state for PixiJS (zero alloc)
+ */
+export function getSeekerRenderState(state: EnemyManagerState, playerScreenX: number): GlitchSeekerRenderState {
+    const sk = state.seeker;
+    _seekerRenderState.state = sk.state;
+    _seekerRenderState.x = sk.x;
+    _seekerRenderState.y = sk.y;
+    _seekerRenderState.opacity = sk.opacity;
+    _seekerRenderState.entryProgress = sk.entryProgress;
+    _seekerRenderState.glitchPhase = sk.glitchPhase;
+    _seekerRenderState.huntDuration = sk.huntDuration;
+    _seekerRenderState.deathReason = sk.deathReason;
+    _seekerRenderState.deathProgress = sk.state === 'dying'
+        ? Math.min(1, sk.timer / GLITCH_SEEKER_CONFIG.DEATH_DURATION)
+        : 0;
+    _seekerRenderState.playerScreenX = playerScreenX;
+    return _seekerRenderState;
+}
+
+/**
+ * Update Glitch Seeker state machine — called per frame from updateEnemy.
+ * Seeker only spawns when dart is idle AND scheduler says 'seeker'.
+ */
+export function updateSeeker(
+    state: EnemyManagerState,
+    deltaTime: number,
+    playerScreenX: number,
+    _playerScreenY: number,
+    canvasWidth: number,
+    canvasHeight: number,
+): void {
+    const sk = state.seeker;
+    const dt = deltaTime;
+    sk.timer += dt;
+    sk.glitchPhase += dt;
+
+    // ────── Knockback physics (up direction) ──────
+    if (sk.knockbackActive) {
+        sk.knockbackProgress += dt / 600; // 600ms animation
+        if (sk.knockbackProgress >= 1) {
+            sk.y = sk.knockbackTargetY;
+            sk.knockbackActive = false;
+            sk.knockbackProgress = 0;
+            // After knockback → dying
+            sk.state = 'dying';
+            sk.timer = 0;
+            sk.deathReason = 'countered';
+            return;
+        }
+        const ease = 1 - Math.pow(1 - sk.knockbackProgress, 3); // cubic ease-out
+        sk.y = sk.knockbackStartY + (sk.knockbackTargetY - sk.knockbackStartY) * ease;
+        return; // Don't process state machine during knockback
+    }
+
+    switch (sk.state) {
+        case 'idle':
+            // Spawning handled by updateEnemy's spawn scheduler
+            break;
+
+        case 'entering': {
+            const progress = Math.min(1, sk.timer / GLITCH_SEEKER_CONFIG.ENTRY_DURATION);
+            sk.entryProgress = progress;
+
+            // Phase 1 (0–0.33): Appear + blur → clear
+            // Phase 2 (0.33–0.66): Eyes activate
+            // Phase 3 (0.66–1.0): Final flicker → hunting
+            if (progress < 0.33) {
+                sk.opacity = progress / 0.33 * 0.3;
+                sk.y = -60 + progress / 0.33 * 40; // -60 → -20
+            } else if (progress < 0.66) {
+                sk.opacity = 0.3 + (progress - 0.33) / 0.33 * 0.5;
+                sk.y = -20 + (progress - 0.33) / 0.33 * 40; // -20 → 20
+            } else {
+                sk.opacity = 0.8 + (progress - 0.66) / 0.34 * 0.2;
+                sk.y = 20 + (progress - 0.66) / 0.34 * 20; // 20 → 40
+            }
+
+            // Play enter sound at start
+            if (sk.timer <= dt + 1) {
+                AudioSystem.playSeekerEnter();
+            }
+
+            // Transition to hunting
+            if (progress >= 1) {
+                sk.state = 'hunting';
+                sk.timer = 0;
+                sk.opacity = 1;
+                sk.huntDuration = 0;
+            }
+            break;
+        }
+
+        case 'hunting': {
+            sk.huntDuration += dt;
+
+            // ── Core homing: LERP toward player X ──
+            const lerpFactor = GLITCH_SEEKER_CONFIG.HOMING_LERP * (dt / 16);
+            sk.x += (playerScreenX - sk.x) * lerpFactor;
+
+            // ── Vertical descent with subtle wave ──
+            const descentSpeed = GLITCH_SEEKER_CONFIG.DESCENT_SPEED * (dt / 16);
+            const waveFactor = Math.sin(sk.glitchPhase * 0.002) * GLITCH_SEEKER_CONFIG.WAVE_AMPLITUDE;
+            sk.y += descentSpeed + waveFactor;
+
+            // ── Clamp X to screen bounds ──
+            sk.x = Math.max(10, Math.min(canvasWidth - 10, sk.x));
+
+            // ── Glitch teleport ──
+            sk.teleportTimer += dt;
+            if (sk.teleportTimer >= sk.teleportCooldown) {
+                sk.teleportTimer = 0;
+                // Random next cooldown
+                sk.teleportCooldown = GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN +
+                    Math.random() * (GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MAX - GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_MIN);
+                // Snap position
+                const teleportX = (Math.random() - 0.5) * GLITCH_SEEKER_CONFIG.GLITCH_TELEPORT_DISTANCE;
+                sk.x = Math.max(10, Math.min(canvasWidth - 10, sk.x + teleportX));
+                // Audio
+                AudioSystem.playSeekerTeleport();
+            }
+
+            // ── Hunting ambient sound (proximity-based) ──
+            // Play roughly every 400ms
+            if (Math.floor(sk.huntDuration / 400) > Math.floor((sk.huntDuration - dt) / 400)) {
+                const dx = playerScreenX - sk.x;
+                const dy = (_playerScreenY || canvasHeight / 2) - sk.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const maxDist = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight);
+                const proximity = 1 - Math.min(1, dist / maxDist);
+                AudioSystem.playSeekerHunting(proximity);
+            }
+
+            // ── Exit conditions ──
+            // 1) Exceeded max hunt duration
+            if (sk.huntDuration >= GLITCH_SEEKER_CONFIG.MAX_HUNT_DURATION) {
+                sk.state = 'dying';
+                sk.timer = 0;
+                sk.deathReason = 'escaped';
+                break;
+            }
+            // 2) Fell below screen
+            if (sk.y > canvasHeight + 50) {
+                sk.state = 'dying';
+                sk.timer = 0;
+                sk.deathReason = 'escaped';
+                break;
+            }
+            break;
+        }
+
+        case 'dying': {
+            const deathProgress = Math.min(1, sk.timer / GLITCH_SEEKER_CONFIG.DEATH_DURATION);
+
+            // Fade out
+            sk.opacity = 1 - deathProgress;
+
+            // Death sound at start
+            if (sk.timer <= dt + 1) {
+                AudioSystem.playSeekerDeath(sk.deathReason === 'countered' ? 'countered' : 'escaped');
+            }
+
+            // Return to idle
+            if (deathProgress >= 1) {
+                sk.state = 'idle';
+                sk.timer = 0;
+                sk.opacity = 0;
+                sk.deathReason = 'none';
+            }
+            break;
+        }
+    }
+}
+
+/**
+ * Check collision between seeker and player orb (AABB)
+ */
+export function checkSeekerCollision(
+    state: EnemyManagerState,
+    orbX: number,
+    orbY: number,
+    orbRadius: number,
+): boolean {
+    const sk = state.seeker;
+    if (sk.state !== 'hunting') return false;
+
+    const halfW = sk.width / 2;
+    const halfH = sk.height / 2;
+    const enemyLeft = sk.x - halfW;
+    const enemyRight = sk.x + halfW;
+    const enemyTop = sk.y - halfH;
+    const enemyBottom = sk.y + halfH;
+
+    const orbLeft = orbX - orbRadius;
+    const orbRight = orbX + orbRadius;
+    const orbTop = orbY - orbRadius;
+    const orbBottom = orbY + orbRadius;
+
+    return enemyRight >= orbLeft && enemyLeft <= orbRight &&
+        enemyBottom >= orbTop && enemyTop <= orbBottom;
+}
+
+/**
+ * Check if seeker is within counter-attack range of an orb
+ */
+export function isSeekerInCounterRange(
+    state: EnemyManagerState,
+    orbX: number,
+    orbY: number,
+): boolean {
+    if (state.seeker.state !== 'hunting') return false;
+    const sk = state.seeker;
+    const dx = sk.x - orbX;
+    const dy = sk.y - orbY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return dist < GLITCH_SEEKER_CONFIG.DANGER_RADIUS;
+}
+
+/**
+ * Counter the seeker (destroyed by Pokemon legendary)
+ */
+export function counterSeeker(state: EnemyManagerState): EnemyManagerState {
+    state.seeker.state = 'dying';
+    state.seeker.timer = 0;
+    state.seeker.deathReason = 'countered';
+    state.lastCounterTime = Date.now();
+    return state;
+}
+
+/**
+ * Apply knockback to seeker (pushed upward)
+ */
+export function applySeekerKnockback(
+    state: EnemyManagerState,
+    pushDistance: number,
+): EnemyManagerState {
+    const sk = state.seeker;
+    sk.knockbackStartY = sk.y;
+    sk.knockbackTargetY = Math.max(-60, sk.y - pushDistance);
+    sk.knockbackProgress = 0;
+    sk.knockbackActive = true;
+    sk.hasBeenKnockedBack = true;
+    return state;
+}
+
+/**
+ * Get seeker position for counter-attack visuals
+ */
+export function getSeekerPosition(state: EnemyManagerState): { x: number; y: number } | null {
+    if (state.seeker.state !== 'hunting') return null;
+    return { x: state.seeker.x, y: state.seeker.y };
 }
