@@ -5,8 +5,8 @@ import { StatusBar, Style as StatusBarStyle } from "@capacitor/status-bar";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import DailyChallenge from "./components/DailyChallenge/DailyChallenge";
 import GameEngine, {
-  DailyChallengeMode,
-  RestoreModeConfig
+    DailyChallengeMode,
+    RestoreModeConfig
 } from "./components/GameEngine.tsx";
 import GameUI from "./components/GameUI";
 import MissionComplete from "./components/Missions/MissionComplete";
@@ -22,15 +22,15 @@ import { GameState, GlitchPhase, Mission, MissionEvent } from "./types";
 import { calculateEchoShards } from "./utils/echoShards";
 // Daily Challenge System - Requirements 8.1, 8.2, 8.3
 import {
-  DailyChallengeConfig,
-  submitScore as submitDailyChallengeScore,
+    DailyChallengeConfig,
+    submitScore as submitDailyChallengeScore,
 } from "./systems/dailyChallenge";
 // Tutorial System - Requirements 17.1, 17.3, 17.4, 17.5
 import {
-  shouldShowMainTutorial,
-  startContextualTutorial,
-  startMainTutorial,
-  TutorialState,
+    shouldShowMainTutorial,
+    startContextualTutorial,
+    startMainTutorial,
+    TutorialState,
 } from "./systems/tutorialSystem";
 // Restore System - Requirements 2.1, 2.2, 2.3, 2.5, 2.6, 2.8
 import { RESTORE_CONFIG } from "./systems/restoreSystem";
@@ -38,12 +38,13 @@ import { RESTORE_CONFIG } from "./systems/restoreSystem";
 import { getHapticSystem } from "./systems/hapticSystem";
 // Analytics System - Requirements 5.1, 5.2, 5.4, 5.5, 5.6
 import {
-  AnalyticsSystem,
-  createAnalyticsSystem,
+    AnalyticsSystem,
+    createAnalyticsSystem,
 } from "./systems/analyticsSystem";
 // Daily Rituals System - Requirements 5.5
-import RitualsPanel from "./components/Rituals/RitualsPanel";
-import { DailyRitualsState, getDailyRitualsSystem, setupRitualAnalytics } from "./systems/dailyRituals";
+import DailyMissionsPanel from "./components/Missions/DailyMissionsPanel";
+import MissionBanner from "./components/Missions/MissionBanner";
+import { claimDailyBonus, getTrackerMissions, getUnclaimedCount } from "./systems/missionSystem";
 // Campaign Mode - Requirements 7.1
 import LevelMap from "./components/Campaign/LevelMap";
 import ChapterNotification from "./components/ChapterNotification";
@@ -68,14 +69,7 @@ export function getAnalyticsSystem(): AnalyticsSystem {
   if (!analyticsSystemInstance) {
     analyticsSystemInstance = createAnalyticsSystem();
 
-    // Set up ritual analytics callback - Requirements 5.5
-    setupRitualAnalytics((ritualId, completionTime) => {
-      analyticsSystemInstance?.logEvent("ritual_complete", {
-        ritual_id: ritualId,
-        completion_time: completionTime,
-      });
-      analyticsSystemInstance?.flush();
-    });
+    // Ritual analytics removed — unified mission system handles tracking
   }
   return analyticsSystemInstance;
 }
@@ -174,9 +168,9 @@ const App: React.FC = () => {
     distanceTraveled: number;
   } | null>(null);
 
-  // Daily Rituals state
+  // Daily Missions state (replaces old rituals panel)
   const [showRitualsPanel, setShowRitualsPanel] = useState<boolean>(false);
-  const [ritualsState, setRitualsState] = useState<DailyRitualsState>(() => getDailyRitualsSystem().state);
+  const [bannerMission, setBannerMission] = useState<Mission | null>(null);
 
   // Campaign Mode state
   const [showCampaignMap, setShowCampaignMap] = useState<boolean>(false);
@@ -434,19 +428,12 @@ const App: React.FC = () => {
     // Campaign Chapter System - Reset game over distance info
     setGameOverDistanceInfo(null);
 
-    // Show active ritual notification at game start
-    const ritualSystem = getDailyRitualsSystem();
-    ritualSystem.checkDayChange(); // Check if day changed
-    const activeRitual = ritualSystem.state.rituals.find(r => !r.completed);
-    if (activeRitual && soundCheckComplete) {
-      // Find ritual definition for display
-      const { RITUAL_POOL } = require('./data/rituals');
-      const ritualDef = RITUAL_POOL.find((r: { id: string }) => r.id === activeRitual.ritualId);
-      if (ritualDef) {
-        setGameStartNotification(`🎯 ${ritualDef.name}: ${ritualDef.description}`);
-        // Auto-hide after 3 seconds
-        setTimeout(() => setGameStartNotification(null), 3000);
-      }
+    // Show active mission notification at game start
+    const trackerMissions = getTrackerMissions(missions);
+    if (trackerMissions.length > 0 && soundCheckComplete) {
+      const m = trackerMissions[0];
+      setGameStartNotification(`🎯 ${m.title}: ${m.description}`);
+      setTimeout(() => setGameStartNotification(null), 3000);
     }
   };
 
@@ -757,10 +744,8 @@ const App: React.FC = () => {
     setShowMissionPanel(false);
   }, []);
 
-  // Daily Rituals handlers
+  // Daily Missions handlers (replaces old rituals)
   const handleOpenRituals = useCallback(() => {
-    // Refresh state from system
-    setRitualsState({ ...getDailyRitualsSystem().state });
     setShowRitualsPanel(true);
   }, []);
 
@@ -768,15 +753,16 @@ const App: React.FC = () => {
     setShowRitualsPanel(false);
   }, []);
 
-  const handleClaimRitualBonus = useCallback(() => {
-    const system = getDailyRitualsSystem();
-    const bonus = system.claimBonus();
-    if (bonus > 0) {
-      addEchoShards(bonus);
-      setRitualsState({ ...system.state });
+  const handleClaimDailyBonus = useCallback(() => {
+    const result = claimDailyBonus(missions);
+    if (result.reward.shards > 0 || result.reward.xp > 0) {
+      if (result.reward.shards > 0) addEchoShards(result.reward.shards);
+      if (result.reward.xp > 0) addXP(result.reward.xp);
+      // Update store mission state with bonusClaimed flag
+      processMissionEvent({ type: 'DISTANCE', value: 0 }); // trigger re-render
       AudioSystem.playNewHighScore();
     }
-  }, [addEchoShards]);
+  }, [missions, addEchoShards, addXP, processMissionEvent]);
 
   // Campaign Mode handlers
   const handleOpenCampaign = useCallback(() => {
@@ -1064,8 +1050,8 @@ const App: React.FC = () => {
     if (!mission) {
       mission = missions.daily.missions.find(m => m.id === missionId);
     }
-    if (!mission && missions.marathon.mission?.id === missionId) {
-      mission = missions.marathon.mission;
+    if (!mission && missions.weekly?.mission?.id === missionId) {
+      mission = missions.weekly.mission;
     }
 
     if (mission && mission.completed) {
@@ -1163,10 +1149,20 @@ const App: React.FC = () => {
   // Mission event handler from GameEngine - Requirements 7.1-7.5
   const handleMissionEvent = useCallback((event: MissionEvent) => {
     processMissionEvent(event);
-
-    // Check if any mission just completed and show notification
-    // This is handled by the mission panel UI
   }, [processMissionEvent]);
+
+  // Listen for mission-completed events (dispatched by gameStore) and show banner
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.missions?.length > 0 && gameState === GameState.PLAYING) {
+        // Show banner for the first completed mission
+        setBannerMission(detail.missions[0]);
+      }
+    };
+    window.addEventListener('mission-completed', handler);
+    return () => window.removeEventListener('mission-completed', handler);
+  }, [gameState]);
 
   // Daily reward claim handler - Requirements 5.1
   const handleClaimDailyReward = useCallback(() => {
@@ -1300,6 +1296,8 @@ const App: React.FC = () => {
         onOpenDailyChallenge={handleOpenDailyChallenge}
         onOpenMissions={handleOpenMissionPanel}
         onOpenRituals={handleOpenRituals}
+        trackerMissions={getTrackerMissions(missions)}
+        missionUnclaimedCount={getUnclaimedCount(missions)}
         rhythmMultiplier={rhythmMultiplier}
         rhythmStreak={rhythmStreak}
         nearMissStreak={nearMissStreak}
@@ -1464,12 +1462,20 @@ const App: React.FC = () => {
           onClaim={handleMissionRewardClaim}
         />
       )}
-      {/* Daily Rituals Panel */}
+      {/* Daily Missions Panel (replaces old Rituals) */}
       {showRitualsPanel && (
-        <RitualsPanel
-          state={ritualsState}
-          onClaimBonus={handleClaimRitualBonus}
+        <DailyMissionsPanel
+          missionState={missions}
+          onClaimMission={handleClaimMission}
+          onClaimBonus={handleClaimDailyBonus}
           onClose={handleCloseRituals}
+        />
+      )}
+      {/* Mission Banner - in-game completion notification */}
+      {bannerMission && (
+        <MissionBanner
+          mission={bannerMission}
+          onDismiss={() => setBannerMission(null)}
         />
       )}
       {/* Campaign Level Map */}

@@ -9,29 +9,31 @@ import type { ThemeColors } from "../data/themes";
 import type { ZoneId } from "../data/zones";
 import { calculateLevelReward, calculateStarRating, type LevelResult } from "../systems/campaignSystem";
 import {
-  type ChapterProgressState,
-  createDefaultChapterProgress,
-  loadChapterProgress,
-  saveChapterProgress,
-  unlockNextChapter
+    type ChapterProgressState,
+    createDefaultChapterProgress,
+    loadChapterProgress,
+    saveChapterProgress,
+    unlockNextChapter
 } from "../systems/chapterSystem";
 import { calculateDailyReward, checkLevelUp } from "../systems/levelSystem";
 import {
-  checkMissionReset,
-  getDefaultMissionState,
-  loadMissionState,
-  saveMissionState,
-  updateMissionProgress
+    checkMissionReset,
+    getDefaultMissionState,
+    loadMissionState,
+    markMissionClaimed,
+    migrateOldRituals,
+    saveMissionState,
+    updateMissionProgress
 } from "../systems/missionSystem";
 import { initializeShiftState } from "../systems/shiftProtocol";
 import * as ThemeSystem from "../systems/themeSystem";
 import type {
-  ConstructType,
-  EnhancedResonanceState,
-  MissionEvent,
-  MissionState,
-  ShiftProtocolState,
-  SnapshotBuffer
+    ConstructType,
+    EnhancedResonanceState,
+    MissionEvent,
+    MissionState,
+    ShiftProtocolState,
+    SnapshotBuffer
 } from "../types";
 import { safeLoad, safePersist, STORAGE_KEYS } from "../utils/persistence";
 
@@ -461,13 +463,13 @@ export const useGameStore = create<GameStore>()(
       const state = get();
       const missions = state.missions;
 
-      // Find the mission
+      // Find the mission across all categories
       let mission = missions.soundCheck.missions.find(m => m.id === missionId);
       if (!mission) {
         mission = missions.daily.missions.find(m => m.id === missionId);
       }
-      if (!mission && missions.marathon.mission?.id === missionId) {
-        mission = missions.marathon.mission;
+      if (!mission && missions.weekly?.mission?.id === missionId) {
+        mission = missions.weekly.mission;
       }
 
       if (!mission || !mission.completed) {
@@ -475,6 +477,9 @@ export const useGameStore = create<GameStore>()(
       }
 
       const rewards = { ...mission.rewards };
+
+      // Mark mission as claimed
+      const newMissions = markMissionClaimed(missions, missionId);
 
       // Add XP
       if (rewards.xp > 0) {
@@ -487,11 +492,15 @@ export const useGameStore = create<GameStore>()(
       }
 
       // Update soundCheckComplete if all Sound Check missions are done
-      const allSoundCheckComplete = missions.soundCheck.missions.every(m => m.completed);
-      if (allSoundCheckComplete && !state.soundCheckComplete) {
-        set({ soundCheckComplete: true });
-        get().saveToStorage();
-      }
+      const allSoundCheckComplete = newMissions.soundCheck.missions.every(m => m.completed);
+
+      set({
+        missions: newMissions,
+        soundCheckComplete: allSoundCheckComplete || state.soundCheckComplete,
+      });
+
+      saveMissionState(newMissions);
+      get().saveToStorage();
 
       return rewards;
     },
@@ -502,18 +511,25 @@ export const useGameStore = create<GameStore>()(
      */
     processMissionEvent: (event: MissionEvent) => {
       const state = get();
-      const newMissions = updateMissionProgress(state.missions, event);
+      const { newState, justCompleted } = updateMissionProgress(state.missions, event);
 
       // Check if soundCheck completion changed
-      const soundCheckComplete = newMissions.soundCheck.completed;
+      const soundCheckComplete = newState.soundCheck.completed;
 
       set({
-        missions: newMissions,
+        missions: newState,
         soundCheckComplete: soundCheckComplete || state.soundCheckComplete,
       });
 
       // Save mission state
-      saveMissionState(newMissions);
+      saveMissionState(newState);
+
+      // Dispatch custom event for UI banner when missions complete during gameplay
+      if (justCompleted.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent('mission-completed', { detail: { missions: justCompleted } })
+        );
+      }
     },
 
     /**
@@ -548,11 +564,16 @@ export const useGameStore = create<GameStore>()(
      * Requirements 8.2: Load mission state from storage and check for resets
      */
     initializeMissions: () => {
+      // Migrate old dailyRituals localStorage data (one-time)
+      migrateOldRituals();
+
       // Load mission state from storage
       let missions = loadMissionState();
 
-      // Check for daily/weekly resets
-      missions = checkMissionReset(missions, new Date());
+      // Check for daily/weekly resets (pass player level for scaled goals)
+      const playerLevel = get().syncRate || 1;
+      const resetResult = checkMissionReset(missions, new Date(), playerLevel);
+      missions = resetResult.state;
 
       // Update state
       set({
@@ -561,7 +582,9 @@ export const useGameStore = create<GameStore>()(
       });
 
       // Save if resets occurred
-      saveMissionState(missions);
+      if (resetResult.dailyReset || resetResult.weeklyReset) {
+        saveMissionState(missions);
+      }
     },
 
     // Currency Actions

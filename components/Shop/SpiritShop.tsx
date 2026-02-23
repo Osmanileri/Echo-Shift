@@ -3,10 +3,11 @@
  * Professional Pokemon character shop with tier-based styling and animations
  */
 
-import { Gem, Ghost, Loader2, Shield, Sparkles, Star, Swords, Zap } from 'lucide-react';
+import { Clock, Gem, Ghost, Loader2, Shield, Sparkles, Star, Swords, Zap } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { SpiritCharacter, TYPE_COLORS } from '../../api/pokeApi';
 import { getAnalyticsSystem } from '../../App';
+import { getMilestoneForLevel, getOfferTimeRemaining, isOfferActive } from '../../data/milestones';
 import { useCharacterStore } from '../../store/characterStore';
 import { useGameStore } from '../../store/gameStore';
 import * as AudioSystem from '../../systems/audioSystem';
@@ -19,6 +20,7 @@ interface SpiritShopProps {
 const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
     const [selectedSpirit, setSelectedSpirit] = useState<SpiritCharacter | null>(null);
     const [purchaseAnimation, setPurchaseAnimation] = useState<number | null>(null);
+    const [milestoneTimeLeft, setMilestoneTimeLeft] = useState('');
 
     // Character store
     const {
@@ -36,6 +38,29 @@ const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
     // Game store for gems
     const echoShards = useGameStore((state) => state.echoShards);
     const spendEchoShards = useGameStore((state) => state.spendEchoShards);
+    const currentLevel = useGameStore((state) => state.currentLevel);
+
+    // Milestone discount check
+    const milestone = getMilestoneForLevel(currentLevel);
+    const milestoneActive = milestone ? isOfferActive(Date.now() - 1000, milestone.durationMs) : false;
+
+    // Countdown timer for milestone
+    useEffect(() => {
+        if (!milestone) return;
+        const tick = () => {
+            const remaining = getOfferTimeRemaining(Date.now() - 1000, milestone.durationMs);
+            if (remaining <= 0) {
+                setMilestoneTimeLeft('');
+                return;
+            }
+            const h = Math.floor(remaining / 3600000);
+            const m = Math.floor((remaining % 3600000) / 60000);
+            setMilestoneTimeLeft(`${h}s ${m}dk`);
+        };
+        tick();
+        const id = setInterval(tick, 60000);
+        return () => clearInterval(id);
+    }, [milestone]);
 
     // Load spirits on mount
     useEffect(() => {
@@ -125,6 +150,30 @@ const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
 
     return (
         <div className="space-y-4">
+            {/* Milestone Discount Banner */}
+            {milestone && milestoneActive && (
+                <div className="p-3 rounded-xl bg-gradient-to-r from-yellow-500/15 to-amber-500/15 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                    <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-yellow-400 animate-pulse" />
+                            <span className="text-sm font-black text-yellow-400 tracking-wider">
+                                LEVEL {milestone.level} ÖDÜLÜ!
+                            </span>
+                        </div>
+                        {milestoneTimeLeft && (
+                            <div className="flex items-center gap-1 text-[10px] text-yellow-400/70">
+                                <Clock className="w-3 h-3" />
+                                {milestoneTimeLeft}
+                            </div>
+                        )}
+                    </div>
+                    <p className="text-xs text-white/60">
+                        {milestone.tier === 'legendary' ? 'Efsanevi' : milestone.tier === 'rare' ? 'Nadir' : 'Tüm'} ruhlar{' '}
+                        <span className="text-yellow-400 font-bold">%{milestone.discountPercent} İNDİRİMLİ!</span>
+                    </p>
+                </div>
+            )}
+
             {/* Active Spirit Display */}
             {activeCharacter && (
                 <div className="p-3 rounded-lg bg-gradient-to-r from-purple-500/20 to-cyan-500/20 border border-purple-500/30">
@@ -268,17 +317,39 @@ const SpiritShop: React.FC<SpiritShopProps> = ({ onCharacterSelect }) => {
                                         </button>
                                     )
                                 ) : (
-                                    <button
-                                        onClick={() => handlePurchase(spirit)}
-                                        disabled={!canAfford}
-                                        className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${canAfford
-                                            ? 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30'
-                                            : 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
-                                            }`}
-                                    >
-                                        <Gem className="w-3 h-3" />
-                                        <span>{spirit.price.toLocaleString()}</span>
-                                    </button>
+                                    (() => {
+                                        // Apply milestone discount if applicable
+                                        const hasDiscount = milestone && milestoneActive && (
+                                            milestone.tier === spirit.tier
+                                        );
+                                        const discountedPrice = hasDiscount
+                                            ? Math.floor(spirit.price * (1 - milestone!.discountPercent / 100))
+                                            : spirit.price;
+                                        const canAffordDiscount = echoShards >= discountedPrice;
+
+                                        return (
+                                            <button
+                                                onClick={() => handlePurchase(spirit)}
+                                                disabled={!canAffordDiscount}
+                                                className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${canAffordDiscount
+                                                    ? hasDiscount
+                                                        ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/30'
+                                                        : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30'
+                                                    : 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
+                                                    }`}
+                                            >
+                                                <Gem className="w-3 h-3" />
+                                                {hasDiscount ? (
+                                                    <>
+                                                        <span className="line-through text-white/30 text-[10px]">{spirit.price.toLocaleString()}</span>
+                                                        <span>{discountedPrice.toLocaleString()}</span>
+                                                    </>
+                                                ) : (
+                                                    <span>{spirit.price.toLocaleString()}</span>
+                                                )}
+                                            </button>
+                                        );
+                                    })()
                                 )}
                             </div>
                         </div>

@@ -2993,6 +2993,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ritualTracking.onNoSwapSurvival?.(
             Math.floor(noSwapSurvivalTime.current)
           );
+          // Mission: NO_SWAP tracking (emit integer seconds survived without swap)
+          onMissionEvent?.({ type: 'NO_SWAP', value: Math.floor(timeSinceLastSwap) });
         }
 
         // Track streak for rituals
@@ -3014,6 +3016,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
           accumulatedDistance.current -= distanceToEmit;
         }
         lastDistanceEmitTime.current = currentTime;
+
+        // Mission: SPEED_SURVIVAL — emit 1 second of survival when speed > 6
+        if (speed.current > 6) {
+          onMissionEvent?.({ type: 'SPEED_SURVIVAL', value: 1 });
+        }
+
+        // Mission: CUMULATIVE — track cumulative score each tick
+        if (score.current > 0) {
+          onMissionEvent?.({ type: 'CUMULATIVE', value: score.current });
+        }
       }
 
       // Orb Positions - moved further left for ultra-wide view angle
@@ -4487,6 +4499,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
               // Daily Rituals: Track phantom pass event - Requirements 3.8
               ritualTracking?.onPhantomPass?.();
+
+              // Mission: Track phantom pass
+              onMissionEvent?.({ type: 'PHANTOM_PASS', value: 1 });
             }
 
             // Apply shop score multiplier upgrade to ALL base scoring - Requirements 6.2
@@ -4549,6 +4564,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
             // Show "RHYTHM!" text when streak reaches 5 (x2 multiplier activated)
             if (rhythmState.current.streakCount === 5) {
+              // Mission: Track streak reached
+              onMissionEvent?.({ type: 'STREAK', value: 5 });
               scorePopups.current.push({
                 x: width / 2,
                 y: height / 2 - 50,

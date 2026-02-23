@@ -72,19 +72,27 @@ export const BPM_CONFIG = {
   scoreBase: 1500,                // Eğrinin yarı noktası skoru
 };
 
-/** Layered procedural music gain & unlock thresholds */
+/** Layered procedural music gain & unlock thresholds
+ * 7 layers: Kick · Snare · Hi-hat · Bass · Synth Pad · Lead Melody · Arp
+ * Chord progression: Am → F → C → G (8-bar cycle)
+ */
 export const BEAT_MUSIC_CONFIG = {
   // Per-layer gain levels (0–1, mixed into master)
-  kickGain: 0.22,                 // Kick drum (downbeat)
-  hihatGain: 0.10,                // Hi-hat (1/8 beats)
-  bassGain: 0.16,                 // Bass line (1/4 beats)
-  arpGain: 0.09,                  // Melodic arp (1/16 accents)
-  // Score thresholds for layer unlock (fade-in)
-  bassUnlockScore: 1500,          // groove phase
-  arpUnlockScore: 12000,          // plateau phase
+  kickGain: 0.45,                 // Kick drum — punchy sub + click
+  snareGain: 0.28,                // Snare — backbeat groove
+  hihatGain: 0.18,                // Hi-hat (1/8 beats)
+  bassGain: 0.35,                 // Bass line — filtered sawtooth
+  padGain: 0.12,                  // Synth pad — warm chord atmosphere
+  leadGain: 0.20,                 // Lead melody — square/saw blend
+  arpGain: 0.14,                  // Arp (1/16 chord arpeggios)
+  // Score thresholds for layer unlock (fade-in) — progressive layering
+  bassUnlockScore: 0,             // Bass plays from the very start
+  padUnlockScore: 200,            // Atmosphere comes in early
+  leadUnlockScore: 600,           // Melody kicks in at moderate play
+  arpUnlockScore: 2500,           // Sparkle arp at higher scores
   // Crossfade timing
   crossfadeDuration: 2000,        // ms for smooth BPM transitions
-  layerFadeInDuration: 3000,      // ms for new layer introduction
+  layerFadeInDuration: 2000,      // ms for new layer introduction (faster)
 };
 
 // Gravity System Configuration - Requirements 2.6

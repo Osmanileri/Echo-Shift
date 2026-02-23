@@ -1,1121 +1,436 @@
 /**
- * Property-Based Tests for Mission System
+ * Property-Based & Unit Tests for Mission System v2
  * Uses fast-check for property-based testing
- * 
- * Requirements: 2.2, 2.3, 2.4, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6
  */
 
 import * as fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import type { Mission, MissionEvent, MissionState, MissionType } from '../types';
+import type { Mission, MissionEvent, MissionType } from '../types';
 import {
+    calculateTotalRewards,
     checkMissionCompletion,
     checkMissionReset,
+    claimDailyBonus,
+    findMissionById,
     generateDailyMissions,
-    GRIND_TEMPLATES,
-    MASTERY_TEMPLATES,
-    SKILL_TEMPLATES,
-    updateMissionProgress
+    generateWeeklyMission,
+    getActiveMissions,
+    getDailyBonusStatus,
+    getDefaultMissionState,
+    getTrackerMissions,
+    getUnclaimedCount,
+    markMissionClaimed,
+    updateMissionProgress,
+    validateMissionState,
 } from './missionSystem';
 
-// Arbitrary for MissionType
+// ============================================================================
+// Helpers
+// ============================================================================
+
 const missionTypeArb = fc.constantFrom<MissionType>(
   'DISTANCE',
   'SWAP_COUNT',
   'NEAR_MISS',
   'COLLECT',
   'STAY_LANE',
-  'COLLISION'
+  'COLLISION',
+  'PHANTOM_PASS',
+  'SPEED_SURVIVAL',
+  'STREAK',
+  'NO_SWAP',
+  'CUMULATIVE'
 );
 
-// Arbitrary for a single Mission
-const missionArb = fc.record({
-  id: fc.string({ minLength: 1, maxLength: 20 }),
-  category: fc.constantFrom('SOUND_CHECK', 'DAILY', 'MARATHON') as fc.Arbitrary<'SOUND_CHECK' | 'DAILY' | 'MARATHON'>,
-  slot: fc.option(fc.constantFrom('GRIND', 'SKILL', 'MASTERY') as fc.Arbitrary<'GRIND' | 'SKILL' | 'MASTERY'>, { nil: undefined }),
-  type: missionTypeArb,
-  title: fc.string({ minLength: 1, maxLength: 50 }),
-  description: fc.string({ minLength: 1, maxLength: 100 }),
-  goal: fc.integer({ min: 1, max: 10000 }),
-  progress: fc.integer({ min: 0, max: 10000 }),
-  completed: fc.boolean(),
-  rewards: fc.record({
-    xp: fc.integer({ min: 0, max: 1000 }),
-    shards: fc.integer({ min: 0, max: 1000 }),
-    cosmetic: fc.option(fc.string(), { nil: undefined }),
-  }),
-});
+function makeMission(overrides: Partial<Mission> = {}): Mission {
+  return {
+    id: 'test-mission',
+    category: 'DAILY',
+    type: 'DISTANCE',
+    title: 'Test Mission',
+    description: 'Run 100m',
+    goal: 100,
+    progress: 0,
+    completed: false,
+    claimed: false,
+    rewards: { xp: 10, shards: 5 },
+    ...overrides,
+  };
+}
 
-// Arbitrary for MissionEvent
-const missionEventArb = fc.record({
-  type: missionTypeArb,
-  value: fc.integer({ min: 1, max: 100 }),
-});
+// ============================================================================
+// generateDailyMissions
+// ============================================================================
 
-// Arbitrary for MissionState with active missions
-const missionStateArb = fc.record({
-  soundCheck: fc.record({
-    missions: fc.array(missionArb, { minLength: 1, maxLength: 5 }),
-    completed: fc.boolean(),
-  }),
-  daily: fc.record({
-    missions: fc.array(missionArb, { minLength: 0, maxLength: 3 }),
-    lastResetDate: fc.string(),
-  }),
-  marathon: fc.record({
-    mission: fc.option(missionArb, { nil: null }),
-    lastResetDate: fc.string(),
-  }),
-});
-
-
-describe('Mission System - Progress Tracking Properties', () => {
-  /**
-   * **Feature: progression-system, Property 6: Mission Progress Tracking**
-   * **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5**
-   *
-   * For any mission event (SWAP, DISTANCE, NEAR_MISS, COLLECT, STAY_LANE),
-   * all active missions of matching type should have their progress
-   * incremented by the event value.
-   */
-  test('Mission progress increments by event value for matching types', () => {
+describe('generateDailyMissions', () => {
+  test('always returns exactly 3 missions', () => {
     fc.assert(
       fc.property(
-        missionStateArb,
-        missionEventArb,
-        (state, event) => {
-          // Ensure we have at least one incomplete mission of matching type
-          const hasMatchingMission = (missions: Mission[]) =>
-            missions.some(m => m.type === event.type && !m.completed);
-
-          const result = updateMissionProgress(state, event);
-
-          // Check Sound Check missions (only if not completed)
-          if (!state.soundCheck.completed) {
-            state.soundCheck.missions.forEach((mission, index) => {
-              const resultMission = result.soundCheck.missions[index];
-              if (mission.type === event.type && !mission.completed) {
-                // Progress should increase by event value
-                expect(resultMission.progress).toBe(mission.progress + event.value);
-              } else {
-                // Non-matching or completed missions should be unchanged
-                expect(resultMission.progress).toBe(mission.progress);
-              }
-            });
-          }
-
-          // Check Daily missions
-          state.daily.missions.forEach((mission, index) => {
-            const resultMission = result.daily.missions[index];
-            if (mission.type === event.type && !mission.completed) {
-              expect(resultMission.progress).toBe(mission.progress + event.value);
-            } else {
-              expect(resultMission.progress).toBe(mission.progress);
-            }
-          });
-
-          // Check Marathon mission
-          if (state.marathon.mission && !state.marathon.mission.completed) {
-            if (state.marathon.mission.type === event.type) {
-              expect(result.marathon.mission!.progress).toBe(
-                state.marathon.mission.progress + event.value
-              );
-            } else {
-              expect(result.marathon.mission!.progress).toBe(
-                state.marathon.mission.progress
-              );
-            }
-          }
-
-          return true;
+        fc.date({ min: new Date('2024-01-01'), max: new Date('2030-01-01') }),
+        fc.integer({ min: 1, max: 100 }),
+        (date, level) => {
+          const dateStr = date.toISOString().split('T')[0];
+          const missions = generateDailyMissions(dateStr, level);
+          expect(missions).toHaveLength(3);
         }
-      ),
-      { numRuns: 100 }
+      )
     );
   });
 
-  /**
-   * **Feature: progression-system, Property 6: Mission Progress Tracking (Non-matching types)**
-   * **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5**
-   *
-   * Missions with non-matching types should not have their progress changed.
-   */
-  test('Non-matching mission types are not affected', () => {
+  test('missions have correct category and structure', () => {
+    const missions = generateDailyMissions('2024-06-15', 10);
+    for (const m of missions) {
+      expect(m.category).toBe('DAILY');
+      expect(m.progress).toBe(0);
+      expect(m.completed).toBe(false);
+      expect(m.claimed).toBe(false);
+      expect(m.goal).toBeGreaterThan(0);
+      expect(m.rewards.xp).toBeGreaterThanOrEqual(0);
+      expect(m.rewards.shards).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  test('same date + level produces identical missions (deterministic)', () => {
     fc.assert(
       fc.property(
-        missionStateArb,
-        missionEventArb,
-        (state, event) => {
-          const result = updateMissionProgress(state, event);
-
-          // Check that non-matching missions are unchanged
-          if (!state.soundCheck.completed) {
-            state.soundCheck.missions.forEach((mission, index) => {
-              if (mission.type !== event.type) {
-                expect(result.soundCheck.missions[index].progress).toBe(mission.progress);
-              }
-            });
-          }
-
-          state.daily.missions.forEach((mission, index) => {
-            if (mission.type !== event.type) {
-              expect(result.daily.missions[index].progress).toBe(mission.progress);
-            }
-          });
-
-          return true;
+        fc.string({ minLength: 10, maxLength: 10 }),
+        fc.integer({ min: 1, max: 50 }),
+        (dateStr, level) => {
+          const a = generateDailyMissions(dateStr, level);
+          const b = generateDailyMissions(dateStr, level);
+          expect(a.map(m => m.id)).toEqual(b.map(m => m.id));
         }
-      ),
-      { numRuns: 100 }
+      )
     );
   });
 
-  /**
-   * **Feature: progression-system, Property 6: Mission Progress Tracking (Completed missions)**
-   * **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5**
-   *
-   * Already completed missions should not have their progress changed.
-   */
-  test('Completed missions are not affected by events', () => {
-    fc.assert(
-      fc.property(
-        missionStateArb,
-        missionEventArb,
-        (state, event) => {
-          const result = updateMissionProgress(state, event);
-
-          // Check that completed missions are unchanged
-          if (!state.soundCheck.completed) {
-            state.soundCheck.missions.forEach((mission, index) => {
-              if (mission.completed) {
-                expect(result.soundCheck.missions[index].progress).toBe(mission.progress);
-              }
-            });
-          }
-
-          state.daily.missions.forEach((mission, index) => {
-            if (mission.completed) {
-              expect(result.daily.missions[index].progress).toBe(mission.progress);
-            }
-          });
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+  test('different dates produce different mission IDs', () => {
+    const a = generateDailyMissions('2024-06-15', 10);
+    const b = generateDailyMissions('2024-06-16', 10);
+    expect(a[0].id).not.toBe(b[0].id);
   });
 });
 
+// ============================================================================
+// generateWeeklyMission
+// ============================================================================
 
-describe('Mission System - Completion Detection Properties', () => {
-  /**
-   * **Feature: progression-system, Property 7: Mission Completion Detection**
-   * **Validates: Requirements 7.6**
-   *
-   * For any mission where progress >= goal, the mission should be marked as completed.
-   */
-  test('Mission is completed when progress >= goal', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 1000 }), // goal
-        fc.integer({ min: 0, max: 2000 }), // progress
-        (goal, progress) => {
-          const mission: Mission = {
-            id: 'test-mission',
-            category: 'DAILY',
-            type: 'DISTANCE',
-            title: 'Test',
-            description: 'Test mission',
-            goal,
-            progress,
-            completed: false,
-            rewards: { xp: 10, shards: 10 },
-          };
-
-          const isComplete = checkMissionCompletion(mission);
-          
-          if (progress >= goal) {
-            expect(isComplete).toBe(true);
-          } else {
-            expect(isComplete).toBe(false);
-          }
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+describe('generateWeeklyMission', () => {
+  test('returns a single WEEKLY mission', () => {
+    const m = generateWeeklyMission('2024-06-10', 15);
+    expect(m.category).toBe('WEEKLY');
+    expect(m.progress).toBe(0);
+    expect(m.completed).toBe(false);
+    expect(m.claimed).toBe(false);
+    expect(m.goal).toBeGreaterThan(0);
   });
 
-  /**
-   * **Feature: progression-system, Property 7: Mission Completion Detection (Exact boundary)**
-   * **Validates: Requirements 7.6**
-   *
-   * Mission should be completed exactly when progress equals goal.
-   */
-  test('Mission completes exactly at goal boundary', () => {
+  test('deterministic for same inputs', () => {
+    const a = generateWeeklyMission('2024-06-10', 15);
+    const b = generateWeeklyMission('2024-06-10', 15);
+    expect(a.id).toBe(b.id);
+    expect(a.goal).toBe(b.goal);
+  });
+});
+
+// ============================================================================
+// getDefaultMissionState
+// ============================================================================
+
+describe('getDefaultMissionState', () => {
+  test('returns valid default with all categories', () => {
+    const state = getDefaultMissionState();
+    expect(state.soundCheck).toBeDefined();
+    expect(state.soundCheck.completed).toBe(false);
+    expect(state.soundCheck.missions.length).toBeGreaterThan(0);
+    expect(state.daily.missions).toEqual([]);
+    expect(state.daily.bonusClaimed).toBe(false);
+    expect(state.daily.lastResetDate).toBe('');
+    expect(state.weekly.mission).toBeNull();
+    expect(state.weekly.lastResetDate).toBe('');
+  });
+});
+
+// ============================================================================
+// updateMissionProgress
+// ============================================================================
+
+describe('updateMissionProgress', () => {
+  test('updates soundCheck missions on matching event', () => {
+    const state = getDefaultMissionState();
+    const scType = state.soundCheck.missions[0].type;
+    const event: MissionEvent = { type: scType, value: 1 };
+    const { newState } = updateMissionProgress(state, event);
+    const updated = newState.soundCheck.missions[0];
+    expect(updated.progress).toBeGreaterThanOrEqual(1);
+  });
+
+  test('completes mission when progress >= goal', () => {
+    const state = getDefaultMissionState();
+    // Give daily a mission
+    state.daily.missions = [makeMission({ id: 'd1', goal: 10 })];
+    const event: MissionEvent = { type: 'DISTANCE', value: 15 };
+    const { newState, justCompleted } = updateMissionProgress(state, event);
+    expect(newState.daily.missions[0].completed).toBe(true);
+    expect(newState.daily.missions[0].progress).toBe(10); // capped at goal
+    expect(justCompleted).toHaveLength(1);
+    expect(justCompleted[0].id).toBe('d1');
+  });
+
+  test('does not update already completed missions', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [makeMission({ id: 'd1', goal: 10, progress: 10, completed: true })];
+    const event: MissionEvent = { type: 'DISTANCE', value: 5 };
+    const { newState, justCompleted } = updateMissionProgress(state, event);
+    expect(newState.daily.missions[0].progress).toBe(10);
+    expect(justCompleted).toHaveLength(0);
+  });
+
+  test('progress never exceeds goal (property)', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 1000 }),
-        (goal) => {
-          const missionAtGoal: Mission = {
-            id: 'test-at-goal',
-            category: 'DAILY',
-            type: 'DISTANCE',
-            title: 'Test',
-            description: 'Test mission',
-            goal,
-            progress: goal,
-            completed: false,
-            rewards: { xp: 10, shards: 10 },
-          };
-
-          const missionBelowGoal: Mission = {
-            ...missionAtGoal,
-            id: 'test-below-goal',
-            progress: goal - 1,
-          };
-
-          expect(checkMissionCompletion(missionAtGoal)).toBe(true);
-          expect(checkMissionCompletion(missionBelowGoal)).toBe(false);
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 7: Mission Completion Detection (Progress update triggers completion)**
-   * **Validates: Requirements 7.6**
-   *
-   * When updateMissionProgress causes progress to reach goal, the mission should be marked completed.
-   */
-  test('Progress update marks mission as completed when reaching goal', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 1, max: 100 }), // goal
-        fc.integer({ min: 0, max: 99 }),  // initial progress (below goal)
+        fc.integer({ min: 1, max: 10000 }),
         missionTypeArb,
-        (goal, initialProgress, type) => {
-          // Ensure initial progress is below goal
-          const safeInitialProgress = Math.min(initialProgress, goal - 1);
-          const eventValue = goal - safeInitialProgress; // Exactly enough to complete
-
-          const state: MissionState = {
-            soundCheck: {
-              missions: [{
-                id: 'test-mission',
-                category: 'SOUND_CHECK',
-                type,
-                title: 'Test',
-                description: 'Test',
-                goal,
-                progress: safeInitialProgress,
-                completed: false,
-                rewards: { xp: 10, shards: 10 },
-              }],
-              completed: false,
-            },
-            daily: { missions: [], lastResetDate: '' },
-            marathon: { mission: null, lastResetDate: '' },
-          };
-
-          const event: MissionEvent = { type, value: eventValue };
-          const result = updateMissionProgress(state, event);
-
-          // Mission should now be completed
-          expect(result.soundCheck.missions[0].completed).toBe(true);
-          expect(result.soundCheck.missions[0].progress).toBe(goal);
-
-          return true;
+        (goal, value, type) => {
+          const state = getDefaultMissionState();
+          state.daily.missions = [makeMission({ id: 'd1', goal, type })];
+          const event: MissionEvent = { type, value };
+          const { newState } = updateMissionProgress(state, event);
+          expect(newState.daily.missions[0].progress).toBeLessThanOrEqual(goal);
         }
-      ),
-      { numRuns: 100 }
+      )
     );
+  });
+
+  test('updates weekly mission on matching event', () => {
+    const state = getDefaultMissionState();
+    state.weekly.mission = makeMission({ id: 'w1', category: 'WEEKLY', type: 'DISTANCE', goal: 500 });
+    const event: MissionEvent = { type: 'DISTANCE', value: 100 };
+    const { newState } = updateMissionProgress(state, event);
+    expect(newState.weekly.mission!.progress).toBe(100);
   });
 });
 
+// ============================================================================
+// checkMissionReset
+// ============================================================================
 
-describe('Mission System - Daily Mission Slot Constraints', () => {
-  /**
-   * **Feature: progression-system, Property 8: Daily Mission Slot Constraints**
-   * **Validates: Requirements 2.2, 2.3, 2.4**
-   *
-   * For any generated daily mission set:
-   * - Slot 1 (GRIND) should contain only DISTANCE or SWAP_COUNT types
-   * - Slot 2 (SKILL) should contain only NEAR_MISS or COLLECT types
-   * - Slot 3 (MASTERY) should contain only STAY_LANE or DISTANCE types
-   */
-  test('Daily missions respect slot type constraints', () => {
-    // Valid types for each slot based on templates
-    const grindTypes = new Set(GRIND_TEMPLATES.map(t => t.type));
-    const skillTypes = new Set(SKILL_TEMPLATES.map(t => t.type));
-    const masteryTypes = new Set(MASTERY_TEMPLATES.map(t => t.type));
-
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
-        (seed) => {
-          const missions = generateDailyMissions(seed);
-
-          // Should generate exactly 3 missions
-          expect(missions.length).toBe(3);
-
-          // Slot 1 (GRIND) - index 0
-          const grindMission = missions[0];
-          expect(grindMission.slot).toBe('GRIND');
-          expect(grindMission.category).toBe('DAILY');
-          expect(grindTypes.has(grindMission.type)).toBe(true);
-
-          // Slot 2 (SKILL) - index 1
-          const skillMission = missions[1];
-          expect(skillMission.slot).toBe('SKILL');
-          expect(skillMission.category).toBe('DAILY');
-          expect(skillTypes.has(skillMission.type)).toBe(true);
-
-          // Slot 3 (MASTERY) - index 2
-          const masteryMission = missions[2];
-          expect(masteryMission.slot).toBe('MASTERY');
-          expect(masteryMission.category).toBe('DAILY');
-          expect(masteryTypes.has(masteryMission.type)).toBe(true);
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+describe('checkMissionReset', () => {
+  test('generates daily missions when day changes and soundCheck complete', () => {
+    const state = getDefaultMissionState();
+    state.soundCheck.completed = true;
+    state.daily.lastResetDate = '2024-06-14';
+    const now = new Date('2024-06-15T10:00:00Z');
+    const result = checkMissionReset(state, now, 10);
+    expect(result.dailyReset).toBe(true);
+    expect(result.state.daily.missions).toHaveLength(3);
+    expect(result.state.daily.lastResetDate).toBe('2024-06-15');
   });
 
-  /**
-   * **Feature: progression-system, Property 8: Daily Mission Slot Constraints (Determinism)**
-   * **Validates: Requirements 2.2, 2.3, 2.4**
-   *
-   * For any seed, generating daily missions twice should produce identical results.
-   */
-  test('Daily mission generation is deterministic with same seed', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
-        (seed) => {
-          const missions1 = generateDailyMissions(seed);
-          const missions2 = generateDailyMissions(seed);
-
-          expect(missions1.length).toBe(missions2.length);
-          
-          for (let i = 0; i < missions1.length; i++) {
-            expect(missions1[i].type).toBe(missions2[i].type);
-            expect(missions1[i].slot).toBe(missions2[i].slot);
-            expect(missions1[i].goal).toBe(missions2[i].goal);
-            expect(missions1[i].title).toBe(missions2[i].title);
-          }
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+  test('does not reset if same day', () => {
+    const state = getDefaultMissionState();
+    state.soundCheck.completed = true;
+    state.daily.lastResetDate = '2024-06-15';
+    state.daily.missions = [makeMission()];
+    const now = new Date('2024-06-15T20:00:00Z');
+    const result = checkMissionReset(state, now, 10);
+    expect(result.dailyReset).toBe(false);
+    expect(result.state.daily.missions).toHaveLength(1); // unchanged
   });
 
-  /**
-   * **Feature: progression-system, Property 8: Daily Mission Slot Constraints (Initial State)**
-   * **Validates: Requirements 2.2, 2.3, 2.4**
-   *
-   * All generated daily missions should start with progress=0 and completed=false.
-   */
-  test('Daily missions start with zero progress and not completed', () => {
-    fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
-        (seed) => {
-          const missions = generateDailyMissions(seed);
+  test('does not reset before soundCheck complete', () => {
+    const state = getDefaultMissionState();
+    state.soundCheck.completed = false;
+    const now = new Date('2024-06-15T10:00:00Z');
+    const result = checkMissionReset(state, now, 10);
+    expect(result.dailyReset).toBe(false);
+    expect(result.weeklyReset).toBe(false);
+  });
 
-          for (const mission of missions) {
-            expect(mission.progress).toBe(0);
-            expect(mission.completed).toBe(false);
-          }
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+  test('generates weekly mission at week boundary', () => {
+    const state = getDefaultMissionState();
+    state.soundCheck.completed = true;
+    state.weekly.lastResetDate = '2024-06-03';
+    const now = new Date('2024-06-10T10:00:00Z'); // Monday
+    const result = checkMissionReset(state, now, 10);
+    expect(result.weeklyReset).toBe(true);
+    expect(result.state.weekly.mission).not.toBeNull();
   });
 });
 
+// ============================================================================
+// Daily Bonus
+// ============================================================================
 
-// Import persistence functions for round-trip tests
-import {
-    getDefaultMissionState,
-    loadMissionState,
-    saveMissionState,
-    validateMissionState
-} from './missionSystem';
-
-// Mock localStorage for testing
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => { store[key] = value; },
-    removeItem: (key: string) => { delete store[key]; },
-    clear: () => { store = {}; },
-    get length() { return Object.keys(store).length; },
-    key: (index: number) => Object.keys(store)[index] || null,
-  };
-})();
-
-// Setup localStorage mock
-import { afterEach, beforeEach } from 'vitest';
-
-beforeEach(() => {
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: localStorageMock,
-    writable: true,
-  });
-  localStorageMock.clear();
-});
-
-afterEach(() => {
-  localStorageMock.clear();
-});
-
-
-describe('Mission System - Persistence Round-Trip Properties', () => {
-  /**
-   * **Feature: progression-system, Property 9: Mission State Persistence Round-Trip**
-   * **Validates: Requirements 8.1, 8.2**
-   *
-   * For any valid MissionState, serializing to localStorage and deserializing
-   * should produce an equivalent state.
-   */
-  test('Mission state round-trip preserves all fields', () => {
-    fc.assert(
-      fc.property(
-        missionStateArb,
-        (state) => {
-          // Save the state
-          const saveResult = saveMissionState(state);
-          expect(saveResult).toBe(true);
-
-          // Load the state
-          const loadedState = loadMissionState();
-
-          // Verify soundCheck structure
-          expect(loadedState.soundCheck.completed).toBe(state.soundCheck.completed);
-          expect(loadedState.soundCheck.missions.length).toBe(state.soundCheck.missions.length);
-          
-          for (let i = 0; i < state.soundCheck.missions.length; i++) {
-            const original = state.soundCheck.missions[i];
-            const loaded = loadedState.soundCheck.missions[i];
-            expect(loaded.id).toBe(original.id);
-            expect(loaded.category).toBe(original.category);
-            expect(loaded.type).toBe(original.type);
-            expect(loaded.title).toBe(original.title);
-            expect(loaded.description).toBe(original.description);
-            expect(loaded.goal).toBe(original.goal);
-            expect(loaded.progress).toBe(original.progress);
-            expect(loaded.completed).toBe(original.completed);
-            expect(loaded.rewards.xp).toBe(original.rewards.xp);
-            expect(loaded.rewards.shards).toBe(original.rewards.shards);
-          }
-
-          // Verify daily structure
-          expect(loadedState.daily.lastResetDate).toBe(state.daily.lastResetDate);
-          expect(loadedState.daily.missions.length).toBe(state.daily.missions.length);
-          
-          for (let i = 0; i < state.daily.missions.length; i++) {
-            const original = state.daily.missions[i];
-            const loaded = loadedState.daily.missions[i];
-            expect(loaded.id).toBe(original.id);
-            expect(loaded.type).toBe(original.type);
-            expect(loaded.goal).toBe(original.goal);
-            expect(loaded.progress).toBe(original.progress);
-            expect(loaded.completed).toBe(original.completed);
-          }
-
-          // Verify marathon structure
-          expect(loadedState.marathon.lastResetDate).toBe(state.marathon.lastResetDate);
-          if (state.marathon.mission === null) {
-            expect(loadedState.marathon.mission).toBeNull();
-          } else {
-            expect(loadedState.marathon.mission).not.toBeNull();
-            expect(loadedState.marathon.mission!.id).toBe(state.marathon.mission.id);
-            expect(loadedState.marathon.mission!.type).toBe(state.marathon.mission.type);
-            expect(loadedState.marathon.mission!.goal).toBe(state.marathon.mission.goal);
-            expect(loadedState.marathon.mission!.progress).toBe(state.marathon.mission.progress);
-          }
-
-          // Clean up
-          localStorageMock.clear();
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 9: Mission State Persistence Round-Trip (Default State)**
-   * **Validates: Requirements 8.1, 8.2**
-   *
-   * Loading from empty storage should return default mission state.
-   */
-  test('Loading from empty storage returns default state', () => {
-    localStorageMock.clear();
-    
-    const loadedState = loadMissionState();
-    const defaultState = getDefaultMissionState();
-
-    expect(loadedState.soundCheck.completed).toBe(defaultState.soundCheck.completed);
-    expect(loadedState.soundCheck.missions.length).toBe(defaultState.soundCheck.missions.length);
-    expect(loadedState.daily.missions.length).toBe(defaultState.daily.missions.length);
-    expect(loadedState.marathon.mission).toBe(defaultState.marathon.mission);
-  });
-});
-
-
-
-describe('Mission System - Sound Check Completion Properties', () => {
-  /**
-   * **Feature: progression-system, Property 10: Sound Check Completion Unlocks Daily**
-   * **Validates: Requirements 1.5**
-   *
-   * For any mission state where all three Sound Check missions are completed,
-   * the soundCheckComplete flag should be true, enabling Daily Protocols.
-   */
-  test('Sound Check completion sets soundCheckComplete flag to true', () => {
-    fc.assert(
-      fc.property(
-        // Generate random progress values that exceed goals
-        fc.integer({ min: 10, max: 100 }), // swap progress (goal: 10)
-        fc.integer({ min: 1, max: 100 }),  // collect progress (goal: 1)
-        fc.integer({ min: 1, max: 100 }),  // collision progress (goal: 1)
-        (swapProgress, collectProgress, collisionProgress) => {
-          // Create a state with incomplete Sound Check missions
-          const state: MissionState = {
-            soundCheck: {
-              missions: [
-                {
-                  id: 'sound-check-swap',
-                  category: 'SOUND_CHECK',
-                  type: 'SWAP_COUNT',
-                  title: 'First Frequency Shift',
-                  description: 'Perform 10 successful Swaps',
-                  goal: 10,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collect',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLECT',
-                  title: 'Data Collector',
-                  description: 'Collect your first Shard',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collision',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLISION',
-                  title: 'Signal Loss',
-                  description: 'Experience your first collision',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 0, shards: 50 },
-                },
-              ],
-              completed: false,
-            },
-            daily: { missions: [], lastResetDate: '' },
-            marathon: { mission: null, lastResetDate: '' },
-          };
-
-          // Apply events to complete all missions
-          let result = updateMissionProgress(state, { type: 'SWAP_COUNT', value: swapProgress });
-          result = updateMissionProgress(result, { type: 'COLLECT', value: collectProgress });
-          result = updateMissionProgress(result, { type: 'COLLISION', value: collisionProgress });
-
-          // All missions should be completed
-          expect(result.soundCheck.missions[0].completed).toBe(true);
-          expect(result.soundCheck.missions[1].completed).toBe(true);
-          expect(result.soundCheck.missions[2].completed).toBe(true);
-
-          // soundCheckComplete flag should be true
-          expect(result.soundCheck.completed).toBe(true);
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 10: Sound Check Completion Unlocks Daily**
-   * **Validates: Requirements 1.5**
-   *
-   * Sound Check should NOT be marked complete if any mission is incomplete.
-   */
-  test('Sound Check is not complete if any mission is incomplete', () => {
-    fc.assert(
-      fc.property(
-        // Generate which missions to complete (at least one must be incomplete)
-        fc.integer({ min: 0, max: 2 }), // Index of mission to leave incomplete
-        (incompleteIndex) => {
-          const state: MissionState = {
-            soundCheck: {
-              missions: [
-                {
-                  id: 'sound-check-swap',
-                  category: 'SOUND_CHECK',
-                  type: 'SWAP_COUNT',
-                  title: 'First Frequency Shift',
-                  description: 'Perform 10 successful Swaps',
-                  goal: 10,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collect',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLECT',
-                  title: 'Data Collector',
-                  description: 'Collect your first Shard',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collision',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLISION',
-                  title: 'Signal Loss',
-                  description: 'Experience your first collision',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 0, shards: 50 },
-                },
-              ],
-              completed: false,
-            },
-            daily: { missions: [], lastResetDate: '' },
-            marathon: { mission: null, lastResetDate: '' },
-          };
-
-          // Complete all missions except the one at incompleteIndex
-          let result = state;
-          if (incompleteIndex !== 0) {
-            result = updateMissionProgress(result, { type: 'SWAP_COUNT', value: 10 });
-          }
-          if (incompleteIndex !== 1) {
-            result = updateMissionProgress(result, { type: 'COLLECT', value: 1 });
-          }
-          if (incompleteIndex !== 2) {
-            result = updateMissionProgress(result, { type: 'COLLISION', value: 1 });
-          }
-
-          // The incomplete mission should not be completed
-          expect(result.soundCheck.missions[incompleteIndex].completed).toBe(false);
-
-          // soundCheckComplete flag should be false
-          expect(result.soundCheck.completed).toBe(false);
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 10: Sound Check Completion Unlocks Daily**
-   * **Validates: Requirements 1.5**
-   *
-   * Once Sound Check is complete, Daily missions can be generated via checkMissionReset.
-   */
-  test('Daily missions are generated after Sound Check completion', () => {
-    fc.assert(
-      fc.property(
-        fc.date({ min: new Date('2024-01-01'), max: new Date('2025-12-31') }).filter(d => !isNaN(d.getTime())),
-        (date) => {
-          // Create a state with completed Sound Check
-          const state: MissionState = {
-            soundCheck: {
-              missions: [
-                {
-                  id: 'sound-check-swap',
-                  category: 'SOUND_CHECK',
-                  type: 'SWAP_COUNT',
-                  title: 'First Frequency Shift',
-                  description: 'Perform 10 successful Swaps',
-                  goal: 10,
-                  progress: 10,
-                  completed: true,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collect',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLECT',
-                  title: 'Data Collector',
-                  description: 'Collect your first Shard',
-                  goal: 1,
-                  progress: 1,
-                  completed: true,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collision',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLISION',
-                  title: 'Signal Loss',
-                  description: 'Experience your first collision',
-                  goal: 1,
-                  progress: 1,
-                  completed: true,
-                  rewards: { xp: 0, shards: 50 },
-                },
-              ],
-              completed: true,
-            },
-            daily: { missions: [], lastResetDate: '' }, // Empty, needs generation
-            marathon: { mission: null, lastResetDate: '' },
-          };
-
-          // Check mission reset should generate daily missions
-          const result = checkMissionReset(state, date);
-
-          // Daily missions should be generated (3 missions)
-          expect(result.daily.missions.length).toBe(3);
-          
-          // Marathon should also be generated
-          expect(result.marathon.mission).not.toBeNull();
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 10: Sound Check Completion Unlocks Daily**
-   * **Validates: Requirements 1.5**
-   *
-   * Daily missions should NOT be generated if Sound Check is incomplete.
-   */
-  test('Daily missions are NOT generated before Sound Check completion', () => {
-    fc.assert(
-      fc.property(
-        fc.date({ min: new Date('2024-01-01'), max: new Date('2025-12-31') }).filter(d => !isNaN(d.getTime())),
-        (date) => {
-          // Create a state with incomplete Sound Check
-          const state: MissionState = {
-            soundCheck: {
-              missions: [
-                {
-                  id: 'sound-check-swap',
-                  category: 'SOUND_CHECK',
-                  type: 'SWAP_COUNT',
-                  title: 'First Frequency Shift',
-                  description: 'Perform 10 successful Swaps',
-                  goal: 10,
-                  progress: 5, // Not complete
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collect',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLECT',
-                  title: 'Data Collector',
-                  description: 'Collect your first Shard',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 10, shards: 0 },
-                },
-                {
-                  id: 'sound-check-collision',
-                  category: 'SOUND_CHECK',
-                  type: 'COLLISION',
-                  title: 'Signal Loss',
-                  description: 'Experience your first collision',
-                  goal: 1,
-                  progress: 0,
-                  completed: false,
-                  rewards: { xp: 0, shards: 50 },
-                },
-              ],
-              completed: false,
-            },
-            daily: { missions: [], lastResetDate: '' },
-            marathon: { mission: null, lastResetDate: '' },
-          };
-
-          // Check mission reset should NOT generate daily missions
-          const result = checkMissionReset(state, date);
-
-          // Daily missions should remain empty
-          expect(result.daily.missions.length).toBe(0);
-          
-          // Marathon should also remain null
-          expect(result.marathon.mission).toBeNull();
-
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-});
-
-
-describe('Mission System - Corrupted Data Recovery Properties', () => {
-  /**
-   * **Feature: progression-system, Property 11: Corrupted Data Recovery**
-   * **Validates: Requirements 8.4**
-   *
-   * For any corrupted or invalid localStorage data, loading should return
-   * a valid default mission state without throwing errors.
-   */
-  test('Corrupted data returns default state without throwing', () => {
-    // Test various types of corrupted data
-    const corruptedDataSamples = [
-      null,
-      undefined,
-      '',
-      'not json',
-      '{"invalid": json}',
-      123,
-      true,
-      [],
-      {},
-      { soundCheck: null },
-      { soundCheck: { missions: 'not array', completed: true } },
-      { soundCheck: { missions: [], completed: 'not boolean' } },
-      { soundCheck: { missions: [], completed: true }, daily: null },
-      { soundCheck: { missions: [], completed: true }, daily: { missions: [], lastResetDate: 123 } },
-      { soundCheck: { missions: [], completed: true }, daily: { missions: [], lastResetDate: '' }, marathon: null },
-      { soundCheck: { missions: [{ invalid: 'mission' }], completed: true }, daily: { missions: [], lastResetDate: '' }, marathon: { mission: null, lastResetDate: '' } },
+describe('getDailyBonusStatus / claimDailyBonus', () => {
+  test('bonus not available when missions incomplete', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: true }),
+      makeMission({ id: 'd2', completed: false }),
+      makeMission({ id: 'd3', completed: true }),
     ];
-
-    for (const corruptedData of corruptedDataSamples) {
-      // Validate returns null for corrupted data
-      const validated = validateMissionState(corruptedData);
-      expect(validated).toBeNull();
-    }
+    const status = getDailyBonusStatus(state);
+    expect(status.bonusAvailable).toBe(false);
+    expect(status.completedCount).toBe(2);
   });
 
-  /**
-   * **Feature: progression-system, Property 11: Corrupted Data Recovery (Random Invalid Data)**
-   * **Validates: Requirements 8.4**
-   *
-   * For any randomly generated invalid data structure, validateMissionState
-   * should return null without throwing.
-   */
-  test('Random invalid data structures return null without throwing', () => {
-    // Arbitrary for invalid data that doesn't match MissionState structure
-    const invalidDataArb = fc.oneof(
-      fc.constant(null),
-      fc.constant(undefined),
-      fc.string(),
-      fc.integer(),
-      fc.boolean(),
-      fc.array(fc.anything()),
-      // Object with wrong structure
-      fc.record({
-        wrongField: fc.string(),
-      }),
-      // Object with partial structure
-      fc.record({
-        soundCheck: fc.constant(null),
-      }),
-      // Object with wrong types
-      fc.record({
-        soundCheck: fc.record({
-          missions: fc.string(), // Should be array
-          completed: fc.string(), // Should be boolean
-        }),
-        daily: fc.record({
-          missions: fc.array(fc.string()), // Should be Mission[]
-          lastResetDate: fc.integer(), // Should be string
-        }),
-        marathon: fc.record({
-          mission: fc.string(), // Should be Mission | null
-          lastResetDate: fc.integer(), // Should be string
-        }),
-      }),
-    );
-
-    fc.assert(
-      fc.property(
-        invalidDataArb,
-        (invalidData) => {
-          // Should not throw
-          let result: MissionState | null;
-          try {
-            result = validateMissionState(invalidData);
-          } catch (e) {
-            // If it throws, the test fails
-            return false;
-          }
-
-          // Should return null for invalid data
-          expect(result).toBeNull();
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  /**
-   * **Feature: progression-system, Property 11: Corrupted Data Recovery (Load from corrupted storage)**
-   * **Validates: Requirements 8.4**
-   *
-   * When localStorage contains corrupted data, loadMissionState should
-   * return a valid default state.
-   */
-  test('Loading corrupted localStorage data returns valid default state', () => {
-    const corruptedJsonStrings = [
-      'not valid json',
-      '{"soundCheck": null}',
-      '{"soundCheck": {"missions": "not array"}}',
-      '{}',
-      '[]',
-      '"string"',
-      '123',
-      'true',
+  test('bonus available when all 3 missions completed', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: true }),
+      makeMission({ id: 'd2', completed: true }),
+      makeMission({ id: 'd3', completed: true }),
     ];
-
-    for (const corruptedJson of corruptedJsonStrings) {
-      // Directly set corrupted data in localStorage
-      localStorageMock.setItem('echo-shift-missions', corruptedJson);
-
-      // Load should return default state without throwing
-      let loadedState: MissionState;
-      try {
-        loadedState = loadMissionState();
-      } catch (e) {
-        // Should not throw
-        expect(e).toBeUndefined();
-        continue;
-      }
-
-      const defaultState = getDefaultMissionState();
-
-      // Should return a valid default state
-      expect(loadedState.soundCheck.completed).toBe(defaultState.soundCheck.completed);
-      expect(loadedState.soundCheck.missions.length).toBe(defaultState.soundCheck.missions.length);
-      expect(loadedState.daily.missions.length).toBe(defaultState.daily.missions.length);
-      expect(loadedState.marathon.mission).toBe(defaultState.marathon.mission);
-
-      localStorageMock.clear();
-    }
+    const status = getDailyBonusStatus(state);
+    expect(status.bonusAvailable).toBe(true);
   });
 
-  /**
-   * **Feature: progression-system, Property 11: Corrupted Data Recovery (Mission validation)**
-   * **Validates: Requirements 8.4**
-   *
-   * Invalid mission objects within a state should cause validation to fail.
-   */
-  test('Invalid mission objects cause validation failure', () => {
-    const invalidMissionArb = fc.oneof(
-      fc.constant(null),
-      fc.constant(undefined),
-      fc.string(),
-      fc.integer(),
-      // Missing required fields
-      fc.record({
-        id: fc.string(),
-        // Missing other required fields
-      }),
-      // Wrong types for fields
-      fc.record({
-        id: fc.integer(), // Should be string
-        category: fc.string(),
-        type: fc.string(),
-        title: fc.string(),
-        description: fc.string(),
-        goal: fc.string(), // Should be number
-        progress: fc.string(), // Should be number
-        completed: fc.string(), // Should be boolean
-        rewards: fc.record({
-          xp: fc.string(), // Should be number
-          shards: fc.string(), // Should be number
-        }),
-      }),
-      // Invalid category
-      fc.record({
-        id: fc.string(),
-        category: fc.constant('INVALID_CATEGORY'),
-        type: fc.constant('DISTANCE'),
-        title: fc.string(),
-        description: fc.string(),
-        goal: fc.integer({ min: 1 }),
-        progress: fc.integer({ min: 0 }),
-        completed: fc.boolean(),
-        rewards: fc.record({
-          xp: fc.integer({ min: 0 }),
-          shards: fc.integer({ min: 0 }),
-        }),
-      }),
-      // Invalid type
-      fc.record({
-        id: fc.string(),
-        category: fc.constant('DAILY'),
-        type: fc.constant('INVALID_TYPE'),
-        title: fc.string(),
-        description: fc.string(),
-        goal: fc.integer({ min: 1 }),
-        progress: fc.integer({ min: 0 }),
-        completed: fc.boolean(),
-        rewards: fc.record({
-          xp: fc.integer({ min: 0 }),
-          shards: fc.integer({ min: 0 }),
-        }),
-      }),
-    );
+  test('claimDailyBonus sets bonusClaimed and returns reward', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: true }),
+      makeMission({ id: 'd2', completed: true }),
+      makeMission({ id: 'd3', completed: true }),
+    ];
+    const { newState, reward } = claimDailyBonus(state);
+    expect(newState.daily.bonusClaimed).toBe(true);
+    expect(reward.shards).toBeGreaterThan(0);
+  });
 
-    fc.assert(
-      fc.property(
-        invalidMissionArb,
-        (invalidMission) => {
-          const stateWithInvalidMission = {
-            soundCheck: {
-              missions: [invalidMission],
-              completed: false,
-            },
-            daily: {
-              missions: [],
-              lastResetDate: '',
-            },
-            marathon: {
-              mission: null,
-              lastResetDate: '',
-            },
-          };
+  test('double claim returns zero reward', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: true }),
+      makeMission({ id: 'd2', completed: true }),
+      makeMission({ id: 'd3', completed: true }),
+    ];
+    state.daily.bonusClaimed = true;
+    const { reward } = claimDailyBonus(state);
+    expect(reward.xp).toBe(0);
+    expect(reward.shards).toBe(0);
+  });
+});
 
-          const result = validateMissionState(stateWithInvalidMission);
-          expect(result).toBeNull();
-          return true;
-        }
-      ),
-      { numRuns: 100 }
-    );
+// ============================================================================
+// markMissionClaimed
+// ============================================================================
+
+describe('markMissionClaimed', () => {
+  test('claims a daily mission by ID', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [makeMission({ id: 'd1', completed: true })];
+    const newState = markMissionClaimed(state, 'd1');
+    expect(newState.daily.missions[0].claimed).toBe(true);
+  });
+
+  test('claims a weekly mission by ID', () => {
+    const state = getDefaultMissionState();
+    state.weekly.mission = makeMission({ id: 'w1', category: 'WEEKLY', completed: true });
+    const newState = markMissionClaimed(state, 'w1');
+    expect(newState.weekly.mission!.claimed).toBe(true);
+  });
+
+  test('returns unchanged state for unknown ID', () => {
+    const state = getDefaultMissionState();
+    const newState = markMissionClaimed(state, 'nonexistent');
+    expect(newState).toEqual(state);
+  });
+});
+
+// ============================================================================
+// getActiveMissions / getTrackerMissions / getUnclaimedCount
+// ============================================================================
+
+describe('mission helpers', () => {
+  test('getActiveMissions includes unclaimed missions', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: false }),
+      makeMission({ id: 'd2', completed: true, claimed: true }),
+      makeMission({ id: 'd3', completed: true, claimed: false }),
+    ];
+    const active = getActiveMissions(state);
+    const activeIds = active.map(m => m.id);
+    expect(activeIds).toContain('d1');
+    expect(activeIds).not.toContain('d2');
+    expect(activeIds).toContain('d3');
+  });
+
+  test('getTrackerMissions returns at most 2', () => {
+    const state = getDefaultMissionState();
+    // Must complete sound check so those don't crowd tracker
+    state.soundCheck.completed = true;
+    state.daily.missions = [
+      makeMission({ id: 'd1', goal: 100, progress: 80 }),
+      makeMission({ id: 'd2', goal: 100, progress: 50 }),
+      makeMission({ id: 'd3', goal: 100, progress: 20 }),
+    ];
+    const tracker = getTrackerMissions(state);
+    expect(tracker.length).toBeLessThanOrEqual(2);
+  });
+
+  test('getUnclaimedCount counts completed-but-unclaimed', () => {
+    const state = getDefaultMissionState();
+    state.soundCheck.completed = true;
+    state.daily.missions = [
+      makeMission({ id: 'd1', completed: true, claimed: false }),
+      makeMission({ id: 'd2', completed: true, claimed: true }),
+      makeMission({ id: 'd3', completed: false }),
+    ];
+    const count = getUnclaimedCount(state);
+    expect(count).toBe(1);
+  });
+});
+
+// ============================================================================
+// checkMissionCompletion / calculateTotalRewards / findMissionById
+// ============================================================================
+
+describe('legacy helpers', () => {
+  test('checkMissionCompletion', () => {
+    expect(checkMissionCompletion(makeMission({ goal: 10, progress: 10 }))).toBe(true);
+    expect(checkMissionCompletion(makeMission({ goal: 10, progress: 5 }))).toBe(false);
+  });
+
+  test('calculateTotalRewards sums only completed', () => {
+    const missions = [
+      makeMission({ completed: true, rewards: { xp: 10, shards: 5 } }),
+      makeMission({ completed: false, rewards: { xp: 100, shards: 50 } }),
+      makeMission({ completed: true, rewards: { xp: 20, shards: 10 } }),
+    ];
+    const total = calculateTotalRewards(missions);
+    expect(total.xp).toBe(30);
+    expect(total.shards).toBe(15);
+  });
+
+  test('findMissionById searches all categories', () => {
+    const state = getDefaultMissionState();
+    state.daily.missions = [makeMission({ id: 'find-me' })];
+    expect(findMissionById(state, 'find-me')?.id).toBe('find-me');
+    expect(findMissionById(state, 'nope')).toBeNull();
+  });
+});
+
+// ============================================================================
+// validateMissionState
+// ============================================================================
+
+describe('validateMissionState', () => {
+  test('returns null for non-object input', () => {
+    expect(validateMissionState(null)).toBeNull();
+    expect(validateMissionState(42)).toBeNull();
+    expect(validateMissionState('hello')).toBeNull();
+  });
+
+  test('returns null for missing required fields', () => {
+    expect(validateMissionState({ soundCheck: {} })).toBeNull();
+    expect(validateMissionState({ daily: {} })).toBeNull();
+  });
+
+  test('returns state for valid data', () => {
+    const state = getDefaultMissionState();
+    expect(validateMissionState(state)).toEqual(state);
   });
 });

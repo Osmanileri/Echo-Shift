@@ -23,7 +23,9 @@ import {
 import React, { useEffect, useState } from "react";
 import * as AudioSystem from "../systems/audioSystem";
 import { getHapticSystem } from "../systems/hapticSystem";
+import type { Mission } from "../types";
 import { GameState, GlitchPhase } from "../types";
+import MissionTracker from "./Missions/MissionTracker";
 
 interface GameUIProps {
   gameState: GameState;
@@ -40,6 +42,9 @@ interface GameUIProps {
   onOpenDailyChallenge?: () => void;
   onOpenMissions?: () => void;
   onOpenRituals?: () => void;
+  // Mission tracker: in-game HUD missions + unclaimed badge count
+  trackerMissions?: Mission[];
+  missionUnclaimedCount?: number;
   // Campaign Update v2.5 - Requirements 1.3: Removed onOpenCampaign
   // Campaign is now the primary mode, accessed via "Start Game" button
   rhythmMultiplier?: number;
@@ -91,6 +96,9 @@ const GameUI: React.FC<GameUIProps> = ({
   onOpenDailyChallenge,
   onOpenMissions,
   onOpenRituals,
+  // Mission tracker
+  trackerMissions = [],
+  missionUnclaimedCount = 0,
   // Campaign Update v2.5 - Requirements 1.3: Removed onOpenCampaign
   rhythmMultiplier = 1,
   rhythmStreak = 0,
@@ -551,6 +559,14 @@ const GameUI: React.FC<GameUIProps> = ({
             </span>
           </div>
         )}
+
+        {/* Mission Tracker HUD - Left side during gameplay */}
+        {trackerMissions.length > 0 && (
+          <MissionTracker
+            missions={trackerMissions}
+            onTap={onOpenRituals}
+          />
+        )}
       </>
     );
   }
@@ -913,12 +929,17 @@ const GameUI: React.FC<GameUIProps> = ({
             {onOpenRituals && soundCheckComplete && (
               <button
                 onClick={() => handleButtonClick(onOpenRituals)}
-                className="group flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-xl hover:bg-purple-500/20 hover:border-purple-400/50 active:scale-95 transition-all duration-200"
+                className="group relative flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/30 rounded-xl hover:bg-purple-500/20 hover:border-purple-400/50 active:scale-95 transition-all duration-200"
               >
-                <Star className="w-4 h-4 text-purple-400 group-hover:text-purple-300" />
+                <Star className="w-4 h-4 text-purple-400 group-hover:text-purple-300 transition-transform group-hover:rotate-12" />
                 <span className="text-xs text-purple-400 font-bold tracking-wider uppercase group-hover:text-purple-300">
                   Günlük Görevler
                 </span>
+                {missionUnclaimedCount > 0 && (
+                  <div className="absolute -top-2.5 -right-2.5 min-w-[22px] h-[22px] px-1 flex items-center justify-center bg-gradient-to-br from-green-400 to-emerald-500 rounded-full text-[10px] font-black text-black shadow-[0_0_10px_rgba(34,197,94,0.6)] animate-bounce">
+                    {missionUnclaimedCount}
+                  </div>
+                )}
               </button>
             )}
           </div>

@@ -348,43 +348,53 @@ export interface PhysicsStrategy {
 // ============================================================================
 
 /**
- * Type of mission objective
- * Requirements 2.1: Define mission types for tracking
+ * Type of mission objective — unified across all mission sub-systems.
+ * Extends original 6 types with ritual-derived types for richer gameplay.
  */
 export type MissionType =
-  | 'DISTANCE'      // Total meters traveled
-  | 'SWAP_COUNT'    // Number of lane swaps
-  | 'NEAR_MISS'     // Near miss count
-  | 'COLLECT'       // Shards collected
-  | 'STAY_LANE'     // Duration in single lane (ms)
-  | 'COLLISION';    // First collision (Sound Check)
+  | 'DISTANCE'         // Total meters traveled
+  | 'SWAP_COUNT'       // Number of lane swaps
+  | 'NEAR_MISS'        // Near miss count
+  | 'COLLECT'          // Shards collected
+  | 'STAY_LANE'        // Duration in single lane (ms)
+  | 'COLLISION'        // First collision (Sound Check)
+  | 'PHANTOM_PASS'     // Pass phantom obstacles
+  | 'SPEED_SURVIVAL'   // Survive X seconds at high speed
+  | 'STREAK'           // Reach X streak
+  | 'NO_SWAP'          // Survive X seconds without swapping
+  | 'CUMULATIVE';      // Cumulative score across sessions
 
 /**
- * Mission slot for daily missions
- * Requirements 2.1: Define slots for daily mission generation
+ * Mission slot for daily missions — redesigned 3-slot system
  */
-export type MissionSlot = 'GRIND' | 'SKILL' | 'MASTERY';
+export type MissionSlot = 'COMBAT' | 'EXPLORER' | 'MASTER' | 'GRIND' | 'SKILL' | 'MASTERY';
+
+/**
+ * Mission difficulty for reward scaling
+ */
+export type MissionDifficulty = 'easy' | 'medium' | 'hard';
 
 /**
  * Mission category
- * Requirements 2.1: Define mission categories
  */
-export type MissionCategory = 'SOUND_CHECK' | 'DAILY' | 'MARATHON';
+export type MissionCategory = 'SOUND_CHECK' | 'DAILY' | 'WEEKLY' | 'MARATHON';
 
 /**
- * Mission interface
- * Requirements 2.1: Define Mission structure
+ * Mission interface — unified structure for all mission types.
  */
 export interface Mission {
   id: string;
   category: MissionCategory;
   slot?: MissionSlot;
   type: MissionType;
+  difficulty?: MissionDifficulty;
   title: string;
   description: string;
   goal: number;
   progress: number;
   completed: boolean;
+  claimed: boolean;
+  icon?: string;
   rewards: {
     xp: number;
     shards: number;
@@ -393,8 +403,8 @@ export interface Mission {
 }
 
 /**
- * Mission state tracking
- * Requirements 2.1: Define MissionState for persistence
+ * Mission state tracking — unified V2 structure.
+ * Replaces separate daily/marathon/rituals with a single system.
  */
 export interface MissionState {
   soundCheck: {
@@ -403,9 +413,15 @@ export interface MissionState {
   };
   daily: {
     missions: Mission[];
+    bonusClaimed: boolean;
     lastResetDate: string;
   };
-  marathon: {
+  weekly: {
+    mission: Mission | null;
+    lastResetDate: string;
+  };
+  /** @deprecated kept for migration — use weekly instead */
+  marathon?: {
     mission: Mission | null;
     lastResetDate: string;
   };

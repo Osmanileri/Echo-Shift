@@ -1665,33 +1665,108 @@ export function playBeatHit() {
   playNoise(0.03, 6000, 'highpass', 0.06);
 }
 
-// ============ LAYERED PROCEDURAL MUSIC ============
-// 4 layers: Kick (downbeat) · Hi-hat (1/8) · Bass (1/4) · Arp (accents)
+// ============ LAYERED PROCEDURAL MUSIC — FULL RHYTHM ENGINE ============
+// 7 layers: Kick · Snare · Hi-hat · Bass · Synth Pad · Lead Melody · Arp
+// Chord progression: Am → F → C → G (8-bar cycle = 32 beats)
 // All scheduled via Web Audio clock for sample-accurate timing.
 
 import { BEAT_MUSIC_CONFIG } from '../constants';
 
+// ──── Musical Constants ────
+
+/** Chord progression — each chord lasts 8 beats (2 bars) */
+const CHORDS = [
+  { root: 110,    third: 130.81, fifth: 164.81, seventh: 196 },    // Am7
+  { root: 87.31,  third: 110,    fifth: 130.81, seventh: 174.61 }, // Fmaj7
+  { root: 130.81, third: 164.81, fifth: 196,    seventh: 246.94 }, // Cmaj7
+  { root: 98,     third: 123.47, fifth: 146.83, seventh: 174.61 }, // G7
+];
+
+/** Bass rhythm pattern per 8-beat chord: syncopated hits */
+const BASS_HITS: Array<{ beat: number; durRatio: number; octUp: boolean }> = [
+  { beat: 0,   durRatio: 0.45, octUp: false },
+  { beat: 1.5, durRatio: 0.2,  octUp: true  },
+  { beat: 2,   durRatio: 0.45, octUp: false },
+  { beat: 3,   durRatio: 0.3,  octUp: false },
+  { beat: 4,   durRatio: 0.45, octUp: false },
+  { beat: 5.5, durRatio: 0.2,  octUp: true  },
+  { beat: 6,   durRatio: 0.5,  octUp: false },
+  { beat: 7,   durRatio: 0.3,  octUp: false },
+];
+
+/** Lead melody: two 16-beat phrases in Am pentatonic */
+const MELODY_PHRASES = [
+  // Phrase A — ascending, hopeful
+  [
+    { beat: 0,  freq: 440,    dur: 0.8  },
+    { beat: 1,  freq: 523.25, dur: 0.5  },
+    { beat: 2,  freq: 587.33, dur: 1.2  },
+    { beat: 4,  freq: 659.25, dur: 0.8  },
+    { beat: 5,  freq: 783.99, dur: 0.6  },
+    { beat: 6,  freq: 659.25, dur: 0.8  },
+    { beat: 7,  freq: 587.33, dur: 0.8  },
+    { beat: 8,  freq: 523.25, dur: 1.2  },
+    { beat: 10, freq: 440,    dur: 0.8  },
+    { beat: 12, freq: 392,    dur: 0.8  },
+    { beat: 13, freq: 440,    dur: 1.5  },
+  ],
+  // Phrase B — descending, resolving
+  [
+    { beat: 0,  freq: 783.99, dur: 0.8  },
+    { beat: 1,  freq: 659.25, dur: 0.8  },
+    { beat: 2,  freq: 587.33, dur: 0.5  },
+    { beat: 3,  freq: 523.25, dur: 1.2  },
+    { beat: 5,  freq: 440,    dur: 0.8  },
+    { beat: 6,  freq: 523.25, dur: 0.5  },
+    { beat: 7,  freq: 587.33, dur: 0.8  },
+    { beat: 8,  freq: 659.25, dur: 1.5  },
+    { beat: 10, freq: 587.33, dur: 0.8  },
+    { beat: 11, freq: 523.25, dur: 0.5  },
+    { beat: 12, freq: 440,    dur: 1.5  },
+    { beat: 14, freq: 392,    dur: 0.8  },
+    { beat: 15, freq: 440,    dur: 0.5  },
+  ],
+];
+
+/** Arp note order cycling through chord tones */
+const ARP_CHORD_KEYS: Array<'root' | 'third' | 'fifth' | 'seventh'> = [
+  'root', 'third', 'fifth', 'seventh', 'fifth', 'third',
+];
+
+// ──── Music Layer State ────
+
 interface MusicLayerState {
   kickGain: GainNode | null;
+  snareGain: GainNode | null;
   hihatGain: GainNode | null;
   bassGain: GainNode | null;
+  bassFilter: BiquadFilterNode | null;
+  padGain: GainNode | null;
+  padFilter: BiquadFilterNode | null;
+  leadGain: GainNode | null;
   arpGain: GainNode | null;
   isPlaying: boolean;
   currentBPM: number;
-  /** Active score for layer unlock decisions */
   currentScore: number;
+  melodyPhraseIndex: number;
   /** Scheduled oscillator/source nodes for cleanup — auto-pruned via onended */
   _scheduledNodes: Set<AudioScheduledSourceNode>;
 }
 
 const musicState: MusicLayerState = {
   kickGain: null,
+  snareGain: null,
   hihatGain: null,
   bassGain: null,
+  bassFilter: null,
+  padGain: null,
+  padFilter: null,
+  leadGain: null,
   arpGain: null,
   isPlaying: false,
   currentBPM: 90,
   currentScore: 0,
+  melodyPhraseIndex: 0,
   _scheduledNodes: new Set(),
 };
 
@@ -1703,9 +1778,13 @@ function _trackNode(node: AudioScheduledSourceNode): void {
   };
 }
 
-// Bass note pattern — pentatonic feel (MIDI-ish, relative to 55 Hz A1)
-const BASS_PATTERN = [55, 65.4, 73.4, 82.4, 98, 82.4, 73.4, 65.4]; // A1 C2 D2 E2 G2 …
-const ARP_PATTERN = [440, 523, 587, 659, 784, 659, 587, 523]; // A4 C5 D5 E5 G5 …
+/** Get current chord based on beat index (8-beat cycle per chord, 32 beats total) */
+function _getChord(beatIndex: number) {
+  const chordIndex = Math.floor((beatIndex % 32) / 8);
+  return CHORDS[chordIndex];
+}
+
+// ──── Gain Node Setup ────
 
 function _ensureMusicGains(): boolean {
   const ctx = getContext();
@@ -1717,65 +1796,155 @@ function _ensureMusicGains(): boolean {
     musicState.kickGain.gain.value = BEAT_MUSIC_CONFIG.kickGain;
     musicState.kickGain.connect(master);
   }
+  if (!musicState.snareGain) {
+    musicState.snareGain = ctx.createGain();
+    musicState.snareGain.gain.value = BEAT_MUSIC_CONFIG.snareGain;
+    musicState.snareGain.connect(master);
+  }
   if (!musicState.hihatGain) {
     musicState.hihatGain = ctx.createGain();
     musicState.hihatGain.gain.value = BEAT_MUSIC_CONFIG.hihatGain;
     musicState.hihatGain.connect(master);
   }
   if (!musicState.bassGain) {
+    // Bass chain: source → filter → gain → master
+    musicState.bassFilter = ctx.createBiquadFilter();
+    musicState.bassFilter.type = 'lowpass';
+    musicState.bassFilter.frequency.value = 400;
+    musicState.bassFilter.Q.value = 5;
     musicState.bassGain = ctx.createGain();
-    musicState.bassGain.gain.value = 0; // fades in at score threshold
+    musicState.bassGain.gain.value = BEAT_MUSIC_CONFIG.bassGain; // plays from start
+    musicState.bassFilter.connect(musicState.bassGain);
     musicState.bassGain.connect(master);
+  }
+  if (!musicState.padGain) {
+    // Pad chain: source → filter → gain → master
+    musicState.padFilter = ctx.createBiquadFilter();
+    musicState.padFilter.type = 'lowpass';
+    musicState.padFilter.frequency.value = 2000;
+    musicState.padFilter.Q.value = 1;
+    musicState.padGain = ctx.createGain();
+    musicState.padGain.gain.value = 0; // fades in at threshold
+    musicState.padFilter.connect(musicState.padGain);
+    musicState.padGain.connect(master);
+  }
+  if (!musicState.leadGain) {
+    musicState.leadGain = ctx.createGain();
+    musicState.leadGain.gain.value = 0; // fades in at threshold
+    musicState.leadGain.connect(master);
   }
   if (!musicState.arpGain) {
     musicState.arpGain = ctx.createGain();
-    musicState.arpGain.gain.value = 0;
+    musicState.arpGain.gain.value = 0; // fades in at threshold
     musicState.arpGain.connect(master);
   }
   return true;
 }
 
+// ──── Instrument Schedulers ────
+
 /**
- * Schedule a single kick drum hit at a precise AudioContext time.
- * Low sine burst 60→30 Hz with fast exponential decay.
+ * Kick drum: sub-bass sine sweep (150→40Hz) + transient click layer.
+ * Punchy EDM-style kick with chest-thumping low end.
  */
 function _scheduleKick(time: number): void {
   const ctx = getContext();
   if (!ctx || !musicState.kickGain) return;
 
-  const osc = ctx.createOscillator();
-  const env = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(60, time);
-  osc.frequency.exponentialRampToValueAtTime(30, time + 0.12);
-  env.gain.setValueAtTime(1, time);
-  env.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
-  osc.connect(env);
-  env.connect(musicState.kickGain);
-  osc.start(time);
-  osc.stop(time + 0.16);
-  _trackNode(osc);
+  // Sub layer — sine sweep down for deep thump
+  const sub = ctx.createOscillator();
+  const subEnv = ctx.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(150, time);
+  sub.frequency.exponentialRampToValueAtTime(40, time + 0.08);
+  subEnv.gain.setValueAtTime(1, time);
+  subEnv.gain.exponentialRampToValueAtTime(0.001, time + 0.20);
+  sub.connect(subEnv);
+  subEnv.connect(musicState.kickGain);
+  sub.start(time);
+  sub.stop(time + 0.22);
+  _trackNode(sub);
+
+  // Click layer — fast triangle transient for attack punch
+  const click = ctx.createOscillator();
+  const clickEnv = ctx.createGain();
+  click.type = 'triangle';
+  click.frequency.setValueAtTime(3500, time);
+  click.frequency.exponentialRampToValueAtTime(300, time + 0.02);
+  clickEnv.gain.setValueAtTime(0.6, time);
+  clickEnv.gain.exponentialRampToValueAtTime(0.001, time + 0.025);
+  click.connect(clickEnv);
+  clickEnv.connect(musicState.kickGain);
+  click.start(time);
+  click.stop(time + 0.03);
+  _trackNode(click);
 }
 
 /**
- * Schedule a hi-hat tick — short burst of high-pass-filtered noise.
+ * Snare: noise burst + tuned sine body.
+ * Plays on backbeats (2 & 4) for groove.
  */
-function _scheduleHihat(time: number, accent: boolean): void {
+function _scheduleSnare(time: number): void {
   const ctx = getContext();
-  if (!ctx || !musicState.hihatGain) return;
+  if (!ctx || !musicState.snareGain) return;
 
-  const dur = accent ? 0.06 : 0.04;
-  const vol = accent ? 1.0 : 0.5;
+  // Noise burst — top-end body
+  const dur = 0.12;
   const bufSize = Math.floor(ctx.sampleRate * dur);
   const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
 
+  const noiseSrc = ctx.createBufferSource();
+  noiseSrc.buffer = buf;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2000;
+  const noiseEnv = ctx.createGain();
+  noiseEnv.gain.setValueAtTime(0.8, time);
+  noiseEnv.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  noiseSrc.connect(hp);
+  hp.connect(noiseEnv);
+  noiseEnv.connect(musicState.snareGain);
+  noiseSrc.start(time);
+  _trackNode(noiseSrc);
+
+  // Sine body — tuned thump
+  const body = ctx.createOscillator();
+  const bodyEnv = ctx.createGain();
+  body.type = 'sine';
+  body.frequency.setValueAtTime(200, time);
+  body.frequency.exponentialRampToValueAtTime(120, time + 0.06);
+  bodyEnv.gain.setValueAtTime(0.7, time);
+  bodyEnv.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+  body.connect(bodyEnv);
+  bodyEnv.connect(musicState.snareGain);
+  body.start(time);
+  body.stop(time + 0.10);
+  _trackNode(body);
+}
+
+/**
+ * Hi-hat: high-pass filtered noise burst.
+ * Open hat = longer decay, closed = tight.
+ */
+function _scheduleHihat(time: number, open: boolean): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.hihatGain) return;
+
+  const dur = open ? 0.12 : 0.04;
+  const vol = open ? 0.8 : 0.5;
+  const filterFreq = open ? 7000 : 10000;
+  const bufSize = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = accent ? 8000 : 10000;
+  hp.frequency.value = filterFreq;
   const env = ctx.createGain();
   env.gain.setValueAtTime(vol, time);
   env.gain.exponentialRampToValueAtTime(0.001, time + dur);
@@ -1787,41 +1956,160 @@ function _scheduleHihat(time: number, accent: boolean): void {
 }
 
 /**
- * Schedule a bass note — sine wave with a short envelope.
+ * Bass: sawtooth through resonant LP filter with envelope.
+ * Punchy, filtered bass — the backbone of the sound.
  */
-function _scheduleBass(time: number, beatIndex: number): void {
+function _scheduleBassNote(time: number, freq: number, durBeats: number): void {
   const ctx = getContext();
-  if (!ctx || !musicState.bassGain) return;
+  if (!ctx || !musicState.bassFilter) return;
 
-  const freq = BASS_PATTERN[beatIndex % BASS_PATTERN.length];
-  const dur = 60 / musicState.currentBPM * 0.8; // 80% of beat duration
+  const dur = (60 / musicState.currentBPM) * durBeats;
+
+  // Sawtooth oscillator for harmonic richness
   const osc = ctx.createOscillator();
-  const env = ctx.createGain();
-  osc.type = 'sine';
+  osc.type = 'sawtooth';
   osc.frequency.setValueAtTime(freq, time);
-  env.gain.setValueAtTime(0.8, time);
-  env.gain.setValueAtTime(0.8, time + dur * 0.6);
+
+  // Amplitude envelope: fast attack, sustain, release
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, time);
+  env.gain.linearRampToValueAtTime(0.85, time + 0.01); // instant attack
+  env.gain.setValueAtTime(0.85, time + dur * 0.7);
   env.gain.linearRampToValueAtTime(0, time + dur);
+
+  // Filter envelope: sweep down for classic bass character
+  musicState.bassFilter.frequency.setValueAtTime(800, time);
+  musicState.bassFilter.frequency.exponentialRampToValueAtTime(250, time + dur * 0.5);
+
   osc.connect(env);
-  env.connect(musicState.bassGain);
+  env.connect(musicState.bassFilter);
   osc.start(time);
   osc.stop(time + dur + 0.01);
   _trackNode(osc);
 }
 
 /**
- * Schedule an arp note — triangle wave, short & bright.
+ * Synth Pad: two detuned sawtooth oscillators through LP filter.
+ * Rich, warm background harmony — chord sustained for 8 beats.
  */
-function _scheduleArp(time: number, beatIndex: number): void {
+function _schedulePadChord(time: number, chord: typeof CHORDS[0]): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.padFilter) return;
+
+  const beatDur = 60 / musicState.currentBPM;
+  const dur = beatDur * 8; // sustain for full chord duration
+
+  // Create pad voices: root + fifth, each with ±8 cent detune for width
+  const freqs = [chord.root, chord.fifth];
+  for (const f of freqs) {
+    // Voice A
+    const oscA = ctx.createOscillator();
+    oscA.type = 'sawtooth';
+    oscA.frequency.setValueAtTime(f * 2, time); // octave up for clarity
+    oscA.detune.setValueAtTime(-8, time);
+
+    // Voice B (detuned)
+    const oscB = ctx.createOscillator();
+    oscB.type = 'sawtooth';
+    oscB.frequency.setValueAtTime(f * 2, time);
+    oscB.detune.setValueAtTime(8, time);
+
+    // Slow attack/release envelope → smooth crossfade between chords
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, time);
+    env.gain.linearRampToValueAtTime(0.3, time + 0.8);    // slow fade-in
+    env.gain.setValueAtTime(0.3, time + dur - 1);
+    env.gain.linearRampToValueAtTime(0, time + dur);       // smooth fade-out
+
+    oscA.connect(env);
+    oscB.connect(env);
+    env.connect(musicState.padFilter);
+
+    oscA.start(time);
+    oscB.start(time);
+    oscA.stop(time + dur + 0.1);
+    oscB.stop(time + dur + 0.1);
+
+    _trackNode(oscA);
+    _trackNode(oscB);
+  }
+}
+
+/**
+ * Lead melody: square + detuned sawtooth blend with vibrato & LP filter.
+ * Rich, clearly audible melodic line that cuts through the mix.
+ */
+function _scheduleLeadNote(time: number, freq: number, durBeats: number): void {
+  const ctx = getContext();
+  if (!ctx || !musicState.leadGain) return;
+
+  const dur = (60 / musicState.currentBPM) * durBeats;
+
+  // Main voice — square wave for presence
+  const osc1 = ctx.createOscillator();
+  osc1.type = 'square';
+  osc1.frequency.setValueAtTime(freq, time);
+
+  // Detune voice — sawtooth for richness
+  const osc2 = ctx.createOscillator();
+  osc2.type = 'sawtooth';
+  osc2.frequency.setValueAtTime(freq, time);
+  osc2.detune.setValueAtTime(7, time);
+
+  // Vibrato LFO — subtle pitch modulation
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.type = 'sine';
+  lfo.frequency.value = 5;
+  lfoGain.gain.value = 3; // ±3 cents vibrato
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc1.frequency);
+  lfoGain.connect(osc2.frequency);
+  lfo.start(time);
+  lfo.stop(time + dur + 0.1);
+  _trackNode(lfo);
+
+  // LP filter for warmth
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(3000, time);
+  filter.frequency.linearRampToValueAtTime(1500, time + dur);
+  filter.Q.value = 2;
+
+  // Envelope: fast attack, sustain, smooth release
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, time);
+  env.gain.linearRampToValueAtTime(0.5, time + 0.02);    // fast attack
+  env.gain.setValueAtTime(0.45, time + dur * 0.7);
+  env.gain.linearRampToValueAtTime(0, time + dur);        // smooth release
+
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(env);
+  env.connect(musicState.leadGain);
+
+  osc1.start(time);
+  osc2.start(time);
+  osc1.stop(time + dur + 0.01);
+  osc2.stop(time + dur + 0.01);
+
+  _trackNode(osc1);
+  _trackNode(osc2);
+}
+
+/**
+ * Arp: fast triangle wave arpeggiation through chord tones.
+ * Sparkly 1/16th note patterns at high scores.
+ */
+function _scheduleArpNote(time: number, freq: number): void {
   const ctx = getContext();
   if (!ctx || !musicState.arpGain) return;
 
-  const freq = ARP_PATTERN[beatIndex % ARP_PATTERN.length];
-  const dur = 0.08;
+  const dur = 0.06;
   const osc = ctx.createOscillator();
   const env = ctx.createGain();
   osc.type = 'triangle';
-  osc.frequency.setValueAtTime(freq, time);
+  osc.frequency.setValueAtTime(freq * 4, time); // 2 octaves up for sparkle
   env.gain.setValueAtTime(0.7, time);
   env.gain.exponentialRampToValueAtTime(0.001, time + dur);
   osc.connect(env);
@@ -1831,43 +2119,86 @@ function _scheduleArp(time: number, beatIndex: number): void {
   _trackNode(osc);
 }
 
+// ──── Master Beat Callback ────
+
 /**
  * Master beat callback — called by beatEngine's schedule-ahead loop.
- * Schedules the appropriate music layer hits for `beatIndex`.
- * `audioTime` is the precise AudioContext time for this beat, provided by the scheduler.
+ * Schedules appropriate instrument hits for every quarter-note beat.
+ * `audioTime` is the precise AudioContext time for sample-accurate scheduling.
  */
 export function _onBeatScheduleMusic(beatIndex: number, _isDownbeat: boolean, audioTime?: number): void {
   const ctx = getContext();
   if (!ctx || !musicState.isPlaying) return;
 
   const beatDur = 60 / musicState.currentBPM;
-  // Use precise audio time from scheduler, fallback to approximation
   const baseTime = audioTime ?? (ctx.currentTime + 0.005);
+  const chord = _getChord(beatIndex);
+  const barBeat = beatIndex % 4;     // position within 4-beat bar
+  const chordBeat = beatIndex % 8;   // position within 8-beat chord
 
-  // Kick on every downbeat (beat 0 of each 4-beat bar)
-  if (beatIndex % 4 === 0) {
+  // ── KICK: downbeat (every 4th beat) ──
+  if (barBeat === 0) {
     _scheduleKick(baseTime);
   }
 
-  // Hi-hat: on every beat, accent on beats 0 and 2
-  const isAccent = beatIndex % 2 === 0;
-  _scheduleHihat(baseTime, isAccent);
-  // Off-beat hi-hat (1/8 subdivision) — halfway between this beat and next
-  _scheduleHihat(baseTime + beatDur / 2, false);
-
-  // Bass: every beat if score >= threshold
-  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.bassUnlockScore) {
-    _scheduleBass(baseTime, beatIndex);
+  // ── SNARE: backbeat (beats 2 of each bar) ──
+  if (barBeat === 2) {
+    _scheduleSnare(baseTime);
   }
 
-  // Arp: beats 0 and 2 of bar, only if score >= threshold
-  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.arpUnlockScore && beatIndex % 2 === 0) {
-    _scheduleArp(baseTime, beatIndex);
+  // ── HI-HAT: every beat + off-beat 1/8th ──
+  const isOpenHat = barBeat === 1 || barBeat === 3;
+  _scheduleHihat(baseTime, isOpenHat);
+  _scheduleHihat(baseTime + beatDur / 2, false); // off-beat 1/8th
+
+  // ── BASS: syncopated pattern based on chord root (plays from start!) ──
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.bassUnlockScore) {
+    for (const hit of BASS_HITS) {
+      if (Math.floor(hit.beat) === chordBeat) {
+        const offset = (hit.beat - Math.floor(hit.beat)) * beatDur;
+        const freq = hit.octUp ? chord.root * 2 : chord.root;
+        _scheduleBassNote(baseTime + offset, freq, hit.durRatio);
+      }
+    }
+  }
+
+  // ── PAD: schedule new chord on chord boundaries (every 8 beats) ──
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.padUnlockScore && chordBeat === 0) {
+    _schedulePadChord(baseTime, chord);
+  }
+
+  // ── LEAD MELODY: 16-beat alternating phrases ──
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.leadUnlockScore) {
+    const phraseBeat = beatIndex % 16;
+    const phrase = MELODY_PHRASES[musicState.melodyPhraseIndex % MELODY_PHRASES.length];
+
+    for (const note of phrase) {
+      if (note.beat === phraseBeat) {
+        _scheduleLeadNote(baseTime, note.freq, note.dur);
+      }
+    }
+
+    // Switch phrase at boundary
+    if (phraseBeat === 15) {
+      musicState.melodyPhraseIndex++;
+    }
+  }
+
+  // ── ARP: 1/16th note chord arpeggios ──
+  if (musicState.currentScore >= BEAT_MUSIC_CONFIG.arpUnlockScore) {
+    for (let i = 0; i < 4; i++) {
+      const noteIdx = (beatIndex * 4 + i) % ARP_CHORD_KEYS.length;
+      const key = ARP_CHORD_KEYS[noteIdx];
+      const freq = chord[key];
+      _scheduleArpNote(baseTime + (i * beatDur / 4), freq);
+    }
   }
 }
 
+// ──── Music Lifecycle ────
+
 /**
- * Start the layered beat music.  Called by beatEngine.start().
+ * Start the layered beat music. Called by beatEngine.start().
  */
 export function startBeatMusic(bpm: number): void {
   if (!state.enabled) return;
@@ -1876,13 +2207,17 @@ export function startBeatMusic(bpm: number): void {
   musicState.currentBPM = bpm;
   musicState.currentScore = 0;
   musicState.isPlaying = true;
+  musicState.melodyPhraseIndex = 0;
 
   // Reset layer gains to initial state
   const ctx = getContext();
   if (ctx) {
     musicState.kickGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.kickGain, ctx.currentTime);
+    musicState.snareGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.snareGain, ctx.currentTime);
     musicState.hihatGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.hihatGain, ctx.currentTime);
-    musicState.bassGain!.gain.setValueAtTime(0, ctx.currentTime);
+    musicState.bassGain!.gain.setValueAtTime(BEAT_MUSIC_CONFIG.bassGain, ctx.currentTime);
+    musicState.padGain!.gain.setValueAtTime(0, ctx.currentTime);
+    musicState.leadGain!.gain.setValueAtTime(0, ctx.currentTime);
     musicState.arpGain!.gain.setValueAtTime(0, ctx.currentTime);
   }
 }
@@ -1890,6 +2225,7 @@ export function startBeatMusic(bpm: number): void {
 /**
  * Update the music system when BPM or score changes.
  * Smoothly fades in new layers when score thresholds are crossed.
+ * Dynamically opens filters as intensity increases.
  */
 export function updateBeatMusic(bpm: number, score: number): void {
   if (!musicState.isPlaying) return;
@@ -1901,12 +2237,21 @@ export function updateBeatMusic(bpm: number, score: number): void {
   const now = ctx.currentTime;
   const fadeSec = BEAT_MUSIC_CONFIG.layerFadeInDuration / 1000;
 
-  // Fade in bass layer
-  if (score >= BEAT_MUSIC_CONFIG.bassUnlockScore && musicState.bassGain) {
-    const current = musicState.bassGain.gain.value;
-    if (current < BEAT_MUSIC_CONFIG.bassGain * 0.9) {
-      musicState.bassGain.gain.setValueAtTime(current, now);
-      musicState.bassGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.bassGain, now + fadeSec);
+  // Fade in pad layer
+  if (score >= BEAT_MUSIC_CONFIG.padUnlockScore && musicState.padGain) {
+    const current = musicState.padGain.gain.value;
+    if (current < BEAT_MUSIC_CONFIG.padGain * 0.9) {
+      musicState.padGain.gain.setValueAtTime(current, now);
+      musicState.padGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.padGain, now + fadeSec);
+    }
+  }
+
+  // Fade in lead melody layer
+  if (score >= BEAT_MUSIC_CONFIG.leadUnlockScore && musicState.leadGain) {
+    const current = musicState.leadGain.gain.value;
+    if (current < BEAT_MUSIC_CONFIG.leadGain * 0.9) {
+      musicState.leadGain.gain.setValueAtTime(current, now);
+      musicState.leadGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.leadGain, now + fadeSec);
     }
   }
 
@@ -1918,10 +2263,22 @@ export function updateBeatMusic(bpm: number, score: number): void {
       musicState.arpGain.gain.linearRampToValueAtTime(BEAT_MUSIC_CONFIG.arpGain, now + fadeSec);
     }
   }
+
+  // Dynamic bass filter: opens up as score increases for richer harmonics
+  if (musicState.bassFilter) {
+    const filterTarget = Math.min(800, 300 + score * 0.1);
+    musicState.bassFilter.frequency.setTargetAtTime(filterTarget, now, 0.5);
+  }
+
+  // Dynamic pad filter: brighter as score increases
+  if (musicState.padFilter) {
+    const filterTarget = Math.min(4000, 1500 + score * 0.3);
+    musicState.padFilter.frequency.setTargetAtTime(filterTarget, now, 0.5);
+  }
 }
 
 /**
- * Stop all music layers.  Called by beatEngine.stop().
+ * Stop all music layers with fadeout. Called by beatEngine.stop().
  */
 export function stopBeatMusic(): void {
   musicState.isPlaying = false;
@@ -1930,21 +2287,20 @@ export function stopBeatMusic(): void {
   if (ctx) {
     const fadeOut = 0.3;
     const now = ctx.currentTime;
-    if (musicState.kickGain) {
-      musicState.kickGain.gain.setValueAtTime(musicState.kickGain.gain.value, now);
-      musicState.kickGain.gain.linearRampToValueAtTime(0, now + fadeOut);
-    }
-    if (musicState.hihatGain) {
-      musicState.hihatGain.gain.setValueAtTime(musicState.hihatGain.gain.value, now);
-      musicState.hihatGain.gain.linearRampToValueAtTime(0, now + fadeOut);
-    }
-    if (musicState.bassGain) {
-      musicState.bassGain.gain.setValueAtTime(musicState.bassGain.gain.value, now);
-      musicState.bassGain.gain.linearRampToValueAtTime(0, now + fadeOut);
-    }
-    if (musicState.arpGain) {
-      musicState.arpGain.gain.setValueAtTime(musicState.arpGain.gain.value, now);
-      musicState.arpGain.gain.linearRampToValueAtTime(0, now + fadeOut);
+    const layers = [
+      musicState.kickGain,
+      musicState.snareGain,
+      musicState.hihatGain,
+      musicState.bassGain,
+      musicState.padGain,
+      musicState.leadGain,
+      musicState.arpGain,
+    ];
+    for (const g of layers) {
+      if (g) {
+        g.gain.setValueAtTime(g.gain.value, now);
+        g.gain.linearRampToValueAtTime(0, now + fadeOut);
+      }
     }
   }
 
