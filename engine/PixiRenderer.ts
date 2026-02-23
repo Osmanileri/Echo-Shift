@@ -9,12 +9,12 @@
  */
 
 import {
-  Application,
-  Container,
-  Graphics,
-  Text,
-  TextStyle,
-  BlurFilter,
+    Application,
+    BlurFilter,
+    Container,
+    Graphics,
+    Text,
+    TextStyle,
 } from 'pixi.js';
 
 // ============================================================================

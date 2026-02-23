@@ -6,8 +6,8 @@
  * time-based FadeAnimations that auto-clean.
  */
 
-import { Graphics, ColorMatrixFilter, Container } from 'pixi.js';
-import { getLayer, getApp, RenderLayer, getWidth, getHeight } from './PixiRenderer';
+import { ColorMatrixFilter, Graphics } from 'pixi.js';
+import { getApp, getHeight, getLayer, getWidth, RenderLayer } from './PixiRenderer';
 
 // ============================================================================
 // Fade Animation System

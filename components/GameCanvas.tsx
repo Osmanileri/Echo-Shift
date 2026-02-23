@@ -12,7 +12,7 @@
  */
 
 import React, { forwardRef, useImperativeHandle } from 'react';
-import { usePixiRenderer, PixiRendererAPI } from '../engine/usePixiRenderer';
+import { PixiRendererAPI, usePixiRenderer } from '../engine/usePixiRenderer';
 
 export interface GameCanvasHandle {
   api: PixiRendererAPI;

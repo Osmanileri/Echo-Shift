@@ -6,8 +6,8 @@
  * Max 500 particles, auto-recycled by oldest when pool is full.
  */
 
-import { Graphics, Container } from 'pixi.js';
-import { getLayer, RenderLayer, getWidth, getHeight } from './PixiRenderer';
+import { Graphics } from 'pixi.js';
+import { getHeight, getLayer, getWidth, RenderLayer } from './PixiRenderer';
 
 // ============================================================================
 // Configuration
