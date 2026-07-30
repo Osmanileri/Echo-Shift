@@ -1658,11 +1658,12 @@ function renderUnlockAnimation(
 
     const progress = state.unlockAnimation.progress;
     const x = canvasWidth / 2;
-    const y = canvasHeight / 2 + 80;
+    // Position text above title area to avoid overlapping DEVAM ET button at (height * 0.58)
+    const y = canvasHeight * 0.22;
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, progress * 2);
-    ctx.font = 'bold 24px monospace';
+    ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = COLORS.diamondGold;
     ctx.shadowColor = COLORS.diamondGold;

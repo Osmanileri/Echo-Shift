@@ -178,10 +178,15 @@ export function triggerTransitionIn(
     height: number = 600,
     config: PhaseDashVFXConfig = VFX_CONFIG
 ): PhaseDashVFXState {
-    // Create burst particles
+    // Clear residual trails and debris
+    clearConnectorTrail();
+    clearDebris();
+
+    // Create burst particles (limited for performance)
     const particles: BurstParticle[] = [];
-    for (let i = 0; i < config.burstParticleCount; i++) {
-        const angle = (i / config.burstParticleCount) * Math.PI * 2;
+    const count = Math.min(12, config.burstParticleCount);
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
         const speed = config.burstParticleSpeed * (0.8 + Math.random() * 0.4);
         particles.push({
             x: playerX,
@@ -189,7 +194,7 @@ export function triggerTransitionIn(
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
             alpha: 1,
-            size: 4 + Math.random() * 6,
+            size: 3 + Math.random() * 5,
             color: i % 2 === 0 ? '#00FFFF' : '#FF00FF',
         });
     }
@@ -380,8 +385,6 @@ function drawSpeedLines(
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#00FFFF';
 
     lines.forEach(line => {
         const alpha = Math.min(0.8, line.speed / 60) * intensity;
@@ -455,9 +458,9 @@ export function updateAndDrawConnectorTrail(
 
             const halfLen = trail.length / 2;
             
-            // Calculate orb positions based on trail angle
-            const yOffset = Math.cos(trail.angle) * halfLen;
-            const xOffset = Math.sin(trail.angle) * 15;
+            // Calculate orb positions based on trail angle (true 360-degree rotation preserving full connector length)
+            const xOffset = Math.cos(trail.angle) * halfLen;
+            const yOffset = Math.sin(trail.angle) * halfLen;
             
             const topX = trail.x - xOffset;
             const topY = trail.y - yOffset;
@@ -478,8 +481,6 @@ export function updateAndDrawConnectorTrail(
             ctx.lineTo(bottomX, bottomY);
             ctx.strokeStyle = `rgba(0, 255, 255, ${trail.alpha * 0.9})`;
             ctx.lineWidth = 4;
-            ctx.shadowColor = '#00FFFF';
-            ctx.shadowBlur = 20 * trail.alpha;
             ctx.stroke();
 
             // Draw trail orbs with border
@@ -495,27 +496,22 @@ export function updateAndDrawConnectorTrail(
             ctx.beginPath();
             ctx.arc(topX, topY, trailOrbSize, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(0, 255, 255, ${trail.alpha * 0.8})`;
-            ctx.shadowColor = '#00FFFF';
-            ctx.shadowBlur = 15;
             ctx.fill();
             
             // Bottom orb border
             ctx.beginPath();
             ctx.arc(bottomX, bottomY, trailOrbSize + 2, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(0, 0, 0, ${trail.alpha * 0.7})`;
-            ctx.shadowBlur = 0;
             ctx.fill();
             
             // Bottom orb trail (magenta)
             ctx.beginPath();
             ctx.arc(bottomX, bottomY, trailOrbSize, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(255, 0, 255, ${trail.alpha * 0.8})`;
-            ctx.shadowColor = '#FF00FF';
-            ctx.shadowBlur = 15;
             ctx.fill();
 
-            // Emit comet tail particles from both orbs
-            if (trail.alpha > 0.8 && Math.random() > 0.3) {
+            // Emit comet tail particles from both orbs (capped for performance)
+            if (trail.alpha > 0.8 && Math.random() > 0.5 && cometTailParticles.length < 30) {
                 // Particles from top orb
                 cometTailParticles.push({
                     x: topX,
@@ -546,15 +542,23 @@ export function updateAndDrawConnectorTrail(
         })
         .filter(trail => trail.alpha > 0);
 
+    // Cap total particles to prevent unbounded accumulation
+    if (cometTailParticles.length > 30) {
+        cometTailParticles = cometTailParticles.slice(-30);
+    }
+
     // Draw and update comet tail particles
     ctx.globalCompositeOperation = 'screen';
     cometTailParticles = cometTailParticles
         .map(p => {
+            const particleAlpha = Math.max(0, Math.min(1, p.alpha * 0.7));
+            const fillStyleStr = p.color === '#00FFFF' 
+                ? `rgba(0, 255, 255, ${particleAlpha})` 
+                : `rgba(255, 0, 255, ${particleAlpha})`;
+
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fillStyle = p.color.replace(')', `, ${p.alpha * 0.7})`).replace('rgb', 'rgba').replace('#00FFFF', 'rgba(0, 255, 255').replace('#FF00FF', 'rgba(255, 0, 255');
-            ctx.shadowColor = p.color;
-            ctx.shadowBlur = 8;
+            ctx.fillStyle = fillStyleStr;
             ctx.fill();
 
             return {
@@ -644,70 +648,45 @@ export function createObstacleDebris(
     obstacleHeight: number,
     obstacleColor: string
 ): void {
-    // More particles for bigger impact (16-24 particles)
-    const particleCount = 16 + Math.floor(Math.random() * 8);
+    // Lightweight particle count (6-8 particles max) for 60fps performance
+    const particleCount = 6 + Math.floor(Math.random() * 3);
     
     // Center of obstacle for explosion origin
     const centerX = obstacleX + obstacleWidth / 2;
     const centerY = obstacleY + obstacleHeight / 2;
     
     for (let i = 0; i < particleCount; i++) {
-        // Radial explosion pattern - particles fly outward from center
         const angle = (i / particleCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+        const speed = 6 + Math.random() * 8;
+        const size = 4 + Math.random() * 6;
         
-        // Varied speeds for dynamic feel (faster = more impact)
-        const speedBase = 8 + Math.random() * 12;
-        const speed = speedBase * (0.7 + Math.random() * 0.6);
-        
-        // Varied sizes - mix of large chunks and small fragments
-        const isLargeChunk = Math.random() > 0.6;
-        const size = isLargeChunk ? (10 + Math.random() * 15) : (3 + Math.random() * 8);
-        
-        // Spawn from within obstacle bounds
-        const spawnOffsetX = (Math.random() - 0.5) * obstacleWidth * 0.8;
-        const spawnOffsetY = (Math.random() - 0.5) * obstacleHeight * 0.8;
-        
-        // Color variation - add neon accents to debris
         let particleColor = obstacleColor;
         if (Math.random() > 0.7) {
-            // Add cyan/magenta neon sparks
             particleColor = Math.random() > 0.5 ? '#00FFFF' : '#FF00FF';
         }
         
         debrisParticles.push({
-            x: centerX + spawnOffsetX,
-            y: centerY + spawnOffsetY,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed - 3, // Upward bias for explosion feel
-            size,
-            alpha: 1,
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.5, // Faster spin
-            color: particleColor,
-        });
-    }
-    
-    // Add extra spark particles for visual flair
-    for (let i = 0; i < 8; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 15 + Math.random() * 10;
-        debrisParticles.push({
             x: centerX,
             y: centerY,
             vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            size: 2 + Math.random() * 3,
+            vy: Math.sin(angle) * speed - 2,
+            size,
             alpha: 1,
-            rotation: 0,
-            rotationSpeed: 0,
-            color: '#FFFFFF', // White sparks
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.4,
+            color: particleColor,
         });
+    }
+
+    // Strict cap on debrisParticles array (max 25 total) to prevent canvas memory overflow
+    if (debrisParticles.length > 25) {
+        debrisParticles.splice(0, debrisParticles.length - 25);
     }
 }
 
 /**
  * Updates and renders debris particles
- * Enhanced with glow effects and motion blur
+ * Lightweight rendering without expensive Canvas shadowBlur calls
  */
 export function updateAndDrawDebris(ctx: CanvasRenderingContext2D): void {
     if (debrisParticles.length === 0) return;
@@ -716,44 +695,15 @@ export function updateAndDrawDebris(ctx: CanvasRenderingContext2D): void {
     
     debrisParticles = debrisParticles
         .map(p => {
-            // Draw particle with enhanced effects
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(p.rotation);
             ctx.globalAlpha = p.alpha;
             
-            // Determine glow color based on particle color
-            let glowColor = '#00FFFF';
-            if (p.color === '#FFFFFF') {
-                glowColor = '#00FFFF';
-            } else if (p.color === '#000000') {
-                glowColor = '#FF00FF';
-            } else {
-                glowColor = p.color;
-            }
-            
-            // Draw glow layer first (larger, more transparent)
-            ctx.shadowColor = glowColor;
-            ctx.shadowBlur = 15 * p.alpha;
-            ctx.fillStyle = glowColor;
-            ctx.globalAlpha = p.alpha * 0.3;
-            ctx.fillRect(-p.size * 0.7, -p.size * 0.7, p.size * 1.4, p.size * 1.4);
-            
-            // Draw main particle
-            ctx.globalAlpha = p.alpha;
             ctx.fillStyle = p.color;
-            ctx.shadowBlur = 8;
-            
-            // Draw as rectangle for chunk feel, or circle for sparks
             if (p.size > 5) {
-                // Chunky debris - rectangular
                 ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-                // Add highlight edge
-                ctx.strokeStyle = `rgba(255, 255, 255, ${p.alpha * 0.5})`;
-                ctx.lineWidth = 1;
-                ctx.strokeRect(-p.size / 2, -p.size / 2, p.size, p.size);
             } else {
-                // Small sparks - circular
                 ctx.beginPath();
                 ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
                 ctx.fill();
@@ -761,20 +711,16 @@ export function updateAndDrawDebris(ctx: CanvasRenderingContext2D): void {
             
             ctx.restore();
 
-            // Update particle physics
-            const drag = 0.98; // Air resistance
             return {
                 ...p,
                 x: p.x + p.vx,
                 y: p.y + p.vy,
-                vx: p.vx * drag,
-                vy: p.vy * drag + 0.4, // Gravity (slightly stronger)
-                alpha: p.alpha - 0.02, // Slower fade for longer visibility
+                vy: p.vy + 0.3,
                 rotation: p.rotation + p.rotationSpeed,
-                size: p.size * 0.97,
+                alpha: p.alpha - 0.04,
             };
         })
-        .filter(p => p.alpha > 0 && p.size > 0.5);
+        .filter(p => p.alpha > 0);
 
     ctx.restore();
 }
@@ -935,9 +881,9 @@ export function drawNeonSpinConnector(
     const halfLen = connectorLength / 2;
     const alpha = transitionProgress;
 
-    // Calculate orb positions based on angle
-    const yOffset = Math.cos(angle) * halfLen;
-    const xOffset = Math.sin(angle) * 15;
+    // Calculate orb positions based on angle (true 360-degree rotation preserving full connector length)
+    const xOffset = Math.cos(angle) * halfLen;
+    const yOffset = Math.sin(angle) * halfLen;
 
     const topX = centerX - xOffset;
     const topY = centerY - yOffset;
@@ -948,8 +894,6 @@ export function drawNeonSpinConnector(
 
     // Outer glow layer
     ctx.globalCompositeOperation = 'lighter';
-    ctx.shadowBlur = 25;
-    ctx.shadowColor = '#00FFFF';
 
     // Draw glowing connector line
     ctx.beginPath();
@@ -965,8 +909,6 @@ export function drawNeonSpinConnector(
     ctx.lineTo(bottomX, bottomY);
     ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.9})`;
     ctx.lineWidth = 2;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#FFFFFF';
     ctx.stroke();
 
     // Top orb (Cyan)
@@ -977,8 +919,6 @@ export function drawNeonSpinConnector(
     topGrad.addColorStop(0.4, `rgba(0, 255, 255, ${alpha * 0.9})`);
     topGrad.addColorStop(1, `rgba(0, 255, 255, 0)`);
     ctx.fillStyle = topGrad;
-    ctx.shadowColor = '#00FFFF';
-    ctx.shadowBlur = 20;
     ctx.fill();
 
     // Bottom orb (Magenta)
@@ -989,16 +929,12 @@ export function drawNeonSpinConnector(
     bottomGrad.addColorStop(0.4, `rgba(255, 0, 255, ${alpha * 0.9})`);
     bottomGrad.addColorStop(1, `rgba(255, 0, 255, 0)`);
     ctx.fillStyle = bottomGrad;
-    ctx.shadowColor = '#FF00FF';
-    ctx.shadowBlur = 20;
     ctx.fill();
 
     // Center energy core
     ctx.beginPath();
     ctx.arc(centerX, centerY, orbRadius * 0.5, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
-    ctx.shadowColor = '#FFFFFF';
-    ctx.shadowBlur = 15;
     ctx.fill();
 
     ctx.restore();

@@ -25,6 +25,7 @@ import {
     WEEKLY_TEMPLATES,
     type MissionSlotType,
     type MissionTemplate,
+    createTreeMissions,
 } from '../data/missionPool';
 import type { Mission, MissionEvent, MissionState } from '../types';
 import { safeLoad, safePersist, STORAGE_KEYS } from '../utils/persistence';
@@ -192,6 +193,9 @@ export function getDefaultMissionState(): MissionState {
       mission: null,
       lastResetDate: '',
     },
+    tree: {
+      missions: createTreeMissions(),
+    },
   };
 }
 
@@ -212,7 +216,11 @@ export function updateMissionProgress(
 
   function updateMissions(missions: Mission[]): Mission[] {
     return missions.map(mission => {
-      if (mission.type === event.type && !mission.completed) {
+      // Tree missions are locked if they have a prerequisite and that prerequisite is not claimed
+      const isLocked = mission.category === 'TREE' && mission.prerequisiteId && 
+                       !missions.find(m => m.id === mission.prerequisiteId)?.claimed;
+
+      if (mission.type === event.type && !mission.completed && !isLocked) {
         const newProgress = Math.min(mission.progress + event.value, mission.goal);
         const nowComplete = newProgress >= mission.goal;
         if (nowComplete) {
@@ -252,6 +260,14 @@ export function updateMissionProgress(
         mission: { ...state.weekly.mission, progress: newProgress, completed: nowComplete },
       };
     }
+  }
+
+  // Tree
+  if (state.tree?.missions && state.tree.missions.length > 0) {
+    newState.tree = {
+      ...state.tree,
+      missions: updateMissions(state.tree.missions)
+    };
   }
 
   return { newState, justCompleted };
@@ -357,6 +373,17 @@ export function markMissionClaimed(state: MissionState, missionId: string): Miss
     return newState;
   }
 
+  // Tree
+  if (state.tree?.missions) {
+    const tIdx = state.tree.missions.findIndex(m => m.id === missionId);
+    if (tIdx >= 0) {
+      const missions = [...state.tree.missions];
+      missions[tIdx] = { ...missions[tIdx], claimed: true };
+      newState.tree = { ...state.tree, missions };
+      return newState;
+    }
+  }
+
   return newState;
 }
 
@@ -373,6 +400,14 @@ export function getActiveMissions(state: MissionState): Mission[] {
   missions.push(...state.daily.missions.filter(m => !m.claimed));
   if (state.weekly.mission && !state.weekly.mission.claimed) {
     missions.push(state.weekly.mission);
+  }
+  // Unlocked, unclaimed tree missions are active!
+  if (state.tree?.missions) {
+    missions.push(...state.tree.missions.filter(m => {
+      if (m.claimed) return false;
+      const isLocked = m.prerequisiteId && !state.tree!.missions.find(prev => prev.id === m.prerequisiteId)?.claimed;
+      return !isLocked;
+    }));
   }
   return missions;
 }
@@ -394,6 +429,12 @@ export function getUnclaimedCount(state: MissionState): number {
   if (state.weekly.mission?.completed && !state.weekly.mission.claimed) count++;
   const bonus = getDailyBonusStatus(state);
   if (bonus.bonusAvailable) count++;
+  
+  // Tree
+  if (state.tree?.missions) {
+    count += state.tree.missions.filter(m => m.completed && !m.claimed).length;
+  }
+  
   return count;
 }
 
@@ -420,11 +461,13 @@ export function findMissionById(state: MissionState, id: string): Mission | null
   const d = state.daily.missions.find(m => m.id === id);
   if (d) return d;
   if (state.weekly.mission?.id === id) return state.weekly.mission;
+  const t = state.tree?.missions?.find(m => m.id === id);
+  if (t) return t;
   return null;
 }
 
 // ============================================================================
-// Persistence
+// Alignment & Persistence
 // ============================================================================
 
 export function saveMissionState(state: MissionState): boolean {
@@ -458,6 +501,13 @@ export function loadMissionState(): MissionState {
   // Ensure weekly exists
   if (!state.weekly) state.weekly = { mission: null, lastResetDate: '' };
 
+  // Ensure tree exists
+  if (!state.tree || !state.tree.missions || state.tree.missions.length === 0) {
+    state.tree = {
+      missions: createTreeMissions(),
+    };
+  }
+
   // Ensure bonusClaimed (migration)
   if (state.daily.bonusClaimed === undefined) (state.daily as any).bonusClaimed = false;
 
@@ -466,6 +516,7 @@ export function loadMissionState(): MissionState {
   state.soundCheck.missions.forEach(ensureClaimed);
   state.daily.missions.forEach(ensureClaimed);
   if (state.weekly.mission) ensureClaimed(state.weekly.mission);
+  if (state.tree?.missions) state.tree.missions.forEach(ensureClaimed);
 
   return state;
 }

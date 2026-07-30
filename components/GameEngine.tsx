@@ -1,63 +1,65 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    GLITCH_CONFIG,
-    GRAVITY_CONFIG,
-    INITIAL_CONFIG,
-    MIDLINE_CONFIG,
-    PHANTOM_CONFIG,
+  GLITCH_CONFIG,
+  GRAVITY_CONFIG,
+  INITIAL_CONFIG,
+  MIDLINE_CONFIG,
+  NEAR_MISS_CONFIG,
+  PHANTOM_CONFIG,
 } from "../constants";
 import { getSkinById } from "../data/skins";
 import { useCharacterStore } from "../store/characterStore";
 import { useGameStore } from "../store/gameStore";
 import { applyTheme, getColor, hasEffect } from "../systems/themeSystem";
 import {
-    EnhancedResonanceState,
-    GameState,
-    GravityState,
-    MidlineConfig,
-    MidlineState,
-    MissionEvent,
-    NearMissState,
-    Obstacle,
-    Particle,
-    RhythmState,
-    ScorePopup,
-    SnapshotBuffer,
-    VisualEffect
+  EnhancedResonanceState,
+  GameState,
+  GravityState,
+  MidlineConfig,
+  MidlineState,
+  MissionEvent,
+  NearMissResult,
+  NearMissState,
+  Obstacle,
+  Particle,
+  RhythmState,
+  ScorePopup,
+  SnapshotBuffer,
+  VisualEffect
 } from "../types";
 import {
-    checkCollision,
-    checkNearMiss,
-    createInitialGravityState,
-    createInitialNearMissState,
-    mirrorPlayerPosition,
-    randomRange,
-    shouldTriggerFlip,
-    updateNearMissState
+  checkCollision,
+  checkNearMiss,
+  createInitialGravityState,
+  createInitialNearMissState,
+  mirrorPlayerPosition,
+  randomRange,
+  shouldTriggerFlip,
+  updateNearMissState
 } from "../utils/gameMath";
 import {
-    calculateDynamicAmplitude,
-    calculateDynamicFrequency,
-    calculateMidlineY,
-    calculateMovementBounds,
-    calculateNormalBounds,
-    calculateNormalizedOffset,
-    calculateTensionIntensity,
-    createInitialMidlineState,
-    getOrbZone,
-    isAtPeak,
-    isCriticalSpace,
-    predictPeakTime,
-    shouldApplyMicroPhasing,
+  calculateDynamicAmplitude,
+  calculateDynamicFrequency,
+  calculateMidlineY,
+  calculateMovementBounds,
+  calculateNormalBounds,
+  calculateNormalizedOffset,
+  calculateTensionIntensity,
+  createInitialMidlineState,
+  getOrbZone,
+  isAtPeak,
+  isCriticalSpace,
+  predictPeakTime,
+  shouldApplyMicroPhasing,
 } from "../utils/midlineSystem";
 import {
-    calculatePhantomBonus
+  calculatePhantomBonus
 } from "../utils/phantomSystem";
 import {
-    calculateExpectedInterval,
-    checkRhythmTiming,
-    createInitialRhythmState,
-    updateRhythmState,
+  calculateExpectedInterval,
+  checkRhythmTiming,
+  createInitialRhythmState,
+  updateRhythmState,
 } from "../utils/rhythmSystem";
 import { renderOrb } from "../utils/skinRenderer";
 import { calculateCharacterModifiers } from "../utils/statMapper";
@@ -108,6 +110,7 @@ import * as ObjectPool from "../systems/objectPool";
 // Shard Placement System Integration - Requirements 5.1, 5.2, 5.3, 5.4, 5.5
 import * as ShardPlacement from "../systems/shardPlacement";
 import { setCustomThemeColors } from "../systems/themeSystem";
+import * as InverterSystem from "../utils/inverterSystem";
 // Audio System Integration - Phase 4 Launch Polish
 import * as AudioSystem from "../systems/audioSystem";
 // Orb Trail System - Skins create trail effects behind orbs
@@ -245,6 +248,7 @@ interface GameEngineProps {
   onDashStateUpdate?: (energy: number, active: boolean, remainingPercent?: number) => void;
   // Quantum Lock updates - Requirements 7.5
   onQuantumLockStateUpdate?: (isActive: boolean, phase?: GlitchPhase) => void;
+  onShieldStateUpdate?: (shieldCharges: number) => void;
   // Campaign Mode - Requirements 7.2, 7.3, 7.4, 7.5, 7.6
   campaignMode?: CampaignModeConfig;
   // Daily Challenge Mode - Requirements 8.1, 8.2, 8.3
@@ -280,6 +284,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   onSlowMotionStateUpdate,
   onDashStateUpdate,
   onQuantumLockStateUpdate,
+  onShieldStateUpdate,
   campaignMode,
   dailyChallengeMode,
   zenMode,
@@ -371,6 +376,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const frameId = useRef<number>(0);
   const score = useRef<number>(0);
   const speed = useRef<number>(INITIAL_CONFIG.baseSpeed);
+  const prevGameStateRef = useRef<GameState | null>(null);
 
   // Entities
   const playerY = useRef<number>(0.5); // Vertical position (0.0 - 1.0)
@@ -569,8 +575,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileHint, setShowMobileHint] = useState(true);
 
-  // Device Pixel Ratio — for retina/high-DPI canvas rendering
-  const dprRef = useRef(Math.min(window.devicePixelRatio || 1, 3)); // cap at 3x for perf
+  // Device Pixel Ratio — cap at 2x for high-DPI performance (55% fill-rate savings vs 3x)
+  const dprRef = useRef(Math.min(window.devicePixelRatio || 1, 2));
+
+  // UI Throttling Refs — throttles React UI state updates to ~10 FPS to eliminate main thread lag
+  const lastUiDistanceUpdateMs = useRef<number>(0);
+  const lastUiDashUpdateMs = useRef<number>(0);
+  const lastUiDashActive = useRef<boolean>(false);
+  const lastUiScore = useRef<number>(-1);
+  const lastUiSpeed = useRef<number>(-1);
 
   /** Size the canvas buffer for retina, but keep logical coordinate space = CSS pixels.
    *  ctx.scale(dpr) makes all subsequent draw calls use logical pixels automatically. */
@@ -772,8 +785,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
       0,
       Math.floor(upgradeEffects.shieldCharges)
     );
+    onShieldStateUpdate?.(shieldChargesRemaining.current);
     // Spirit Character: Note - shieldTimeBonus will be applied when shield activates
     shieldInvincibleUntil.current = 0;
+    postRestoreInvincible.current = false;
+    postRestoreStartTime.current = 0;
+    lastSpecialAbilityEndTime.current = 0;
 
     // Reset slow motion state - Requirements 6.4
     slowMotionState.current = SlowMotion.createInitialSlowMotionState(
@@ -782,7 +799,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
     slowMotionStartTime.current = 0;
     obstacles.current = [];
     particles.current = [];
+    activeShards.current = [];
     framesSinceSpawn.current = 0;
+    obstaclePool.current.reset();
+    shardPool.current.reset();
 
     // PixiJS: Clean up all renderables for fresh start
     pixiApiRef.current?.cleanupAllRenderables();
@@ -974,6 +994,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Restore State - Requirements 2.1, 2.8
     restoreState.current = RestoreSystem.createInitialRestoreState();
     pendingRestore.current = false;
+    isRestoreAnimating.current = false;
     scoreAtDeath.current = 0;
 
     // Reset Snapshot Buffer - Requirements 7.1, 7.4
@@ -1034,7 +1055,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     diamondStreak.current = 0;
     GlitchSystem.clearInputBuffer();
 
-    // Reset Enemy Manager State - Glitch Dart attacks
+    // Reset Enemy Manager State - Glitch Dart & Seeker attacks
+    EnemyManager.resetAnimationState();
     enemyManagerState.current = EnemyManager.createEnemyManagerState(
       window.innerWidth,
       window.innerHeight
@@ -1058,6 +1080,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Reset Start Sequence State - Cinematic 3-2-1-GO countdown
     startSequenceState.current = StartSequence.createInitialState();
     setCountdownDisplay({ value: 3, active: true });
+
   }, [
     onScoreUpdate,
     setGameSpeedDisplay,
@@ -1183,6 +1206,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       isDashing: PhaseDash.isDashActive(phaseDashState.current),
       dashXOffset: PhaseDash.getPlayerXOffset(phaseDashState.current),
       phantomEnabled: phantomEnabled ?? true,
+      currentLevelId: campaignMode?.enabled ? campaignMode.levelConfig?.id : undefined,
       forcePhantom,
       rng: nextRunRand,
       obstaclePool: obstaclePool.current,
@@ -1325,30 +1349,41 @@ const GameEngine: React.FC<GameEngineProps> = ({
     orbX: number,
     orbY: number,
     closestPoint: { x: number; y: number },
-    isStreakBonus: boolean
+    isStreakBonus: boolean,
+    isDodgeMaster: boolean = false
   ) => {
     // Theme System Integration - Requirements 5.1, 5.2, 5.3
-    const accentColor = getColor("accent");
+    const accentColor = isDodgeMaster ? "#FFD700" : getColor("accent");
 
-    // Haptic Feedback: Medium pulse for near miss - Requirements 4.3
-    getHapticSystem().trigger("medium");
+    // Haptic Feedback: Heavy pulse for Dodge Master, Medium for near miss
+    if (isDodgeMaster) {
+      getHapticSystem().trigger("heavy");
+    } else {
+      getHapticSystem().trigger("medium");
+    }
 
-    // Audio: Near miss sound - Phase 4
-    if (isStreakBonus) {
+    // Audio: custom synthesised Dodge Master SFX or normal near miss
+    if (isDodgeMaster) {
+      AudioSystem.playDodgeMaster();
+    } else if (isStreakBonus) {
       AudioSystem.playStreakBonus();
     } else {
       AudioSystem.playNearMiss();
     }
 
-    // Screen Shake on near miss - Requirements 10.2
-    if (isStreakBonus) {
+    // Screen Shake: Enhanced intensity and duration for Dodge Master
+    if (isDodgeMaster) {
+      ScreenShake.trigger({
+        intensity: 10,
+        duration: 250,
+        frequency: 35,
+        decay: true
+      });
+    } else if (isStreakBonus) {
       ScreenShake.triggerStreakBonus();
     } else {
       ScreenShake.triggerNearMiss();
     }
-
-    // Requirements 3.3: Near-miss visual feedback
-    // Score popup is handled in scoring logic with actual calculated amount
 
     // Requirements 3.4: Accent glow pulse effect around the orb
     visualEffects.current.push({
@@ -1357,56 +1392,94 @@ const GameEngine: React.FC<GameEngineProps> = ({
       y: orbY,
       life: 1.0,
       color: accentColor,
-      scale: 1.0,
+      scale: isDodgeMaster ? 1.8 : 1.0,
     });
 
-    // Requirements 3.5, 12.3: Spark particles from closest point using ParticleSystem
-    ParticleSystem.emitBurst(closestPoint.x, closestPoint.y, activeCharacter?.types[0] || 'normal', 6);
-
-    // Also add to legacy particles for backward compatibility
-    const sparkCount = Math.floor(randomRange(5, 9));
-    for (let i = 0; i < sparkCount; i++) {
-      particles.current.push({
-        x: closestPoint.x,
-        y: closestPoint.y,
-        vx: (Math.random() - 0.5) * 8,
-        vy: (Math.random() - 0.5) * 8,
-        life: 0.8,
-        color: accentColor,
-      });
-    }
-
-    // Requirements 3.8, 3.9: "PERFECT DODGE!" text and golden burst for streak bonus
-    if (isStreakBonus) {
-      scorePopups.current.push({
-        x: orbX,
-        y: orbY - 50,
-        text: "PERFECT DODGE!",
-        color: "#FFD700", // Golden color
-        life: 1.5,
-        vy: -1.5,
-      });
-
-      // Requirements 3.9: Enhanced golden particle burst
-      for (let i = 0; i < 12; i++) {
-        particles.current.push({
-          x: orbX,
-          y: orbY,
-          vx: (Math.random() - 0.5) * 12,
-          vy: (Math.random() - 0.5) * 12,
-          life: 1.0,
-          color: "#FFD700",
-        });
-      }
-
+    if (isDodgeMaster) {
+      // Golden/rainbow burst ring around the orb
       visualEffects.current.push({
         type: "burst",
         x: orbX,
         y: orbY,
-        life: 1.0,
+        life: 1.2,
         color: "#FFD700",
-        scale: 1.5,
+        scale: 2.0,
       });
+
+      // Special golden emoji/title popup
+      scorePopups.current.push({
+        x: orbX,
+        y: orbY - 50,
+        text: "👑 DODGE MASTER! 👑",
+        color: "#FFD700",
+        life: 1.8,
+        vy: -1.8,
+      });
+
+      // Golden sparks in all directions
+      const emojis = ['👑', '⚡', '✨', '🔥'];
+      for (let i = 0; i < 16; i++) {
+        const angle = (Math.PI * 2 / 16) * i + (Math.random() - 0.5) * 0.2;
+        particles.current.push({
+          x: orbX,
+          y: orbY,
+          vx: Math.cos(angle) * (4 + Math.random() * 4),
+          vy: Math.sin(angle) * (4 + Math.random() * 4) - 1.5,
+          life: 1.2,
+          color: i % 2 === 0 ? "#FFD700" : "#FFA500",
+        });
+      }
+
+      // Emit high energy electric particles
+      ParticleSystem.emitBurst(closestPoint.x, closestPoint.y, 'electric', 15);
+    } else {
+      // Requirements 3.5, 12.3: Spark particles from closest point using ParticleSystem
+      ParticleSystem.emitBurst(closestPoint.x, closestPoint.y, activeCharacter?.types[0] || 'normal', 6);
+
+      // Also add to legacy particles for backward compatibility
+      const sparkCount = Math.floor(randomRange(5, 9));
+      for (let i = 0; i < sparkCount; i++) {
+        particles.current.push({
+          x: closestPoint.x,
+          y: closestPoint.y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          life: 0.8,
+          color: accentColor,
+        });
+      }
+
+      if (isStreakBonus) {
+        scorePopups.current.push({
+          x: orbX,
+          y: orbY - 50,
+          text: "PERFECT DODGE!",
+          color: "#FFD700", // Golden color
+          life: 1.5,
+          vy: -1.5,
+        });
+
+        // Requirements 3.9: Enhanced golden particle burst
+        for (let i = 0; i < 12; i++) {
+          particles.current.push({
+            x: orbX,
+            y: orbY,
+            vx: (Math.random() - 0.5) * 12,
+            vy: (Math.random() - 0.5) * 12,
+            life: 1.0,
+            color: "#FFD700",
+          });
+        }
+
+        visualEffects.current.push({
+          type: "burst",
+          x: orbX,
+          y: orbY,
+          life: 1.0,
+          color: "#FFD700",
+          scale: 1.5,
+        });
+      }
     }
   };
 
@@ -1431,7 +1504,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
     // Haptic Feedback: Light pulse for swap action - Requirements 4.1
     getHapticSystem().trigger("light");
     // Audio: Swap sound - Phase 4
-    AudioSystem.playSwap();
+    AudioSystem.playSwap(playerY.current);
     // PixiJS: Swap flash effect
     pixiApiRef.current?.onSwap(window.innerWidth / 4, playerY.current * window.innerHeight);
 
@@ -1467,7 +1540,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
       const isTouchDevice =
         "ontouchstart" in window || navigator.maxTouchPoints > 0;
       const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
-      setIsMobile(isTouchDevice || isCapacitor);
+      const forceMobile = window.location.search.includes("isMobile=true") ||
+        (window as any).__forceMobile === true;
+      setIsMobile(isTouchDevice || isCapacitor || forceMobile);
     };
 
     checkMobile();
@@ -1890,6 +1965,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Sync gameStateRef with gameState prop for animation loop
   // This allows the loop to check current state without re-creating
   useEffect(() => {
+    prevGameStateRef.current = gameStateRef.current;
     gameStateRef.current = gameState;
   }, [gameState]);
 
@@ -1967,7 +2043,8 @@ const GameEngine: React.FC<GameEngineProps> = ({
     if (gameState !== GameState.PLAYING) return;
 
     // Only reset if this is a NEW game, not resuming from pause
-    if (!wasPlayingRef.current) {
+    const isResuming = prevGameStateRef.current === GameState.PAUSED || prevGameStateRef.current === GameState.RESTORING;
+    if (!wasPlayingRef.current || !isResuming) {
       resetGame();
     } else {
 
@@ -2388,9 +2465,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
       }
 
       // Get current speed multiplier (1.0 normally, 0.5 during slow motion)
-      const slowMotionMultiplier = SlowMotion.getSpeedMultiplier(
+      let slowMotionMultiplier = SlowMotion.getSpeedMultiplier(
         slowMotionState.current
       );
+
+      // Check post-restore speed ramp (2 seconds after restore)
+      if (postRestoreInvincible.current) {
+        const timeSinceRestore = gameTime - postRestoreStartTime.current;
+        if (timeSinceRestore < POST_RESTORE_INVINCIBILITY_DURATION) {
+          // Linear ramp from 0.35 to 1.0 over the duration
+          const progress = timeSinceRestore / POST_RESTORE_INVINCIBILITY_DURATION;
+          const rampMultiplier = 0.35 + progress * 0.65;
+          slowMotionMultiplier *= rampMultiplier;
+        }
+      }
 
       // --- CONSTRUCT SYSTEM UPDATE - Requirements 2.3, 2.4, 3.1, 4.1, 4.6, 5.1 ---
       // Update construct system state (check invincibility expiration)
@@ -2450,11 +2538,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Get Phase Dash speed multiplier (1.0 normally, 4.0 during dash)
       const phaseDashSpeedMultiplier = PhaseDash.getSpeedMultiplier(phaseDashState.current);
 
-      // Report Phase Dash state to parent for UI
-      // Calculate remaining percent: 100% at start, 0% when dash ends
+      // Report Phase Dash state to parent for UI (throttled to ~100ms or state change)
       const dashProgress = PhaseDash.getDashProgress(phaseDashState.current);
       const dashRemainingPercent = phaseDashState.current.isActive ? (1 - dashProgress) * 100 : 100;
-      onDashStateUpdate?.(phaseDashState.current.energy, phaseDashState.current.isActive, dashRemainingPercent);
+      const isDashActive = phaseDashState.current.isActive;
+      if (isDashActive !== lastUiDashActive.current || frameTime - lastUiDashUpdateMs.current >= 100) {
+        lastUiDashUpdateMs.current = frameTime;
+        lastUiDashActive.current = isDashActive;
+        onDashStateUpdate?.(phaseDashState.current.energy, isDashActive, dashRemainingPercent);
+      }
 
       // --- CONSTRUCT VFX UPDATE - Requirements 3.5, 4.5, 5.6, 2.2, 6.4, 6.8 ---
       // Update transformation VFX
@@ -2475,6 +2567,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Velocity is in screen space (pixels per frame)
       playerVelocityY.current = (playerY.current - prevPlayerY.current) * height;
       prevPlayerY.current = playerY.current;
+
+      // AudioSystem update continuous glow drone with absolute normalized velocity
+      const velocityNorm = Math.abs(playerVelocityY.current / height);
+      AudioSystem.updateInteractiveGlow(playerY.current, velocityNorm);
 
       // Dynamic Connector Growth
       const targetLen = Math.min(
@@ -2661,12 +2757,15 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Update distance state ref
           distanceStateRef.current = distanceTrackerRef.current.getState();
 
-          // Notify parent of distance update
-          activeCampaign.onDistanceUpdate?.(
-            distanceStateRef.current.currentDistance,
-            distanceStateRef.current.targetDistance,
-            distanceStateRef.current.progressPercent
-          );
+          // Notify parent of distance update (throttled to ~100ms or level complete)
+          if (frameTime - lastUiDistanceUpdateMs.current >= 100 || distanceTrackerRef.current.isLevelComplete()) {
+            lastUiDistanceUpdateMs.current = frameTime;
+            activeCampaign.onDistanceUpdate?.(
+              distanceStateRef.current.currentDistance,
+              distanceStateRef.current.targetDistance,
+              distanceStateRef.current.progressPercent
+            );
+          }
 
           // Check for Quantum Lock state change updates - Requirements 7.5
           const isQuantumLockActive = glitchModeState.current.isActive ||
@@ -2715,9 +2814,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
         const timeSinceSpecialEnd = frameTime - (lastSpecialAbilityEndTime.current || 0);
         const isInGracePeriod = timeSinceSpecialEnd < 1000;
 
-        // Finish Approach: activate clear runway at 93% - stop spawning, start clearing obstacles
+        // Finish Approach: activate clear runway at 94% - stop spawning, start clearing obstacles
         const isInFinishApproach = distanceStateRef.current.targetDistance > 0 &&
-          distanceStateRef.current.progressPercent >= 93;
+          distanceStateRef.current.progressPercent >= 94;
         if (isInFinishApproach && !finishApproachActive.current) {
           finishApproachActive.current = true;
           finishApproachStartTime.current = frameTime;
@@ -2734,15 +2833,33 @@ const GameEngine: React.FC<GameEngineProps> = ({
           (campaignModeRef.current?.useDistanceMode
             ? distanceStateRef.current.currentDistance < 3
             : (frameTime - gameStartTime.current < 1800)) ||
-          isInFinishApproach; // Stop spawning at 88% for clear runway
+          isInFinishApproach; // Stop spawning at 94% for clear runway
 
-        // DASH BURST SPAWN: During dash, spawn obstacles directly every few frames
-        // This bypasses the pattern system for intense obstacle barrage
+        // DASH BURST SPAWN: During dash, spawn intense gauntlet of obstacle pairs
+        // Player smashes through all blocks at hyper-speed with debris explosions
         if (isDashingNow && !shouldStopSpawning) {
-          // Spawn obstacle every 30 frames during dash (~2 obstacles per second at 60fps)
-          // Further reduced to avoid overlapping obstacles
-          if (frameId.current % 30 === 0) {
-            spawnPatternObstacle("TOP" as Lane, 0.5, height, width);
+          // BALANCED DASH GAUNTLET: Spawn obstacle pair every 8 frames (~7.5 pairs/sec) for satisfying, balanced block smashing!
+          if (frameId.current % 18 === 0) {
+            const isPhantomEnabled = !campaignMode?.enabled || campaignMode.levelConfig?.mechanics.phantom !== false;
+            const isForcePhantom = (dailyChallengeMode?.enabled && dailyChallengeMode.config?.modifiers.phantomOnly) || false;
+
+            const spawnCtx: BlockSystem.SpawnContext = {
+              canvasHeight: height,
+              canvasWidth: width,
+              score: score.current,
+              connectorLength: currentConnectorLength.current,
+              isGravityFlipped: gravityState.current.isFlipped,
+              isDashing: true,
+              dashXOffset: PhaseDash.getPlayerXOffset(phaseDashState.current),
+              phantomEnabled: isPhantomEnabled,
+              forcePhantom: isForcePhantom,
+              currentLevelId: campaignMode?.enabled ? campaignMode.levelConfig?.id : undefined,
+              obstaclePool: obstaclePool.current,
+              rng: Math.random,
+              state: blockSystemState.current,
+            };
+            const dashObstacles = BlockSystem.spawnPatternObstaclePair(spawnCtx);
+            obstacles.current.push(...dashObstacles);
           }
         }
 
@@ -2830,8 +2947,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           );
         }
 
-        if (framesSinceSpawn.current % 30 === 0)
+        if (Math.abs(speed.current - lastUiSpeed.current) >= 0.05) {
+          lastUiSpeed.current = speed.current;
           setGameSpeedDisplay(speed.current);
+        }
         framesSinceSpawn.current++;
       } else {
         // Legacy Random Spawning (fallback)
@@ -2856,8 +2975,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           speed.current = FlowCurve.calculateGameSpeed(score.current);
 
-          if (framesSinceSpawn.current % 30 === 0)
+          if (Math.abs(speed.current - lastUiSpeed.current) >= 0.05) {
+            lastUiSpeed.current = speed.current;
             setGameSpeedDisplay(speed.current);
+          }
         }
       }
 
@@ -2899,8 +3020,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           ? distanceTrackerRef.current.getCurrentDistance()
           : score.current * 0.5; // Rough estimate: 0.5m per point
 
-        // Check if we should spawn - Requirements 2.7: minimum 500m distance
-        if (GlitchSystem.shouldSpawnGlitchShard(distanceTraveled, hasSpawnedGlitchShardThisLevel.current)) {
+        // Check if we should spawn (Level 4+ in campaign mode, 200m+ in endless)
+        const currentLevelId = campaignMode?.enabled ? campaignMode.levelConfig?.id : undefined;
+        if (GlitchSystem.shouldSpawnGlitchShard(distanceTraveled, hasSpawnedGlitchShardThisLevel.current, currentLevelId)) {
           // Check if spawn position is safe - Requirements 2.6: 150px clearance
           const centerY = height / 2;
           const potentialY = centerY + (Math.random() * 2 - 1) * 100; // ±100px from center
@@ -4536,13 +4658,212 @@ const GameEngine: React.FC<GameEngineProps> = ({
           obs.y = obs.targetY;
         }
 
-        // Scoring with Rhythm System - Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.7
-        // Phantom Bonus - Requirements 5.7, 5.10
+        // Synchronized Pair Inverter Polarity Shift Trigger
+        if (InverterSystem.shouldInvertPolarity(obs)) {
+          const pairX = obs.x;
+          for (let p = 0; p < obstacles.current.length; p++) {
+            const o = obstacles.current[p];
+            if (o.isInverting && !o.hasInverted && Math.abs(o.x - pairX) < 40) {
+              InverterSystem.invertObstaclePolarity(o, currentTime);
+            }
+          }
+          AudioSystem.playColorInvert();
+        }
+
+        // Track minimum clearance to dangerous orb if the block hasn't passed and is in proximity
+        if (!obs.passed && obs.x < playerX + 150 && obs.x + obs.width > playerX - 50) {
+          const dangerousOrb = obs.polarity === 'black' ? whiteOrb : blackOrb;
+          const clearanceResult = checkNearMiss({ x: dangerousOrb.x, y: dangerousOrb.y }, dangerousOrb.radius, obs);
+          obs.minClearance = Math.min(obs.minClearance ?? Infinity, clearanceResult.distance);
+        }
+
+        // Scoring with Rhythm System & Pro-Grade Near Miss Check (Only for clean, un-hit blocks)
         if (
           !obs.passed &&
-          obs.x + obs.width < playerX - INITIAL_CONFIG.orbRadius
+          !obs.wasHit &&
+          obs.x <= playerX + INITIAL_CONFIG.orbRadius
         ) {
-          obs.passed = true;
+          // Synchronize pass glow on BOTH top and bottom blocks in this gate/pair
+          const passX = obs.x;
+          for (let p = 0; p < obstacles.current.length; p++) {
+            const o = obstacles.current[p];
+            if (Math.abs(o.x - passX) < 40 && !o.passed) {
+              o.passed = true;
+              o.passTime = currentTime;
+            }
+          }
+
+          // Play successful passage audio
+          AudioSystem.playObstaclePass(playerY.current);
+
+          // Emit a clean wind/flow effect from the passing orb instead of an explosion at the block's center
+          const passingOrb = obs.polarity === 'black' ? whiteOrb : blackOrb;
+          ParticleSystem.emitBurst(passingOrb.x, passingOrb.y, 'wind', 2);
+
+          // Pro-Grade Near Miss / Dodge Master Check (Disabled during skill/invincibility modes)
+          const minClearance = obs.minClearance ?? Infinity;
+          const DODGE_MASTER_THRESHOLD = NEAR_MISS_CONFIG.dodgeMasterThreshold; // 10
+          const NEAR_MISS_THRESHOLD = NEAR_MISS_CONFIG.threshold; // 22
+
+          const isSkillActiveForNearMiss =
+            ShiftProtocol.isInvulnerableDuringOverdrive(shiftState.current) ||
+            PhaseDash.isInvincible(phaseDashState.current) ||
+            GlitchSystem.isInvulnerable(glitchModeState.current) ||
+            ConstructSystem.isInvulnerable(constructSystemState.current, currentTime) ||
+            currentTime < shieldInvincibleUntil.current ||
+            postRestoreInvincible.current;
+
+          if (!isSkillActiveForNearMiss && minClearance < NEAR_MISS_THRESHOLD) {
+            // Dodge Master requires:
+            // 1. Clearance is close (between 0 and 10px)
+            // 2. Swapped within the last (swap duration + 100ms) window
+            // 3. Swapped from WRONG polarity to CORRECT polarity (meaning before they swapped, they were in the wrong polarity)
+            const wasSwapActive = (currentTime - lastSwapTime.current) < (INITIAL_CONFIG.swapDuration + 100);
+
+            // Determine if the player was in the wrong polarity before the last swap
+            const wasWrongBeforeSwap = (() => {
+              const prevSwapped = !isSwapped.current; // Swapped state prior to the current swap
+              const obsCenterY = obs.y + obs.height / 2;
+              const obsIsTop = obsCenterY < currentMidlineY;
+              if (obsIsTop) {
+                const prevTopColor = prevSwapped ? 'black' : 'white';
+                return prevTopColor !== obs.polarity;
+              } else {
+                const prevBottomColor = prevSwapped ? 'white' : 'black';
+                return prevBottomColor !== obs.polarity;
+              }
+            })();
+
+            const isDodgeMaster = minClearance < DODGE_MASTER_THRESHOLD && wasSwapActive && wasWrongBeforeSwap && minClearance >= 0;
+            const activeOrb = obs.polarity === 'black' ? whiteOrb : blackOrb;
+
+            const tempResult: NearMissResult = {
+              isNearMiss: true,
+              distance: minClearance,
+              closestPoint: { x: activeOrb.x, y: activeOrb.y },
+              bonusPoints: isDodgeMaster
+                ? 10 * NEAR_MISS_CONFIG.dodgeMasterMultiplier
+                : 10 * NEAR_MISS_CONFIG.bonusMultiplier
+            };
+
+            const streakResult = updateNearMissState(
+              nearMissState.current,
+              tempResult,
+              currentTime
+            );
+            nearMissState.current = streakResult.newState;
+
+            pixiApiRef.current?.onNearMiss(activeOrb.x, activeOrb.y, nearMissState.current.streakCount);
+            onNearMissStateUpdate?.(nearMissState.current.streakCount);
+
+            // Shield recovery capped at upgraded level
+            const maxShieldCharges = Math.max(1, Math.floor(getActiveUpgradeEffects().shieldCharges));
+            if (nearMissState.current.streakCount > 0 && nearMissState.current.streakCount % SHIELD_REWARD_STREAK === 0) {
+              if (shieldChargesRemaining.current < maxShieldCharges) {
+                shieldChargesRemaining.current += 1;
+                onShieldStateUpdate?.(shieldChargesRemaining.current);
+                scorePopups.current.push({
+                  x: activeOrb.x,
+                  y: activeOrb.y - 40,
+                  text: "🛡️ SHIELD RESTORED (+1)",
+                  color: "#00F0FF",
+                  life: 2.0,
+                  vy: -1.5,
+                });
+                AudioSystem.playShieldActivate();
+                getHapticSystem().trigger("medium");
+              } else {
+                scorePopups.current.push({
+                  x: activeOrb.x,
+                  y: activeOrb.y - 40,
+                  text: "🛡️ SHIELD MAXED",
+                  color: "#00F0FF",
+                  life: 1.0,
+                  vy: -1.0,
+                });
+              }
+            }
+
+            ritualTracking?.onNearMiss?.();
+            onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
+
+            const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
+            const energyGain = PhaseDash.PHASE_DASH_CONFIG.energyPerNearMiss * dashRechargeMultiplier * (isDodgeMaster ? 1.5 : 1.0);
+            phaseDashState.current = PhaseDash.updateEnergy(
+              phaseDashState.current,
+              energyGain
+            );
+
+            let totalBonus = streakResult.totalBonusPoints;
+            if (obs.isLatent) {
+              const phantomNearMissBonus = calculatePhantomBonus(true, PHANTOM_CONFIG);
+              totalBonus += phantomNearMissBonus;
+            }
+
+            if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+              const finalBonus = Math.floor(
+                totalBonus * scoreMultiplierUpgrade.current
+              );
+
+              if (obs.isLatent) {
+                scorePopups.current.push({
+                  x: activeOrb.x + 40,
+                  y: activeOrb.y - 30,
+                  text: `+${finalBonus}`,
+                  color: "#E91E63",
+                  life: 1.2,
+                  vy: -2,
+                });
+                BonusVFX.spawnPhantomCombo(activeOrb.x, activeOrb.y);
+                AudioSystem.playPhantomCombo();
+              } else {
+                scorePopups.current.push({
+                  x: activeOrb.x,
+                  y: activeOrb.y - 20,
+                  text: isDodgeMaster ? `+${finalBonus} 👑` : `+${finalBonus}`,
+                  color: isDodgeMaster ? "#FFD700" : getColor("accent"),
+                  life: isDodgeMaster ? 1.5 : 1.0,
+                  vy: -2,
+                });
+
+                if (isDodgeMaster) {
+                  createNearMissEffect(
+                    activeOrb.x,
+                    activeOrb.y,
+                    { x: activeOrb.x, y: activeOrb.y },
+                    streakResult.streakBonusAwarded,
+                    true
+                  );
+                } else {
+                  BonusVFX.spawnNearMissBonus(activeOrb.x, activeOrb.y, getColor("accent"), streakResult.streakBonusAwarded);
+                  createNearMissEffect(
+                    activeOrb.x,
+                    activeOrb.y,
+                    { x: activeOrb.x, y: activeOrb.y },
+                    streakResult.streakBonusAwarded,
+                    false
+                  );
+                }
+              }
+
+              score.current += finalBonus;
+              onScoreUpdate(score.current);
+
+              const campMode = campaignModeRef.current;
+              if (
+                campMode?.enabled &&
+                campMode.targetScore &&
+                !campMode.useDistanceMode &&
+                !levelCompleted.current
+              ) {
+                if (score.current >= campMode.targetScore) {
+                  levelCompleted.current = true;
+                  campMode.onLevelComplete?.(score.current);
+                }
+              }
+            }
+          }
+
           if (obs.lane === "top") {
             // Note: currentTime is already defined above in gravity flip logic
 
@@ -4715,6 +5036,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
         }
 
         // --- COLLISION LOGIC ---
+        // Skip collision if this obstacle was already hit (allowing it to render its RED flash on screen)
+        if (obs.wasHit) {
+          continue;
+        }
+
         // Skip collision if phasing (swap), gravity invincibility, Zen Mode respawn invincibility, post-restore invincibility, or Overdrive is active
         // Requirements 2.7, 4.3, 9.2
         const zenModeInvincible =
@@ -4828,11 +5154,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Check Quantum Lock / Ghost Mode invulnerability - Requirements 6.3, 7.6
         const glitchInvincible = GlitchSystem.isInvulnerable(glitchModeState.current);
 
+        // Check if phasing invincibility is active
+        let phasingInvincible = false;
+        if (isPhasing.current) {
+          // Swap invincibility only applies if we are swapping to the CORRECT polarity for this obstacle
+          const obsCenterY = obs.y + obs.height / 2;
+          const obsIsTop = obsCenterY < currentMidlineY;
+          let isTargetCorrect = false;
+          if (obsIsTop) {
+            const targetTopColor = isSwapped.current ? 'black' : 'white';
+            isTargetCorrect = targetTopColor === obs.polarity;
+          } else {
+            const targetBottomColor = isSwapped.current ? 'white' : 'black';
+            isTargetCorrect = targetBottomColor === obs.polarity;
+          }
+          if (isTargetCorrect) {
+            phasingInvincible = true;
+          }
+        }
+
         // Also skip if pending restore (waiting for user decision) or restore animation is playing
         // Skip collision in finish mode - player is exiting screen
         // Skip collision in tutorial mode - player is learning
         if (
-          isPhasing.current ||
+          phasingInvincible ||
           gravityState.current.isInvincible ||
           zenModeInvincible ||
           postRestoreInvincibleActive ||
@@ -4846,7 +5191,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
         )
           continue;
 
-        // Phase Dash: Destroy obstacles with satisfying impact
+        // Phase Dash: Destroy ALL obstacles in player path with satisfying impact
         if (PhaseDash.isInvincible(phaseDashState.current)) {
           const whiteOrbPos = { x: whiteOrb.x, y: whiteOrb.y };
           const blackOrbPos = { x: blackOrb.x, y: blackOrb.y };
@@ -4854,8 +5199,13 @@ const GameEngine: React.FC<GameEngineProps> = ({
           const whiteHit = checkCollision(whiteOrbPos, whiteOrb.radius, obs);
           const blackHit = checkCollision(blackOrbPos, blackOrb.radius, obs);
 
-          if (whiteHit || blackHit) {
-            // Create enhanced debris particles for satisfying destruction
+          // Auto-smash if direct orb collision OR if block reaches player's dash sweep line
+          const playerBaseX = width / 8;
+          const playerSweepLine = playerBaseX + PhaseDash.getPlayerXOffset(phaseDashState.current);
+          const inSweepZone = obs.x <= playerSweepLine + 70 && (obs.x + obs.width) >= (playerSweepLine - 30);
+
+          if (whiteHit || blackHit || inSweepZone) {
+            // Create lightweight debris particles for performance
             const obsColor = obs.polarity === 'white' ? '#FFFFFF' : '#000000';
             PhaseDashVFX.createObstacleDebris(
               obs.x,
@@ -4865,28 +5215,41 @@ const GameEngine: React.FC<GameEngineProps> = ({
               obsColor
             );
 
-            // Add particle burst at impact point for extra visual feedback
-            const impactX = obs.x + obs.width / 2;
-            const impactY = obs.y + obs.height / 2;
-            ParticleSystem.emitBurst(impactX, impactY, activeCharacter?.types[0] || 'normal');
-
-            // Mark obstacle for removal
+            // Mark obstacle for removal & send off screen
             obs.passed = true;
-            obs.x = -1000; // Move off screen
+            obs.x = -1000;
 
-            // Strong screen shake on impact - feels like breaking through
+            // Screen shake & haptics
             ScreenShake.trigger({
-              intensity: 12,
-              duration: 200,
-              frequency: 40,
+              intensity: 8,
+              duration: 150,
+              frequency: 30,
               decay: true
             });
 
-            // Strong haptic feedback - feels like smashing
             getHapticSystem().trigger("heavy");
+            AudioSystem.playTitanStomp();
 
-            // Audio feedback for destruction
-            AudioSystem.playTitanStomp(); // Reuse stomp sound for impact
+            // Award dash destruction bonus points
+            const dashBonus = Math.floor(25 * scoreMultiplierUpgrade.current);
+            if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
+              score.current += dashBonus;
+              onScoreUpdate(score.current);
+            }
+
+            // Cap popups array to max 8 items
+            if (scorePopups.current.length < 8) {
+              const impactX = playerSweepLine + 20;
+              const impactY = obs.y + obs.height / 2;
+              scorePopups.current.push({
+                x: impactX,
+                y: impactY,
+                text: `+${dashBonus} 💥`,
+                color: "#00F0FF",
+                life: 0.6,
+                vy: -2,
+              });
+            }
           }
           continue;
         }
@@ -4909,20 +5272,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
           currentMidlineY
         );
 
-        // White Orb Checks
+        // White Orb Checks: Must match white polarity or DIE on black polarity
         const whiteCollision = checkCollision(
           whiteOrbPos,
           whiteOrb.radius,
           obs
         );
         if (whiteCollision) {
-          // Requirements 4.13: Skip collision if micro-phasing is active at zone boundary
-          if (whiteMicroPhasing) {
-            // Mark obstacle as phased to prevent repeated checks
-            if (!obs.hasPhased) {
-              obs.hasPhased = true;
-            }
-          } else if (obs.polarity === "black") {
+          if (obs.polarity === "black") {
+            obs.wasHit = true;
+            obs.hitTime = collisionTime;
             // Resonance Mode: Destroy obstacle instead of game over - Requirements 1.4, 1.5
             if (resonanceState.current.isActive) {
               const { result, newState } = ResonanceSystem.handleCollision(
@@ -4978,16 +5337,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Phase 2: Shield (consume instead of dying)
               if (shieldChargesRemaining.current > 0) {
                 shieldChargesRemaining.current -= 1;
-                shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
+                onShieldStateUpdate?.(shieldChargesRemaining.current);
+                shieldInvincibleUntil.current = collisionTime + 500;
 
-                // VFX: shatter burst + popup + mild shake + haptic
-                ParticleSystem.emitBurst(whiteOrb.x, whiteOrb.y, activeCharacter?.types[0] || 'normal');
+                // VFX: shatter burst at hit location + red popup + mild shake + haptic
+                const hitImpactX = obs.x + obs.width / 2;
+                const hitImpactY = obs.y + obs.height / 2;
+                createExplosion(hitImpactX, hitImpactY, "#00F0FF");
+                ParticleSystem.emitBurst(hitImpactX, hitImpactY, activeCharacter?.types[0] || 'normal');
                 scorePopups.current.push({
                   x: whiteOrb.x,
-                  y: whiteOrb.y - 20,
-                  text: "🛡️ SHIELD",
-                  color: "#00F0FF",
-                  life: 1.0,
+                  y: whiteOrb.y - 30,
+                  text: "🛡️ SHIELD ABSORBED!",
+                  color: "#FF2A2A",
+                  life: 1.2,
                   vy: -2,
                 });
                 ScreenShake.triggerNearMiss();
@@ -5002,9 +5365,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 resonanceState.current =
                   ResonanceSystem.createInitialResonanceState();
 
-                // Remove obstacle to prevent immediate re-hit
-                obs.passed = true;
-                obs.x = -1000;
+                // Mark BOTH top & bottom blocks in pair as hit for RED impact flash
+                const hitX = obs.x;
+                for (let p = 0; p < obstacles.current.length; p++) {
+                  const o = obstacles.current[p];
+                  if (Math.abs(o.x - hitX) < 40) {
+                    o.wasHit = true;
+                    o.passed = true;
+                    o.hitTime = collisionTime;
+                  }
+                }
                 continue;
               }
 
@@ -5135,6 +5505,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 break; // Exit obstacle loop — phase will restart cleanly
               }
 
+              // Mark BOTH top & bottom blocks in pair as hit for RED impact flash
+              const hitX = obs.x;
+              for (let p = 0; p < obstacles.current.length; p++) {
+                const o = obstacles.current[p];
+                if (Math.abs(o.x - hitX) < 40) {
+                  o.wasHit = true;
+                  o.passed = true;
+                  o.hitTime = collisionTime;
+                }
+              }
+
               createExplosion(whiteOrb.x, whiteOrb.y, whiteOrb.color);
               collisionDetected = true;
 
@@ -5179,20 +5560,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
         }
 
-        // Black Orb Checks
+        // Black Orb Checks: Must match black polarity or DIE on white polarity
         const blackCollision = checkCollision(
           blackOrbPos,
           blackOrb.radius,
           obs
         );
         if (blackCollision) {
-          // Requirements 4.13: Skip collision if micro-phasing is active at zone boundary
-          if (blackMicroPhasing) {
-            // Mark obstacle as phased to prevent repeated checks
-            if (!obs.hasPhased) {
-              obs.hasPhased = true;
-            }
-          } else if (obs.polarity === "white") {
+          if (obs.polarity === "white") {
+            obs.wasHit = true;
+            obs.hitTime = collisionTime;
             // Resonance Mode: Destroy obstacle instead of game over - Requirements 1.4, 1.5
             if (resonanceState.current.isActive) {
               const { result, newState } = ResonanceSystem.handleCollision(
@@ -5248,15 +5625,19 @@ const GameEngine: React.FC<GameEngineProps> = ({
               // Phase 2: Shield (consume instead of dying)
               if (shieldChargesRemaining.current > 0) {
                 shieldChargesRemaining.current -= 1;
-                shieldInvincibleUntil.current = collisionTime + 2000 + spiritModifiers.shieldTimeBonus;
+                onShieldStateUpdate?.(shieldChargesRemaining.current);
+                shieldInvincibleUntil.current = collisionTime + 500;
 
-                ParticleSystem.emitBurst(blackOrb.x, blackOrb.y, activeCharacter?.types[0] || 'normal');
+                const hitImpactX = obs.x + obs.width / 2;
+                const hitImpactY = obs.y + obs.height / 2;
+                createExplosion(hitImpactX, hitImpactY, "#00F0FF");
+                ParticleSystem.emitBurst(hitImpactX, hitImpactY, activeCharacter?.types[0] || 'normal');
                 scorePopups.current.push({
                   x: blackOrb.x,
-                  y: blackOrb.y - 20,
-                  text: "🛡️ SHIELD",
-                  color: "#00F0FF",
-                  life: 1.0,
+                  y: blackOrb.y - 30,
+                  text: "🛡️ SHIELD ABSORBED!",
+                  color: "#FF2A2A",
+                  life: 1.2,
                   vy: -2,
                 });
                 ScreenShake.triggerNearMiss();
@@ -5270,8 +5651,16 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 resonanceState.current =
                   ResonanceSystem.createInitialResonanceState();
 
-                obs.passed = true;
-                obs.x = -1000;
+                // Mark BOTH top & bottom blocks in pair as hit for RED impact flash
+                const hitX = obs.x;
+                for (let p = 0; p < obstacles.current.length; p++) {
+                  const o = obstacles.current[p];
+                  if (Math.abs(o.x - hitX) < 40) {
+                    o.wasHit = true;
+                    o.passed = true;
+                    o.hitTime = collisionTime;
+                  }
+                }
                 continue;
               }
 
@@ -5402,6 +5791,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
                 break; // Exit obstacle loop — phase will restart cleanly
               }
 
+              // Mark BOTH top & bottom blocks in pair as hit for RED impact flash
+              const hitX = obs.x;
+              for (let p = 0; p < obstacles.current.length; p++) {
+                const o = obstacles.current[p];
+                if (Math.abs(o.x - hitX) < 40) {
+                  o.wasHit = true;
+                  o.passed = true;
+                  o.hitTime = collisionTime;
+                }
+              }
+
               createExplosion(blackOrb.x, blackOrb.y, blackOrb.color);
               collisionDetected = true;
 
@@ -5446,258 +5846,10 @@ const GameEngine: React.FC<GameEngineProps> = ({
           }
         }
 
-        // --- NEAR MISS LOGIC - Requirements 3.1, 3.2, 3.7, 3.8, 5.10 ---
-        // Only check near miss if no collision occurred AND not already checked for this obstacle
-        if (!whiteCollision && !blackCollision && !obs.nearMissChecked) {
-          // Check white orb near miss with black obstacles (dangerous ones)
-          if (obs.polarity === "black") {
-            const whiteNearMiss = checkNearMiss(
-              whiteOrbPos,
-              whiteOrb.radius,
-              obs
-            );
-            if (whiteNearMiss.isNearMiss) {
-              obs.nearMissChecked = true; // Mark as checked to prevent duplicate triggers
-              const streakResult = updateNearMissState(
-                nearMissState.current,
-                whiteNearMiss,
-                currentTime
-              );
-              nearMissState.current = streakResult.newState;
-
-              // PixiJS: Near miss spark VFX
-              pixiApiRef.current?.onNearMiss(whiteOrb.x, whiteOrb.y, nearMissState.current.streakCount);
-
-              // Notify UI of near miss state change - Requirements 3.7
-              onNearMissStateUpdate?.(nearMissState.current.streakCount);
-
-              // Maneuver-based Shield System: Award shield every X near misses - Requirements Update
-              if (nearMissState.current.streakCount > 0 && nearMissState.current.streakCount % SHIELD_REWARD_STREAK === 0) {
-                shieldChargesRemaining.current += 1;
-
-                // Visual feedback for shield gain
-                scorePopups.current.push({
-                  x: whiteOrb.x,
-                  y: whiteOrb.y - 40,
-                  text: "🛡️ SHIELD RESTORED (+1)",
-                  color: "#00F0FF",
-                  life: 2.0,
-                  vy: -1.5,
-                });
-
-                // Audio: Shield gain sound
-                AudioSystem.playShieldBlock();
-                getHapticSystem().trigger("heavy");
-              }
-
-              // Daily Rituals: Track near miss event - Requirements 3.7
-              ritualTracking?.onNearMiss?.();
-
-              // Mission System: Emit NEAR_MISS event for white orb - Requirements 7.3
-              onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
-
-              // Phase Dash: Energy gain from near-miss (+10%)
-              const dashRechargeMultiplier = getActiveUpgradeEffects().dashRechargeMultiplier;
-              phaseDashState.current = PhaseDash.updateEnergy(
-                phaseDashState.current,
-                PhaseDash.PHASE_DASH_CONFIG.energyPerNearMiss * dashRechargeMultiplier
-              );
-
-              // Add bonus points to score
-              let totalBonus = streakResult.totalBonusPoints;
-
-              // --- PHANTOM + NEAR MISS COMBINATION - Requirements 5.10, 14.1 ---
-              // Near miss + phantom = x2 multiplier on phantom bonus
-              if (obs.isLatent) {
-                const phantomNearMissBonus = calculatePhantomBonus(
-                  true,
-                  PHANTOM_CONFIG
-                );
-                totalBonus += phantomNearMissBonus;
-              }
-
-              // Apply score multiplier upgrade - Requirements 6.2
-              // Zen Mode / Tutorial: Skip score tracking
-              if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
-                const finalBonus = Math.floor(
-                  totalBonus * scoreMultiplierUpgrade.current
-                );
-
-                // Phantom near-miss combo popup - show actual calculated value
-                if (obs.isLatent) {
-                  scorePopups.current.push({
-                    x: whiteOrb.x + 40,
-                    y: whiteOrb.y - 30,
-                    text: `+${finalBonus}`,
-                    color: "#E91E63",
-                    life: 1.2,
-                    vy: -2,
-                  });
-                  // Phantom combo VFX & SFX
-                  BonusVFX.spawnPhantomCombo(whiteOrb.x, whiteOrb.y);
-                  AudioSystem.playPhantomCombo();
-                } else {
-                  // Regular near-miss popup
-                  scorePopups.current.push({
-                    x: whiteOrb.x,
-                    y: whiteOrb.y - 20,
-                    text: `+${finalBonus}`,
-                    color: getColor("accent"),
-                    life: 1.0,
-                    vy: -2,
-                  });
-                  // Near-miss bonus VFX
-                  BonusVFX.spawnNearMissBonus(whiteOrb.x, whiteOrb.y, getColor("accent"), streakResult.streakBonusAwarded);
-                }
-                score.current += finalBonus;
-                onScoreUpdate(score.current);
-
-                // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
-                const campMode = campaignModeRef.current;
-                if (
-                  campMode?.enabled &&
-                  campMode.targetScore &&
-                  !campMode.useDistanceMode &&
-                  !levelCompleted.current
-                ) {
-                  if (score.current >= campMode.targetScore) {
-                    levelCompleted.current = true;
-                    campMode.onLevelComplete?.(score.current);
-                  }
-                }
-              }
-
-              // Create visual effects (will be implemented in 5.3)
-              createNearMissEffect(
-                whiteOrb.x,
-                whiteOrb.y,
-                whiteNearMiss.closestPoint,
-                streakResult.streakBonusAwarded
-              );
-            }
-          }
-
-          // Check black orb near miss with white obstacles (dangerous ones)
-          if (obs.polarity === "white") {
-            const blackNearMiss = checkNearMiss(
-              blackOrbPos,
-              blackOrb.radius,
-              obs
-            );
-            if (blackNearMiss.isNearMiss) {
-              obs.nearMissChecked = true; // Mark as checked to prevent duplicate triggers
-              const streakResult = updateNearMissState(
-                nearMissState.current,
-                blackNearMiss,
-                currentTime
-              );
-              nearMissState.current = streakResult.newState;
-
-              // PixiJS: Near miss spark VFX (black orb)
-              pixiApiRef.current?.onNearMiss(blackOrb.x, blackOrb.y, nearMissState.current.streakCount);
-
-              // Notify UI of near miss state change - Requirements 3.7
-              onNearMissStateUpdate?.(nearMissState.current.streakCount);
-
-              // Maneuver-based Shield System: Award shield every X near misses - Requirements Update
-              if (nearMissState.current.streakCount > 0 && nearMissState.current.streakCount % SHIELD_REWARD_STREAK === 0) {
-                shieldChargesRemaining.current += 1;
-
-                // Visual feedback for shield gain
-                scorePopups.current.push({
-                  x: blackOrb.x,
-                  y: blackOrb.y - 40,
-                  text: "🛡️ SHIELD RESTORED (+1)",
-                  color: "#00F0FF",
-                  life: 2.0,
-                  vy: -1.5,
-                });
-
-                // Audio: Shield gain sound
-                AudioSystem.playShieldBlock();
-                getHapticSystem().trigger("heavy");
-              }
-
-              // Daily Rituals: Track near miss event - Requirements 3.7
-              ritualTracking?.onNearMiss?.();
-
-              // Mission System: Emit NEAR_MISS event for black orb - Requirements 7.3
-              onMissionEvent?.({ type: 'NEAR_MISS', value: 1 });
-
-              // Add bonus points to score
-              let totalBonus = streakResult.totalBonusPoints;
-
-              // --- PHANTOM + NEAR MISS COMBINATION - Requirements 5.10, 14.1 ---
-              // Near miss + phantom = x2 multiplier on phantom bonus
-              if (obs.isLatent) {
-                const phantomNearMissBonus = calculatePhantomBonus(
-                  true,
-                  PHANTOM_CONFIG
-                );
-                totalBonus += phantomNearMissBonus;
-              }
-
-              // Apply score multiplier upgrade - Requirements 6.2
-              // Zen Mode / Tutorial: Skip score tracking
-              if (!zenMode?.enabled && !(tutorialMode?.enabled)) {
-                const finalBonusBlack = Math.floor(
-                  totalBonus * scoreMultiplierUpgrade.current
-                );
-
-                // Phantom near-miss combo popup - show actual calculated value
-                if (obs.isLatent) {
-                  scorePopups.current.push({
-                    x: blackOrb.x + 40,
-                    y: blackOrb.y - 30,
-                    text: `+${finalBonusBlack}`,
-                    color: "#E91E63",
-                    life: 1.2,
-                    vy: -2,
-                  });
-                  // Phantom combo VFX & SFX (black orb)
-                  BonusVFX.spawnPhantomCombo(blackOrb.x, blackOrb.y);
-                  AudioSystem.playPhantomCombo();
-                } else {
-                  // Regular near-miss popup
-                  scorePopups.current.push({
-                    x: blackOrb.x,
-                    y: blackOrb.y - 20,
-                    text: `+${finalBonusBlack}`,
-                    color: getColor("accent"),
-                    life: 1.0,
-                    vy: -2,
-                  });
-                  // Near-miss bonus VFX (black orb)
-                  BonusVFX.spawnNearMissBonus(blackOrb.x, blackOrb.y, getColor("accent"), streakResult.streakBonusAwarded);
-                }
-                score.current += finalBonusBlack;
-                onScoreUpdate(score.current);
-
-                // Campaign Mode: Check for level completion (score-based only) - Requirements 7.3
-                if (
-                  campaignMode?.enabled &&
-                  campaignMode.targetScore &&
-                  !campaignMode.useDistanceMode &&
-                  !levelCompleted.current
-                ) {
-                  if (score.current >= campaignMode.targetScore) {
-                    levelCompleted.current = true;
-                    campaignMode.onLevelComplete?.(score.current);
-                  }
-                }
-              }
-
-              // Create visual effects (will be implemented in 5.3)
-              createNearMissEffect(
-                blackOrb.x,
-                blackOrb.y,
-                blackNearMiss.closestPoint,
-                streakResult.streakBonusAwarded
-              );
-            }
-          }
-        }
       }
+
+      // Clean up off-screen or destroyed obstacles and recycle pooled objects - Requirements 6.1, 6.2
+      BlockSystem.filterOffscreenBlocks(obstacles.current, obstaclePool.current);
 
       // Ghost Racer Recording - Requirements 15.4
       if (ghostRacerMode?.enabled && ghostRacerState.current.isRecording) {
@@ -5736,7 +5888,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Update Environmental Effects - Requirements 14.2, 14.3
       // BPM-synced pulse and glitch artifact updates
       // Feed dynamic BPM from beat engine to environmental effects
-      BeatEngine.update(score.current);
+      BeatEngine.update(distanceStateRef.current.currentDistance || 0);
       EnvironmentalEffects.updateGlobalEnvironmentalEffects(
         BeatEngine.isRunning() ? BeatEngine.getBPM() : undefined
       );
@@ -6980,22 +7132,29 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // - isWhite=true (üst orb) → topObstacle = bottomBg (mor/lacivert)
           // - isWhite=false (alt orb) → bottomObstacle = topBg (yeşil/kırmızı)
           let orbFillColor = isWhite ? getColor("topObstacle") : getColor("bottomObstacle");
-          let orbBorderColor = isWhite ? getColor("bottomObstacle") : getColor("topObstacle");
-
-          // Fallback to default colors if theme system returns empty
           if (!orbFillColor) orbFillColor = isWhite ? "#FFFFFF" : "#000000";
-          if (!orbBorderColor) orbBorderColor = isWhite ? "#000000" : "#FFFFFF";
 
-          // Determine zone background: check orb Y position against midline
+          // Determine zone background color taking gravity flip / color inversion into account
           const midY = height / 2;
-          const currentZoneBg = orb.y < midY ? getColor("topBg") || "#000000" : getColor("bottomBg") || "#FFFFFF";
+          const isTopZone = orb.y < midY;
+          const topBgColor = gravityState.current.isFlipped ? (getColor("bottomBg") || "#FFFFFF") : (getColor("topBg") || "#000000");
+          const bottomBgColor = gravityState.current.isFlipped ? (getColor("topBg") || "#000000") : (getColor("bottomBg") || "#FFFFFF");
+          const currentZoneBg = isTopZone ? topBgColor : bottomBgColor;
 
-          // Only draw border if orb color matches background (for visibility)
-          // During Quantum Lock, always show border since ambiance changes background
+          // Check if orb fill color and zone background are both light or both dark
+          const isFillWhite = orbFillColor.toLowerCase() === "#ffffff" || orbFillColor.toLowerCase() === "rgb(255,255,255)" || orbFillColor === "#fff";
+          const isZoneWhite = currentZoneBg.toLowerCase() === "#ffffff" || currentZoneBg.toLowerCase() === "rgb(255,255,255)" || currentZoneBg === "#fff";
+
+          // During Quantum Lock, Gravity Flip / Inversion ("TERS" mode), or when orb color matches background: border is REQUIRED!
           const isQuantumLockActive = glitchModeState.current.isActive ||
             glitchModeState.current.phase === 'warning' ||
             glitchModeState.current.phase === 'exiting';
-          const needsBorder = isQuantumLockActive || orbFillColor.toLowerCase() === currentZoneBg.toLowerCase();
+          const needsBorder = isQuantumLockActive || gravityState.current.isFlipped || (isFillWhite === isZoneWhite);
+
+          // Border color MUST be the OPPOSITE of the orb fill color:
+          // White orb -> BLACK border (#000000)
+          // Black orb -> WHITE border (#FFFFFF)
+          const orbBorderColor = isFillWhite ? "#000000" : "#FFFFFF";
 
           // Her zaman içi dolu çiz (orb rengiyle), border SADECE gerektiğinde
           if (skin.id === "default") {
@@ -7008,11 +7167,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
             ctx.fillStyle = orbFillColor;
             ctx.fill();
 
-            // Border only when orb blends with background
+            // Border only when orb blends with background or during inverted gravity
             if (needsBorder) {
               ctx.beginPath();
               ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
-              ctx.lineWidth = 2;
+              ctx.lineWidth = 2.5;
               ctx.strokeStyle = orbBorderColor;
               ctx.stroke();
             }
@@ -7025,7 +7184,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
             if (needsBorder) {
               ctx.beginPath();
               ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
-              ctx.lineWidth = 2;
+              ctx.lineWidth = 2.5;
               ctx.strokeStyle = orbBorderColor;
               ctx.stroke();
             }
@@ -7503,41 +7662,41 @@ const GameEngine: React.FC<GameEngineProps> = ({
       // Draw Score Popups - Requirements 3.3, 3.8 - VFX Polish Phase 4
       // Skip score popups during tutorial
       if (!(tutorialMode?.enabled && tutorialState.current.isActive)) {
-      scorePopups.current.forEach((popup) => {
-        ctx.save();
+        scorePopups.current.forEach((popup) => {
+          ctx.save();
 
-        // Calculate scale based on life (pop-in effect then shrink)
-        const lifeProgress = 1 - popup.life;
-        const scale = lifeProgress < 0.1
-          ? 0.5 + lifeProgress * 5  // Pop-in from 0.5 to 1.0
-          : 1.0 - lifeProgress * 0.3; // Shrink from 1.0 to 0.7
+          // Calculate scale based on life (pop-in effect then shrink)
+          const lifeProgress = 1 - popup.life;
+          const scale = lifeProgress < 0.1
+            ? 0.5 + lifeProgress * 5  // Pop-in from 0.5 to 1.0
+            : 1.0 - lifeProgress * 0.3; // Shrink from 1.0 to 0.7
 
-        ctx.globalAlpha = popup.life;
+          ctx.globalAlpha = popup.life;
 
-        // Glow effect
-        ctx.shadowColor = popup.color;
-        ctx.shadowBlur = 12 * popup.life;
+          // Glow effect
+          ctx.shadowColor = popup.color;
+          ctx.shadowBlur = 12 * popup.life;
 
-        // Determine font size based on content
-        const isSpecial = popup.text.includes("PERFECT") ||
-          popup.text.includes("SHIELD") ||
-          popup.text.includes("⚡");
-        const baseFontSize = isSpecial ? 18 : 15;
-        const fontSize = Math.round(baseFontSize * scale);
+          // Determine font size based on content
+          const isSpecial = popup.text.includes("PERFECT") ||
+            popup.text.includes("SHIELD") ||
+            popup.text.includes("⚡");
+          const baseFontSize = isSpecial ? 18 : 15;
+          const fontSize = Math.round(baseFontSize * scale);
 
-        ctx.font = `bold ${fontSize}px "Segoe UI", system-ui, sans-serif`;
-        ctx.fillStyle = popup.color;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+          ctx.font = `bold ${fontSize}px "Segoe UI", system-ui, sans-serif`;
+          ctx.fillStyle = popup.color;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
 
-        // Draw text with slight outline for better visibility
-        ctx.strokeStyle = "rgba(0,0,0,0.5)";
-        ctx.lineWidth = 2;
-        ctx.strokeText(popup.text, popup.x, popup.y);
-        ctx.fillText(popup.text, popup.x, popup.y);
+          // Draw text with slight outline for better visibility
+          ctx.strokeStyle = "rgba(0,0,0,0.5)";
+          ctx.lineWidth = 2;
+          ctx.strokeText(popup.text, popup.x, popup.y);
+          ctx.fillText(popup.text, popup.x, popup.y);
 
-        ctx.restore();
-      });
+          ctx.restore();
+        });
       } // end: skip score popups during tutorial
 
       // Restore canvas context after screen shake transform - Requirements 10.4
@@ -7716,9 +7875,9 @@ const GameEngine: React.FC<GameEngineProps> = ({
           tutorialSpawnedBlockIds.current.add(block.id);
 
           // Create obstacle at right edge of screen using pattern dimensions
-          const obsWidth = 35; // Thicker blocks for better visibility
-          // Use screen-relative height: 45% for normal, 55% for midline crossing
-          const blockHeight = block.height ?? (block.crossesCenter ? height * 0.55 : height * 0.45);
+          const obsWidth = block.width ?? 35;
+          // Dynamic height matching real game structure: 47% for normal (blocks come right near midline), 54% for midline crossing
+          const blockHeight = block.height ?? (block.crossesCenter ? height * 0.54 : height * 0.47);
           const blockY = block.lane === 'top'
             ? 0
             : height - blockHeight;
@@ -7786,7 +7945,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
           // Last diamond delay (12000ms) + generous travel time (~8000ms at 0.65x speed)
           const DIAMOND_WAVE_TIMEOUT = 20000;
           if (allSpawned && phaseElapsedTime > DIAMOND_WAVE_TIMEOUT &&
-              tutorialState.current.diamondsCollected < tutorialState.current.targetGoal) {
+            tutorialState.current.diamondsCollected < tutorialState.current.targetGoal) {
             // Reset spawn tracking — a new wave of diamonds will spawn
             tutorialSpawnedDiamondIds.current.clear();
             // Reset phase start time so diamond delays work from scratch
@@ -8014,14 +8173,20 @@ const GameEngine: React.FC<GameEngineProps> = ({
               ctx.fillStyle = '#ffffff';
               ctx.fillText('DEVAM ET →', width / 2, btnY + btnH / 2);
 
-              // Detect tap on button
+              // Detect tap on button or screen
               const inp = inputStateRef.current;
-              if (inp.isTapFrame || inp.isReleaseFrame) {
-                tutorialState.current = {
-                  ...tutorialState.current,
-                  completionCallbackFired: true,
-                };
-                onTutorialComplete();
+              if (victoryElapsed > 400 && (inp.isTapFrame || inp.isReleaseFrame || inp.isPressed)) {
+                // Guard: prevent double-firing across frames
+                if (!tutorialState.current.completionCallbackFired) {
+                  tutorialState.current = {
+                    ...tutorialState.current,
+                    completionCallbackFired: true,
+                  };
+                  // Clear leftover game objects
+                  obstacles.current.length = 0;
+                  activeShards.current.length = 0;
+                  onTutorialComplete();
+                }
               }
             }
 
@@ -8041,11 +8206,12 @@ const GameEngine: React.FC<GameEngineProps> = ({
         // Render tutorial VFX on top of game
         TutorialVFX.render(ctx, tutorialVFXState.current, width, height);
 
-        // Render tutorial message if any
-        if (tutorialState.current.currentMessage) {
-          const msg = tutorialState.current.currentMessage;
-          const isIntroPhase = tutorialState.current.currentPhase === 'INTRO';
-          const introStep = tutorialState.current.introStoryStep ?? 0;
+        // Render tutorial message if any (Suppressed during Finish Mode & Victory Screen to avoid overlap)
+        const tsNow = tutorialState.current;
+        if (tsNow.currentMessage && !tsNow.inFinishMode && !tsNow.showTutorialVictory) {
+          const msg = tsNow.currentMessage;
+          const isIntroPhase = tsNow.currentPhase === 'INTRO';
+          const introStep = tsNow.introStoryStep ?? 0;
 
           ctx.save();
 
@@ -8055,53 +8221,52 @@ const GameEngine: React.FC<GameEngineProps> = ({
           if (isIntroPhase) {
             // Use modular intro renderer
             const introState = TutorialIntroRenderer.calculateIntroState(
-              tutorialState.current.introStoryStartTime || frameTime,
+              tsNow.introStoryStartTime || frameTime,
               msg.text
             );
             if (introState) {
               // Track last char sound for typewriter effect
-              if (!(tutorialState.current as any).lastCharSound) {
-                (tutorialState.current as any).lastCharSound = 0;
+              if (!(tsNow as any).lastCharSound) {
+                (tsNow as any).lastCharSound = 0;
               }
               TutorialIntroRenderer.render(
                 ctx,
                 introState,
                 width,
                 height,
-                { current: (tutorialState.current as any).lastCharSound }
+                { current: (tsNow as any).lastCharSound }
               );
-              (tutorialState.current as any).lastCharSound =
+              (tsNow as any).lastCharSound =
                 Math.floor(introState.lineElapsed / 60); // Update sound index
             }
 
 
           } else {
             // ========================================
-            // SWAP MECHANIC: Cinematic Action Overlay
-            // Matrix-style "ŞİMDİ BIRAK" overlay during subPhase 2
+            // SWAP MECHANIC: Cinematic Action Overlay & Lock/Unlock Badge
+            // Matrix-style "ŞİMDİ DÖNDÜR" overlay during subPhase 2 + Lock Indicator
             // ========================================
-            TutorialOverlayRenderer.renderCinematicAction(ctx, tutorialState.current, width, height);
+            TutorialOverlayRenderer.renderCinematicAction(ctx, tsNow, width, height);
+            TutorialOverlayRenderer.renderSwapLockIndicator(ctx, tsNow, width, height);
 
             // ========================================
             // OTHER PHASES: Professional Overlay Renderer
             // ========================================
-            TutorialOverlayRenderer.render(ctx, tutorialState.current, width, height);
+            TutorialOverlayRenderer.render(ctx, tsNow, width, height);
           }
 
 
           ctx.restore();
         }
 
-
-
-        // Render progress indicator
-        const progress = InteractiveTutorial.getProgressPercent(tutorialState.current);
-
-        // Info modal is rendered by TutorialVFX.render() — no duplicate here
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
-        ctx.fillRect(0, height - 10, (width * progress) / 100, 10);
-        ctx.restore();
+        // Render progress indicator (Suppressed during Finish Mode & Victory Screen)
+        if (!tsNow.inFinishMode && !tsNow.showTutorialVictory) {
+          const progress = InteractiveTutorial.getProgressPercent(tsNow);
+          ctx.save();
+          ctx.fillStyle = 'rgba(0, 240, 255, 0.3)';
+          ctx.fillRect(0, height - 10, (width * progress) / 100, 10);
+          ctx.restore();
+        }
       } else {
         // --- NORMAL GAMEPLAY: Camera Reset ---
         // Tutorial aktif değilse kamerayı normal pozisyona döndür
@@ -8251,7 +8416,14 @@ const GameEngine: React.FC<GameEngineProps> = ({
       BeatEngine.stop(); // Clean up scheduler + audio on unmount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState]);
+  }, [
+    gameState,
+    campaignMode?.levelConfig?.id,
+    dailyChallengeMode?.config?.date,
+    dailyChallengeMode?.enabled,
+    zenMode?.enabled,
+    tutorialMode?.enabled,
+  ]);
 
   // Restore animation state - stores all snapshots for rewind playback
   const isRestoreAnimating = useRef<boolean>(false);
@@ -8262,7 +8434,7 @@ const GameEngine: React.FC<GameEngineProps> = ({
   // Post-restore invincibility state
   const postRestoreInvincible = useRef<boolean>(false);
   const postRestoreStartTime = useRef<number>(0);
-  const POST_RESTORE_INVINCIBILITY_DURATION = 1000; // 1 second invincibility after restore
+  const POST_RESTORE_INVINCIBILITY_DURATION = 3000; // 3 seconds invincibility after restore
 
   // Handle restore request - Requirements 2.5, 2.6
   // Plays back recorded snapshots in REVERSE for a true rewind effect
@@ -8578,9 +8750,17 @@ const GameEngine: React.FC<GameEngineProps> = ({
             }
           }
 
-          // Enable post-restore invincibility (1 second)
+          // Enable post-restore invincibility (3 seconds)
           postRestoreInvincible.current = true;
           postRestoreStartTime.current = Date.now();
+
+          // Load temporary shield (maximum 3 seconds)
+          shieldInvincibleUntil.current = Date.now() + 3000;
+
+          // Restore speed controller internal speed
+          if (speedControllerRef.current) {
+            speedControllerRef.current.setCurrentSpeed(finalSnapshot.speed);
+          }
 
           // Update score display
           onScoreUpdate(score.current);
@@ -8588,6 +8768,11 @@ const GameEngine: React.FC<GameEngineProps> = ({
 
           // Notify restore complete
           restoreMode?.onRestoreComplete?.();
+
+          // CRITICAL: Restart beat engine / music after restore
+          // BeatEngine was stopped on death; must restart so backing track resumes
+          const restoredDistance = distanceStateRef.current?.currentDistance || 0;
+          BeatEngine.start(restoredDistance);
         } else {
           // Continue rewind animation
           requestAnimationFrame(animateRewind);
@@ -8646,42 +8831,70 @@ const GameEngine: React.FC<GameEngineProps> = ({
         <div
           className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
           style={{
-            backdropFilter: countdownDisplay.value > 0 ? 'blur(10px)' : 'none',
-            transition: 'backdrop-filter 0.15s ease-out',
+            backdropFilter: countdownDisplay.value > 0 ? 'blur(12px)' : 'none',
+            background: countdownDisplay.value > 0 ? 'rgba(0, 0, 0, 0.2)' : 'transparent',
+            transition: 'all 0.2s ease-out',
           }}
         >
           {countdownDisplay.value >= 0 && (
             <div
               key={countdownDisplay.value}
-              className="flex items-center justify-center"
+              className="flex flex-col items-center justify-center relative"
               style={{
-                width: '140px',
-                height: '140px',
-                borderRadius: '50%',
-                border: countdownDisplay.value > 0
-                  ? '4px solid #FF00FF'
-                  : '4px solid #00FF88',
-                boxShadow: countdownDisplay.value > 0
-                  ? '0 0 20px #FF00FF, 0 0 40px #FF00FF, inset 0 0 30px rgba(255,0,255,0.2)'
-                  : '0 0 20px #00FF88, 0 0 40px #00FF88, inset 0 0 30px rgba(0,255,136,0.2)',
-                background: 'rgba(0, 0, 0, 0.6)',
-                animation: 'countdownPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+                width: '180px',
+                height: '180px',
+                animation: 'countdownPop 0.55s cubic-bezier(0.34, 1.6, 0.64, 1) forwards',
               }}
             >
-              <span
+              {/* Sci-fi Outer Glowing Rings */}
+              <div
+                className="absolute inset-0 rounded-full border-2 border-dashed opacity-60 animate-spin"
                 style={{
-                  fontSize: countdownDisplay.value > 0 ? '72px' : '48px',
-                  fontWeight: 900,
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
-                  color: countdownDisplay.value > 0 ? '#00F0FF' : '#00FF88',
-                  textShadow: countdownDisplay.value > 0
-                    ? '0 0 15px #00F0FF, 0 0 30px #00F0FF'
-                    : '0 0 15px #00FF88, 0 0 30px #00FF88',
-                  letterSpacing: '-0.02em',
+                  borderColor: countdownDisplay.value > 0 ? '#a855f7' : '#00ff88',
+                  animationDuration: '8s',
+                  boxShadow: countdownDisplay.value > 0
+                    ? '0 0 15px rgba(168, 85, 247, 0.3), inset 0 0 15px rgba(168, 85, 247, 0.3)'
+                    : '0 0 15px rgba(0, 255, 136, 0.3), inset 0 0 15px rgba(0, 255, 136, 0.3)'
+                }}
+              />
+              <div
+                className="absolute inset-2 rounded-full border border-solid opacity-40 animate-reverse-spin"
+                style={{
+                  borderColor: countdownDisplay.value > 0 ? '#00f0ff' : '#00ff88',
+                  animationDuration: '6s'
+                }}
+              />
+
+              {/* Center Circle Content */}
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: '140px',
+                  height: '140px',
+                  border: countdownDisplay.value > 0
+                    ? '4px solid #a855f7'
+                    : '4px solid #00ff88',
+                  boxShadow: countdownDisplay.value > 0
+                    ? '0 0 25px #a855f7, 0 0 50px rgba(168, 85, 247, 0.5), inset 0 0 30px rgba(168, 85, 247, 0.3)'
+                    : '0 0 25px #00ff88, 0 0 50px rgba(0, 255, 136, 0.5), inset 0 0 30px rgba(0, 255, 136, 0.3)',
+                  background: 'radial-gradient(circle, rgba(10, 15, 30, 0.9) 0%, rgba(2, 3, 6, 0.95) 100%)',
                 }}
               >
-                {countdownDisplay.value > 0 ? countdownDisplay.value : 'BAŞLA!'}
-              </span>
+                <span
+                  style={{
+                    fontSize: countdownDisplay.value > 0 ? '76px' : '40px',
+                    fontWeight: 900,
+                    fontFamily: 'Orbitron, system-ui, -apple-system, sans-serif',
+                    color: countdownDisplay.value > 0 ? '#00f0ff' : '#00ff88',
+                    textShadow: countdownDisplay.value > 0
+                      ? '0 0 20px #00f0ff, 0 0 40px #00f0ff'
+                      : '0 0 20px #00ff88, 0 0 40px #00ff88',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {countdownDisplay.value > 0 ? countdownDisplay.value : 'GO!'}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -8691,20 +8904,30 @@ const GameEngine: React.FC<GameEngineProps> = ({
       <style>{`
         @keyframes countdownPop {
           0% {
-            transform: scale(0.3);
+            transform: scale(0.2) rotate(-15deg);
             opacity: 0;
+            filter: brightness(2);
           }
-          50% {
-            transform: scale(1.1);
+          40% {
+            transform: scale(1.15) rotate(5deg);
             opacity: 1;
+            filter: brightness(1.2);
           }
-          70% {
-            transform: scale(0.95);
+          65% {
+            transform: scale(0.95) rotate(-2deg);
           }
           100% {
-            transform: scale(1);
+            transform: scale(1) rotate(0deg);
             opacity: 1;
+            filter: brightness(1);
           }
+        }
+        .animate-reverse-spin {
+          animation: reverse-spin linear infinite;
+        }
+        @keyframes reverse-spin {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
         }
       `}</style>
     </div>

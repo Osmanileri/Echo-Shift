@@ -55,7 +55,7 @@ describe('Level Unlock Manager', () => {
   test('Every entry has required fields', () => {
     for (const entry of UNLOCK_SCHEDULE) {
       expect(entry.levelId).toBeGreaterThan(0);
-      expect(['ABILITY', 'ENEMY']).toContain(entry.type);
+      expect(['ABILITY', 'ENEMY', 'MECHANIC']).toContain(entry.type);
       expect(entry.title.length).toBeGreaterThan(0);
       expect(entry.name.length).toBeGreaterThan(0);
       expect(entry.description.length).toBeGreaterThan(0);
@@ -73,7 +73,7 @@ describe('Level Unlock Manager', () => {
   test('checkUnlocks returns payload for milestone level', () => {
     const result = checkUnlocks(1);
     expect(result).not.toBeNull();
-    expect(result!.name).toBe('SHIFT MECHANIC');
+    expect(result!.name).toBe('KUTUP DEĞİŞTİRME (SHIFT)');
     expect(result!.type).toBe('ABILITY');
   });
 

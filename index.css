@@ -1,1 +1,76 @@
 @import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Design System Color Tokens */
+    --color-bg-deep: #060a16;
+    --color-bg-dark: #0a0e1c;
+    --color-surface-glass: rgba(255, 255, 255, 0.05);
+    --color-border-glass: rgba(255, 255, 255, 0.1);
+
+    --color-cyan-glow: #00f0ff;
+    --color-purple-glow: #a855f7;
+    --color-magenta-glow: #ff007f;
+    --color-gold-glow: #eab308;
+    --color-green-glow: #00ff88;
+    --color-rose-danger: #f43f5e;
+
+    /* Typography Tokens */
+    --font-orbitron: 'Orbitron', system-ui, -apple-system, sans-serif;
+    --font-mono-tabular: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+}
+
+/* Micro-Animations & Keyframes */
+@keyframes springBounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.92); }
+  75% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulseRadialGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(0, 240, 255, 0.4), inset 0 0 10px rgba(0, 240, 255, 0.2); }
+  50% { box-shadow: 0 0 30px rgba(0, 240, 255, 0.8), inset 0 0 20px rgba(0, 240, 255, 0.5); }
+}
+
+/* Custom UI Utilities */
+@layer utilities {
+  .font-orbitron {
+    font-family: var(--font-orbitron);
+  }
+
+  .font-mono-nums {
+    font-family: var(--font-mono-tabular);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-glow-cyan {
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.6), 0 0 20px rgba(0, 240, 255, 0.4);
+  }
+
+  .text-glow-magenta {
+    text-shadow: 0 0 10px rgba(255, 0, 127, 0.6), 0 0 20px rgba(255, 0, 127, 0.4);
+  }
+
+  .box-glow-cyan {
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.3), inset 0 0 15px rgba(0, 240, 255, 0.2);
+  }
+
+  .box-glow-purple {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3), inset 0 0 15px rgba(168, 85, 247, 0.2);
+  }
+
+  /* Interactive Button Juice */
+  .btn-juicy {
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+  
+  .btn-juicy:active {
+    animation: springBounce 0.25s ease-out;
+  }
+
+  .btn-glow-pulse {
+    animation: pulseRadialGlow 3s infinite ease-in-out;
+  }
+}

@@ -83,19 +83,19 @@ export function calculatePhantomSpawnProbability(
   score: number,
   config: PhantomConfig = PHANTOM_CONFIG
 ): number {
-  // No phantom spawning below activation score
-  if (score <= config.activationScore) {
+  if (config.activationScore > 0 && score < config.activationScore) {
     return 0;
   }
   
-  const scoreAboveThreshold = score - config.activationScore;
-  const scoreRange = config.probabilityMaxScore - config.activationScore;
+  const minScore = config.activationScore || 0;
+  const scoreAboveThreshold = Math.max(0, score - minScore);
+  const scoreRange = Math.max(1, config.probabilityMaxScore - minScore);
   const probabilityRange = config.maxSpawnProbability - config.baseSpawnProbability;
   
   const probability = config.baseSpawnProbability + 
     probabilityRange * (scoreAboveThreshold / scoreRange);
   
-  return Math.min(config.maxSpawnProbability, probability);
+  return Math.min(config.maxSpawnProbability, Math.max(config.baseSpawnProbability, probability));
 }
 
 /**
@@ -111,8 +111,7 @@ export function shouldSpawnAsPhantom(
   score: number,
   config: PhantomConfig = PHANTOM_CONFIG
 ): boolean {
-  // Phantom spawning is disabled below activation score
-  if (score <= config.activationScore) {
+  if (config.activationScore > 0 && score < config.activationScore) {
     return false;
   }
   

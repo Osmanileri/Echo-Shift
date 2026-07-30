@@ -247,8 +247,8 @@ export function selectRandomConstruct(
   unlockedConstructs: ConstructType[],
   rand: () => number = Math.random
 ): ConstructType {
-  // Filter out 'NONE' as it's not a valid construct to select
-  const validConstructs = unlockedConstructs.filter(c => c !== 'NONE');
+  // Filter out 'NONE' and 'TITAN' (TITAN feature is disabled for now)
+  const validConstructs = unlockedConstructs.filter(c => c !== 'NONE' && c !== 'TITAN');
   
   if (validConstructs.length === 0) {
     return 'NONE';

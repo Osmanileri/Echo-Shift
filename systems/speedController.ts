@@ -352,6 +352,14 @@ export class SpeedController {
   }
 
   /**
+   * Set the current speed (useful after restore / rewind)
+   * @param speed - New speed value
+   */
+  setCurrentSpeed(speed: number): void {
+    this.currentSpeed = speed;
+  }
+
+  /**
    * Get the current ramped speed (for diagnostics / testing)
    * @returns Current linear-ramp speed value
    */

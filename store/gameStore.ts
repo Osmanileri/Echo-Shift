@@ -286,7 +286,7 @@ const DEFAULT_STATE = {
   resonance: initializeEnhancedResonanceState(),
   snapshots: initializeSnapshotBuffer(),
   // Echo Constructs State - Requirements 7.1, 8.1
-  unlockedConstructs: ['TITAN'] as ConstructType[],  // Titan is default unlocked - Requirements 8.1
+  unlockedConstructs: ['PHASE'] as ConstructType[],  // Phase is default unlocked (Titan disabled)
   activeConstruct: 'NONE' as ConstructType,          // Session-only - Requirements 7.1
   isConstructInvulnerable: false,                    // Session-only
   constructInvulnerabilityEndTime: 0,                // Session-only
@@ -470,6 +470,9 @@ export const useGameStore = create<GameStore>()(
       }
       if (!mission && missions.weekly?.mission?.id === missionId) {
         mission = missions.weekly.mission;
+      }
+      if (!mission && missions.tree?.missions) {
+        mission = missions.tree.missions.find(m => m.id === missionId);
       }
 
       if (!mission || !mission.completed) {

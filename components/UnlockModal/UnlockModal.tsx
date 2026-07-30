@@ -987,7 +987,7 @@ const UnlockModal: React.FC<UnlockModalProps> = ({ unlock, onAcknowledge }) => {
   }, [canAck, onAcknowledge]);
 
   const isEnemy = unlock.type === 'ENEMY';
-  const headerText = isEnemy ? 'NEW THREAT DETECTED' : 'SYSTEM UPGRADE';
+  const headerText = unlock.title || (isEnemy ? 'YENİ TEHDİT TESPİT EDİLDİ' : 'SİSTEM GÜNCELLEMESİ');
   const demoActive = ['demo-play', 'text-reveal', 'ready'].includes(phase);
   const textVisible = ['text-reveal', 'ready'].includes(phase);
 
@@ -1136,7 +1136,7 @@ const UnlockModal: React.FC<UnlockModalProps> = ({ unlock, onAcknowledge }) => {
               : 'none',
           }}
         >
-          ACKNOWLEDGE
+          ANLADIM
           {/* Loading bar while locked */}
           {!canAck && (
             <div className="absolute bottom-0 left-0 h-0.5 rounded-b-xl overflow-hidden w-full">

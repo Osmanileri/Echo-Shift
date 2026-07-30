@@ -35,7 +35,7 @@ export const checkCollision = (
   const distanceX = circlePos.x - closest.x;
   const distanceY = circlePos.y - closest.y;
 
-  // If the distance is less than the circle's radius, an intersection occurs
+  // If the distance is less than the circle's exact radius, an intersection occurs
   const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
   return distanceSquared < (radius * radius);
 };

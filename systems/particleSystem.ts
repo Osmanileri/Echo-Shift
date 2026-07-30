@@ -54,8 +54,14 @@ export class ParticleSystem {
   emit(x: number, y: number, type: string, isTopOrb: boolean = true) {
     const config = getElementalConfig(type);
 
-    // Find an inactive particle from the pool
-    const p = this.particles.find(p => !p.active);
+    // Find an inactive particle from the pool (fast for-loop without closure allocation)
+    let p: Particle | null = null;
+    for (let i = 0; i < this.particles.length; i++) {
+      if (!this.particles[i].active) {
+        p = this.particles[i];
+        break;
+      }
+    }
     if (!p) return;
 
     p.active = true;

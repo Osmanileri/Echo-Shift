@@ -868,11 +868,41 @@ const LevelCard: React.FC<LevelCardProps> = ({
 
         {/* Next Level to Play Indicator - Requirements 1.4 */}
         {isNextToPlay && (
-          <div className="absolute -top-1 -right-1">
-            <Play className="w-4 h-4 text-cyan-400 fill-cyan-400" />
-          </div>
+          <>
+            <div className="absolute -top-2 -right-2 z-30">
+              <div className="relative flex items-center justify-center">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-5 w-5 bg-cyan-500 items-center justify-center shadow-[0_0_10px_#00f0ff]">
+                  <Play className="w-3 h-3 text-black fill-black ml-0.5" />
+                </span>
+              </div>
+            </div>
+            <div className="absolute -bottom-2.5 inset-x-0 flex justify-center z-30 pointer-events-none">
+              <span className="px-2 py-0.5 bg-gradient-to-r from-cyan-400 to-cyan-300 text-black font-black text-[9px] rounded-full uppercase tracking-wider shadow-[0_0_12px_rgba(0,240,255,0.9)] animate-pulse">
+                BAŞLA ⚡
+              </span>
+            </div>
+          </>
         )}
       </button>
+      <style>{`
+        @keyframes nextLevelPulse {
+          0%, 100% {
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.9), inset 0 0 15px rgba(0, 240, 255, 0.4);
+            transform: scale(1);
+            border-color: #00f0ff;
+          }
+          50% {
+            box-shadow: 0 0 35px rgba(0, 240, 255, 1), 0 0 50px rgba(99, 102, 241, 0.8), inset 0 0 25px rgba(0, 240, 255, 0.7);
+            transform: scale(1.08);
+            border-color: #ffffff;
+          }
+        }
+        .next-level-glow {
+          animation: nextLevelPulse 1.2s ease-in-out infinite !important;
+          z-index: 20 !important;
+        }
+      `}</style>
     </>
   );
 };

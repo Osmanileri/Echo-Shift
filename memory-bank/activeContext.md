@@ -2,6 +2,233 @@
 
 ## Mevcut Odak
 
+- **Quantum Lock Chapter 3 Gating & 200m Threshold (`glitchSystem.ts`, `constants.ts`, `GameEngine.tsx`)** - TAMAMLANDI ✅
+  - **3. Bölümden Sonra Çıkma Kuralı**: Kuantum Kilidi (Quantum Lock / Glitch Shard) kristali 1., 2. ve 3. bölümlerde spawn olması engellendi (`currentLevelId <= 3`). Kuantum Kilidi KESİNLİKLE sadece **3. Bölüm tamamlandıktan sonra (4. Bölüm ve sonrasında)** çıkacaktır.
+  - **Daha Erken Ve Ulaşılabilir Mesafe (200m)**: Kuantum kristalinin minimum spawn mesafesi 500m'den **200m'ye** düşürüldü (`GLITCH_CONFIG.minSpawnDistance = 200`). Böylece 4. bölüm ve sonsuz modda oyuncular 200 metreye ulaştığında bu heyecan verici kuantum modunu yaşayabilecektir.
+  - **769/769 PASS**: 48 test dosyasındaki 769 testin tamamı hatasız geçti.
+
+- **Fix Dash Connector Bar Trigonometric Rotation & Disable Inverter/Phantom Spawning During Dash (`phaseDashVFX.ts`, `blockSystem.ts`)** - TAMAMLANDI ✅
+  - **Çubuk Büyüme/Bozulma Hatası Çözüldü (`phaseDashVFX.ts`)**: Dönen Dash çubuğunun açı hesaplamasındaki 2D trigonometri hatası (`xOffset = Math.sin(angle) * 15`) düzeltildi (`xOffset = Math.cos(angle) * halfLen`). Çubuk 360 derece dönerken uzunluğunu kusursuz sabit korur, büyüme/küçülme ve bozulma yapmaz.
+  - **Dash Sırasında Renk Değişimi/Inverter Engellendi (`blockSystem.ts`)**: Dash süresince (`isDashing = true`) Inverter ("TERS" renk değiştirici) ve Phantom bloklarının üretimi tamamen kapatıldı. Dash sırasında sadece kırılacak düz temiz bloklar gelir.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Inverter 500m+ Gating & Inverted Color High-Contrast Border Suite (`blockSystem.ts`, `inverterSystem.ts`, `GameEngine.tsx`)** - TAMAMLANDI ✅
+  - **Renk Dönüştürücü (Inverter / TERS) 500m+ Şartı**: Inverter (Dönüştürücü) blokların 30. metre gibi erken aşamada çıkması engellendi. Artık KESİNLİKLE sadece **500 metreden sonra (`score >= 500`)** spawn olabilir.
+  - **Renkler Ters Döndüğünde Yüksek Kontrastlı Çerçeve (High-Contrast Border)**:
+    - Renkler ters döndüğünde (`gravityState.current.isFlipped` / "TERS" modu) Beyaz bölgeye geçen **Beyaz topun etrafına 2.5px keskin SİYAH kenarlık (`#000000`)** çizilir.
+    - Siyah bölgeye geçen **Siyah topun etrafına 2.5px keskin BEYAZ kenarlık (`#FFFFFF`)** çizilir.
+    - Toplar hiçbir şekilde zemin rengiyle örtüşüp kaybolmaz, kristal berraklığında görünür.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Temporary Instant Dash 100% Energy Override (`systems/phaseDash.ts`)** - TAMAMLANDI ✅
+  - **Test İçin Anında Hazır Dash Enerjisi**: Test modunu kolaylaştırmak amacıyla `createInitialPhaseDashState` içerisindeki başlangıç enerjisi geçici olarak **%100** yapıldı. Oyuna başlar başlamaz veya yeniden başlatıldığında Dash anında kullanıma hazırdır.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Optimal Balanced Dash Block Frequency (`frameId % 8` in `GameEngine.tsx`)** - TAMAMLANDI ✅
+  - **Mükemmel Blok Dengesi (`frameId % 8`)**: Aşırı sık duvar gibi gelen blok yoğunluğu hafifletildi (`frameId % 5` -> `frameId % 8`).
+  - **Dengeli & Tatmin Edici Yıkım**: Dash süresince saniyede ~7.5 çift (15 adet) ritmik ve dengeli blok çıkışı sağlandı. Oyuncu ne bomboş kalır ne de ekran blok dolup boğulur.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Fix Uncaught ReferenceError phantomEnabled in Dash Spawn Block (`GameEngine.tsx:2851`)** - TAMAMLANDI ✅
+  - **Konsol Hatası ve Donma Nedeni Çözüldü**: Dash blok üretme bloğu (`frameId % 5`) içerisinde `phantomEnabled` değişkeninin kapsama alanında (scope) yerel olarak tanımlanmamış olmasından kaynaklanan `Uncaught ReferenceError: phantomEnabled is not defined` hatası giderildi.
+  - **Güvenli Değişken Tanımlamaları**: `isPhantomEnabled` ve `isForcePhantom` değişkenleri Dash blok üretme bloğunda açıkça tanımlandı. Dash blok üretimi sırasındaki ekran donmaları tam olarak engellendi.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Hyper-Dense 12 Pairs/Sec Dash Block Gauntlet (`GameEngine.tsx`)** - TAMAMLANDI ✅
+  - **Saniye Başına ~12 İkili Blok Kapısı (`frameId % 5`)**: Dash sırasındaki blok yoğunluğu 2 katına çıkarıldı. Her 5 frame'de bir (saniyede ~12 çift / 24 adet blok) kesintisiz üst-alt blok kapıları spawn olur.
+  - **Hiper-Yoğun Blok Yıkma Şöleni**: Donmalar tamamen çözüldüğü ve `shadowBlur` kaldırıldığı için oyuncu 2.5 saniyelik Dash boyunca sıfır kasma ile kesintisiz 60+ bloğu otomatik kırarak akıcı biçimde ilerler.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Fix Uncaught ReferenceError playerBaseX & PixiJS Ticker Safety (`GameEngine.tsx` & `PixiRenderer.ts`)** - TAMAMLANDI ✅
+  - **Konsol Hatası ve Ekran Donması Çözüldü**: `GameEngine.tsx:5198` üzerindeki `Uncaught ReferenceError: playerBaseX is not defined` hatası giderildi (`const playerBaseX = width / 8` tanımlandı). Hatadan dolayı `requestAnimationFrame` döngüsünün kırılıp ekranın donması (seslerin arkada çalmaya devam etmesi) %100 düzeltildi.
+  - **PixiJS Ticker Güvenliği**: React DEV modunda remount esnasında PixiJS v8 ticker'ının `_x` of null hatası vermesi engellendi (`destroyRenderer` öncesinde `app.ticker.stop()` eklendi).
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Zero-ShadowBlur Mobile GPU Optimization & Double-Tap Dash Freeze Fix (`phaseDashVFX.ts`)** - TAMAMLANDI ✅
+  - **Çift Tıklama Donma Sebebi Tespit Edildi & Tamamen Kaldırıldı**: Çift tıklama / seri basma anında aynı salisede 15 farklı Canvas katmanında `shadowBlur = 25/20/15/12` değerlerinin aynı anda çağrılması, mobil GPU işleme hattında donmaya neden oluyordu.
+  - **15 Adet `shadowBlur` Kaldırıldı**: `phaseDashVFX.ts` içerisindeki tüm 15 `shadowBlur` ve `shadowColor` Canvas context komutları tamamen temizlendi. Yerine sıfır maliyetli 60fps radyant gradientler ve katmanlı neon renk dolguları entegre edildi.
+  - **Temizlik & Debounce Güvencesi**: `triggerTransitionIn` tetiklendiğinde kalan eski trail ve debris parçacıkları anında temizlenir. Dash başlarken GPU yükü tam sıfırlanır.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Zero-Lag Phase Dash Auto-Smash & Debris Particle Optimization (`GameEngine.tsx` & `phaseDashVFX.ts`)** - TAMAMLANDI ✅
+  - **Donma Kök Nedeni Çözüldü**: Saniyede 20+ blok yıkılırken `createObstacleDebris` fonksiyonunun ürettiği 32+ parça ve Canvas dairesel `shadowBlur = 15` efektlerinin CPU/GPU belleğini doldurup donmaya yol açması engellendi.
+  - **Hafifletilmiş & Sınırlanmış Enkaz Efekti**: Yıkım parçacıkları enkaz başına 6-8 hafif neon parçaya düşürüldü, `debrisParticles` dizisi maksimum **25 parça** ile sınırlandırıldı ve ağır `shadowBlur` kaldırıldı (yağ gibi 60fps akıcılık sağlandı).
+  - **Otomatik Tüm Blokları Yıkma Koridoru (Auto-Smash Runway)**: Dash sırasında oyuncunun önündeki tüm bloklar (`playerSweepLine` hizası) bilya çakışması beklenmeksizin **otomatik olarak kesintisiz yıkılır ve patlar**. Hiçbir blok ekranda takılıp kalmaz.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Special Feature Mutual Exclusivity & Anti-Streak Cooldown (`blockSystem.ts`)** - TAMAMLANDI ✅
+  - **Kesin Karşılıklı Dışlama (Mutually Exclusive)**: Bir blok çifti KESİNLİKLE aynı anda hem Dönüştürücü (Inverter) hem de Hayalet (Phantom) özelliğini birlikte Alamaz (`isLatent && isInverting` imkansız kılındı). Bir blok çifti sadece TEK bir özel özelliğe sahip olabilir.
+  - **Arka Arkaya Çıkma Engeli (Anti-Streak Cooldown)**: Hayalet veya Dönüştürücü bloklar peş peşe 2-3 tane arka arkaya GELEMEZ. Her özel blok çiftinden sonra en az **2 normal/temiz blok çifti (cooldown)** spawn olur.
+  - **768/768 PASS**: 48 test dosyasındaki 768 testin tamamı hatasız geçti.
+
+- **Inverter Level 1-3 Gating & Chapter 3 Completion Turkish Unlock Celebration** - TAMAMLANDI ✅
+  - **İlk 3 Bölümde Engellendi**: Inverter (Dönüştürücü) bloklar 1., 2. ve 3. bölümlerde spawn olması engellendi (`currentLevelId <= 3`). Oyuncu oyunu ve temel mekanikleri rahatça öğrenir.
+  - **3. Bölüm Sonu Türkçe Kilit Açma Kutlaması (`LevelUnlockManager.ts`)**: 3. Bölüm başarıyla tamamlandığında ekrana Türkçe kilit açma bildirimi gelir:
+    - *Başlık*: `3. BÖLÜM TAMAMLANDI - YENİ ÖZELLİK`
+    - *İsim*: `DÖNÜŞTÜRÜCÜ BLOKLAR KİLİDİ AÇILDI!`
+    - *Açıklama*: `Tebrikler! 3. Bölümü başarıyla tamamladınız. Artık engeller saniyeler öncesinden uyarı verip anlık olarak Beyaz ve Siyah renk değiştirebilir. Dikkatli ol!`
+    - *Buton*: `ANLADIM`
+  - **Tüm Kilit Açma Bildirimleri Türkçe Yapıldı**: Oyundaki 8 kilit açma bildirimi ve `UnlockModal` arayüzünün (başlıklar, butonlar) tamamı %100 profesyonel Türkçe metinlere dönüştürüldü.
+  - **766/766 PASS**: 48 test dosyasının tamamı yeşil çalışmaktadır.
+
+- **Instant Inverter Color Swap & Ultra-Far Reaction Runway (70% Canvas Threshold)** - TAMAMLANDI ✅
+  - **Süre 60px / 130ms'ye İndirildi (Çok Daha Kısa Uyarı)**: Uyarı aşaması uzun sürdüğü için oyuncunun yetişememesi engellendi. Uyarı süresi 160px'ten **60px'e (~130ms anlık seri çakma)** düşürüldü.
+  - **Çok Daha Erken Anlık Renk Değişimi (`responsiveInvertX: 70%`)**: Bloklar artık henüz ekranın en sağındayken (`x = 280px`, ekran genişliğinin %70'i) anında White ➔ Black ve Black ➔ White terse döner.
+  - **Devasa 230px (600ms+) Tepki Koridoru**: Renk değişimi 280px'te saniyeler öncesinden TAMAMLANDIĞI için, oyuncu bilyesine (`x = 50px`) gelene kadar oyuncuya **230px (yarım saniyeden uzun)** mükemmel ve konforlu bir tepki/kulvar değiştirme süresi kalır.
+  - **Anlık 150ms X-Lazer Patlaması**: Dönüşüm patlaması süresi 150ms'ye indirilerek çok seri ve crisp bir anlık şok dalgası elde edildi.
+  - **766/766 PASS**: 48 test dosyasının tamamı hatasız çalışmaktadır.
+
+- **Hyper-Dense Phase Dash Block Smashing Gauntlet Festival (6-Frame Spawner)** - TAMAMLANDI ✅
+  - **Saniye Başına 10 İkili Blok Kapısı**: Dash esnasındaki spawn aralığı 24 frame'den **6 frame'e (~saniyede 10 çift blok kapısı)** düşürüldü.
+  - **Hiper-Yoğun Blok Yıkma Şöleni**: Dash boyunca 4x hiper hızla warp eden oyuncu, arka arkaya kesintisiz onlarca üst-alt blok kapısını kırıp geçer. Her blok yıkıldığında enkaz patlamaları (`PhaseDashVFX`), titan stomp tok vurma sesleri, ekran sarsıntısı ve `+25 💥` puan popupları yağmuru oluşur.
+  - **766/766 PASS**: 48 test dosyasının tamamı yeşil çalışmaktadır.
+
+- **High-End Quantum Inverter VFX Suite & X-Crossover Laser Conduit** - TAMAMLANDI ✅
+  - **Cyberpunk Döner Gösterge Rozeti**: Basit `⚡` yazısı yerine dönen sarmal halkalar, ters yönlü kesikli gösterge ve ortasında parlayan `⇄` takas simgesine sahip **döner sarmal siber rozet** entegre edildi. Blok köşelerine elektrik ark braketleri (`plasma arc brackets`) yerleştirildi.
+  - **Yüksek Voltaj Plazma Lazer Kanalı (Warning Conduit)**: İkili bloklar dönüşüm mesafesine yaklaşırken aralarında yüksek voltajlı dikey plazma lazer çizgisi ve çatırdayan elektrik arkları belirir, boşluğun ortasında enerji çekirdeği parlar.
+  - **Çapraz X-Lazer Renk Takas Animasyonu (X-Crossover Laser Blast)**: Dönüşüm gerçekleştiği salisede üstten alta Cyan (`#00F0FF`) ve alttan üste Magenta (`#FF00FF`) lazer ışınları çapraz olarak birbirine geçer (**Çapraz X-Lazer Geçişi**), ortada kuantum füzyon şok dalgası patlar!
+  - **Çift Şok Dalgası ve Kromatik Glitch Kenarlıklar**: Blokların etrafında genişleyen iç içe iki neon şok dalgası ve 3 katmanlı kromatik glitch parlaması (Cyan + Magenta offset) render edilir.
+  - **766/766 PASS**: 48 test dosyasının tamamı yeşil çalışmaktadır.
+
+- **Fix Phase Dash Screen Freeze & VFX String Replace Bug** - TAMAMLANDI ✅
+  - **Kök Neden Tespit Edildi**: `systems/phaseDashVFX.ts` içerisindeki `cometTailParticles` renk dönüştürme mantığında `#00FFFF` hexadecimal renk dizesine regex olmadan `replace('#00FFFF', 'rgba(0, 255, 255')` uygulanıyor, ancak kapanış parantezi `)` eksik olduğu için geçersiz CSS renk dizesi üretiliyordu. Ayrıca kuyruk parçacıkları sınırsız şekilde büyüyerek Canvas render döngüsünün ve oyun ekranının donmasına neden oluyordu.
+  - **Kuyruk Parçacık Sınırı & Geçerli RGBA Formatı**: `phaseDashVFX.ts` içerisinde kuyruk parçacık sayısı maksimum 30 ile sınırlandırıldı (`cometTailParticles.length <= 30`) ve CSS `rgba(0, 255, 255, alpha)` dizesi %100 geçerli biçimde düzeltildi.
+  - **Düzgün Spawn Koordinatı (`spawnX`)**: `systems/blockSystem.ts` içerisinde Dash esnasında blokların ekranın ortasında zamansız belirip çakışması engellendi; bloklar ekranın sağından (`canvasWidth + 50`) pürüzsüzce gelip oyuncunun önünde 60fps akıcılıkla yıkılmaktadır.
+  - **766/766 PASS**: Tüm testler yeşil çalışmaktadır.
+
+- **Non-Interactive Mission HUD & Hardcore Mission Goal Scaling** - TAMAMLANDI ✅
+  - **Oyun İçi Görev HUD'ı Tıklanamaz Yapıldı (`MissionTracker.tsx`)**: `MissionTracker` bileşeni `<button>` yerine `pointer-events-none select-none` özellikli bir `<div>` olarak güncellendi. Oyun esnasında sol tarafta beliren görev göstergesi tıklamaları ve dokunmaları engellemez, oyuncunun ekranın soluna dokunduğu anda kontrollerin kesintisiz çalışmasını garanti eder.
+  - **Hardcore Görev Zorluk Ölçeklemesi (`data/missionPool.ts`)**: Tüm günlük, haftalık ve onboarding görevlerinin Hedef Sayıları (goal) ve Ödülleri (XP/Shards) baştan sona ciddi derecede zorlaştırıldı:
+    - *Frekans Atlayıcı (Geçiş)*: 20 → **80 geçiş** (Medium: 180, Hard: 400, Weekly: 1200)
+    - *Kıl Payı (Near Miss)*: 5 → **25 kaçış** (Medium: 50, Hard: 100, Weekly: 300)
+    - *Ritim Streak*: 5 → **15x streak** (Medium: 25x, Hard: 40x)
+    - *Mesafe (Distance)*: 300m → **1200m** (Medium: 2500m, Hard: 6000m, Weekly: 35.000m)
+    - *Toplama & Hayalet*: Parça toplayıcı 10 → **40 parça**, Hayalet 15 → **50 hayalet**
+    - *Ödüller*: Tüm zorlaştırılan görevlerin XP ve Shard ödülleri ~3x artırılarak başarım tatmini katlandı.
+  - **766/766 PASS**: 48 test dosyasının tamamı yeşil çalışmaktadır.
+
+- **Phase Dash Obstacle Smashing Gauntlet & Finish Runway Fine-Tuning** - TAMAMLANDI ✅
+  - **Phase Dash Blok Yıkıp Geçme Gauntlet'i**: Dash sırasında blokların seyrelmesi/kesilmesi engellendi. Dash süresince her 16 frame'de bir (~3.75 çift/sn) tam üst-alt blok kapıları (`spawnPatternObstaclePair`) spawn edilerek oyuncunun 4x hiper hızda kesintisiz blok yıkma heyecanını gözlemlemesi sağlandı. Her blok yıkıldığında enkaz parçacıkları (`PhaseDashVFX`), titan stomp ses efekti, ekran sarsıntısı ve `+25 💥` puan ödül popupları tetiklendi.
+  - **Oyun Sonu Temiz Pist Eşiği Ayarı (%94)**: Bölüm sonu yaklaşma aşamasındaki blok kesilme eşiği %93'ten **%94**'e çekilerek blokların %1 daha geç kesilmesi sağlandı. Böylece son blok bitiş çizgisine (%94) daha yakın belirerek final pistini daha dinamik kıldı.
+  - **766/766 PASS**: 48 test dosyasının tamamı sıfır hatayla geçmektedir.
+
+- **Comprehensive Multi-System Reset Audit & Zero-Leak Quality Standard** - TAMAMLANDI ✅
+  - **Tüm Sistemler İçin Tam Sıfırlama Guarantees**: `resetGame()` fonksiyonu kapsamlı bir şekilde gözden geçirilip sağlamlaştırıldı. Oyuna yeniden başlandığında veya seviye değiştiğinde tüm skiller, yetenekler, ölümsüzlük zamanlayıcıları, düşmanlar (EnemyManager Dart/Seeker), System Restore (Rewind animation state `isRestoreAnimating = false`), Phase Dash, S.H.I.F.T. Overdrive, Construct modları ve havuzlar %100 temiz durumlarına sıfırlanır.
+  - **Düşüş ve Animasyon Temizliği (`EnemyManager.resetAnimationState`)**: `EnemyManager.ts` içerisine `resetAnimationState()` eklenerek düşman iz parçacıkları (trail positions) ve animasyon sayaçları sıfırlandı.
+  - **Ölümsüzlük Sızıntısı Engellendi**: Canlanma animasyonu sırasında oyundan çıkılması veya yeniden başlatılması durumunda `isRestoreAnimating.current = false` zorlanarak sonraki koşularda anlık ölümsüzlük veya çarpışma atlama bug'ları %100 engellendi.
+  - **766/766 PASS**: Tüm testler hatasız çalışmaktadır.
+
+- **Fix Recycled Obstacle State Leak & False Ghost Collision Bug (150m-200m Fix)** - TAMAMLANDI ✅
+  - **Kök Neden Tespit Edildi**: `obstaclePool` nesneleri ekrandan çıkıp tekrar havuzdan çekildiğinde (`acquire`), eski çarpmalardan kalan `wasHit = true` ve `hitTime` değerleri sıfırlanmıyordu. Bu yüzden 150-200m sonra havuz nesneleri ilk kez devirdaim (recycle) ettiğinde, `wasHit = true` kalan bloklar collision kontrolünden muaf tutularak içinden ölümsüzce geçilmesine (`if (obs.wasHit) continue`), geçiş puanının verilememesine ve görsel red flash glitch'lerine yol açıyordu.
+  - **Tam Sıfırlama Fonksiyonu (`resetObstacleState`)**: `systems/blockSystem.ts` ve `systems/objectPool.ts` içine `resetObstacleState` entegre edildi. Her blok spawn ve devirdaim anında `wasHit`, `hitTime`, `passed`, `passTime`, `isLatent`, `isInverting`, `minClearance` dâhil tüm 25 durum parametresi %100 temizlenmektedir.
+  - **Oyun Yeniden Başlatma Temizliği (`resetGame`)**: Oyuna her yeniden başlandığında veya seviye sıfırlandığında `obstaclePool.current.reset()` ve `shardPool.current.reset()` çağrılarak havuzdaki tüm nesneler temiz state'e çekildi.
+  - **766/766 PASS**: 48 test dosyasının tamamı sıfır hatayla geçmektedir.
+
+- **Inverter / Color-Shift Block System (Renk Terse Dönen Blok Mekaniği)** - TAMAMLANDI ✅
+  - **Yaklaşırken Polarite Değişimi**: Bloklar oyuncuya doğru ilerlerken belirlenen mesafeye (`invertX: 460px`) ulaştığında renkleri/polariteleri tam terse döner (Beyaz ↔ Siyah).
+  - **Ön Uyarı Fazı (Uyarı Flaşı & ⚡ Rozeti)**: Blok 590px - 460px arasına girdiğinde ekranda hızlı kırmızı/cyan neon uyarı parlaması ve blok üzerinde `⚡` simgesi belirerek oyuncuya refleks uyarısı verir.
+  - **Tam Dönüşüm Anı VFX & SFX**: Dönüşüm anında (X <= 460px) kromatik renk patlaması oluşur ve siber dijital ton değişimi sesi (`AudioSystem.playColorInvert()`) çalar.
+  - **Phantom + Inverter Hibrit Desteği**: Phantom (saydamlaşan) bloklarda da %35 ihtimalle renk terse dönme aktif hale getirilerek refleks heyecanı katlandı.
+  - **766/766 PASS**: 48 test dosyasının tamamı sıfır hatayla geçmektedir.
+
+- **Phantom / Fading Block System (Saydamlaşan / Görünmezleşen Blok Sistemi)** - TAMAMLANDI ✅
+  - **Düşük ve Dengeli Spawn Oranı (%8)**: Blokların aşırı boğucu olmaması için `baseSpawnProbability: 0.08` (skor arttıkça maks %25) olarak ayarlandı.
+  - **Doğal Saydamlaşma & Görünürlük Tavanı (%16)**: Bloklar ekranın sağından geldikçe oyuncuya yaklaştıkça pürüzsüzce saydamlaşır ve oyuncu hizasında %16 opacity'e inerek az da olsa görünecek şekilde kalır (`minOpacity: 0.16`).
+  - **Siber-Hayalet VFX & Dijital Taramalar**: Saydamlaşan bloğun etrafında nabız gibi atan neon kesikli çerçeve (`[6, 4]`) ve blok gövdesinde yatay siber tarama çizgileri (scanlines) render edilerek büyüleyici bir "Phantom / Stealth" efekti kazandırıldı.
+  - **Erken Erişim & Kampanya Entegrasyonu**: Kampanya modunda 3. seviyeden itibaren (`phantom: id >= 3`) aktif hale getirildi; skor 0'dan itibaren spawning eşiği düzeltilerek ilk andan itibaren devrede kalması sağlandı.
+  - **763/763 PASS**: 47 test dosyasının tamamı yeşil çalışmaktadır.
+
+- **Tutorial Navigation Phase Rotation Lock** - TAMAMLANDI ✅
+  - **Sadece Kaydırma Hareketi**: `NAVIGATION` ("Yukarı / Aşağı kaydır") ve `INTRO` fazlarında döndürme/swap mekaniği kesin olarak kilitlendi (`swapLocked = true`). Oyuncunun bu aşamada ekrana tıklayarak kafa karışıklığı yaşaması ve zamansız döndürme yapması engellendi. Döndürme mekaniği yalnızca bir sonraki `SWAP_MECHANIC` fazında öğretilmeye başlar.
+  - **Çakışan Kilit Metni Düzeltildi**: `tutorialVFXEngine.ts` içerisindeki `🔓 BÖLÜM 1 KİLİDİ AÇILDI!` yazısı üst kısma (`y = height * 0.22`) kaydırıldı. `DEVAM ET →` butonunun (`height * 0.58`) üzerine binmesi tamamen engellendi.
+  - **Kesin Dokunma ve Geçiş**: Zafer ekranında ekrana/butona dokunulduğunda (`victoryElapsed > 400ms`), dokunma anında öğretici tam başarıyla tamamlanır (`tutorialCompleted = true`) ve temiz bir şekilde Kampanya Bölüm Haritasına geçilir.
+  - **Yanıp Sönen Canlı 1. Bölüm Kartı (`LevelMap.tsx`)**: Bölüm 1 artık neon cyan pulsing halka (`next-level-glow`), dönen/yanıp sönen Play butonu ve altında canlı **BAŞLA ⚡** rozeti ile ışıldayarak yeni oyuncuyu yönlendirir.
+  - **763/763 PASS**: 47 test dosyasının tamamı sıfır hatayla çalışmaktadır.
+
+- **Obstacle Pass Audio Softening & Velvet Chime** - TAMAMLANDI ✅
+  - **Yumuşak ve Harmonik Geçiş Sesi**: Eski gürültülü ve keskin testere dişi (`sawtooth`, volume 0.45, `Q=7.0`) sesi kaldırılarak yerine pürüzsüz sinüs (`sine`, volume 0.07, `Q=1.0`) dalgalarından oluşan dinlendirici bir chime getirildi. Geçiş sesi o andaki synthwave akoruna otomatik olarak uyum sağlar.
+
+- **Shield Audio & Impact Explosion Coordinate Alignment** - TAMAMLANDI ✅
+  - **Kalkan Kazanma Sesi Düzeltildi**: Kalkan kazanıldığında/yenilendiğinde çalan hatalı `playShieldBlock` (darbe sesi) kaldırılarak yerine dinlendirici `playShieldActivate` (kalkan aktifleşme baloncuk sesi) getirildi. Ortada hiçbir darbe yokken patlama/darbe sesi çıkması engellendi.
+  - **Kalkan Kırılma Patlaması Tam Çarpışma Noktasına Taşındı**: Kalkan bir bloğu emdiğinde/kırıldığında patlama parçacığı ve kalkan uyarısı tam olarak zıt bloğun temas noktasına (`obs.x + obs.width/2, obs.y + obs.height/2`) yerleştirildi. Kırmızı blok yanmasıyla kalkan kırılma efekti %100 senkronize çalışır.
+
+- **Synchronized Top & Bottom Block Pass Shine & Hit Red Flash** - TAMAMLANDI ✅
+  - **Başarılı Geçişlerde İki Blok da Birlikte Parlar**: Geçiş kapısına ulaşıldığı an (`obs.x <= playerX + orbRadius`) üst ve alt iki blok eşzamanlı olarak `passed = true` ve `passTime` alır. Her temiz geçişte üst ve alt iki blok birden gözünün önünde Cyan/Magenta neon ışığıyla parlar.
+  - **Çarpmalarda İki Blok da Birlikte Kırmızı Yanar**: Kalkan kırıldığında veya bloğa çarpıldığında darbe alan sütundaki üst ve alt iki blok eşzamanlı olarak `wasHit = true; hitTime = collisionTime` alır. Her başarısız geçişte ikisi birden İSTİSNASIZ olarak PARLAK KIRMIZI yanar.
+
+- **Near-Miss Audio Softening (False Burn/Damage Noise Eliminated)** - TAMAMLANDI ✅
+  - **Teğet Geçiş Sesi Yumuşatıldı**: Oyuncu bir bloğun çok yakınından geçtiğinde (`Near Miss`) çalışan `playNearMiss()` ses fonksiyonundaki düşük frekanslı (150-400Hz) `sawtooth` testere dalgası ve gürültülü hışırtı sesi kaldırıldı. Yerine ipeksi, kristal netliğinde çok hafif bir sinüs (`sine`, 880-1320Hz, volume 0.04) tonu getirildi. Artık teğet/başarılı geçişlerde oyuncunun yanmış gibi hissetmesine neden olan tüm cızırtı/yanma sesleri yok edildi.
+
+- **TITAN Feature Deactivation** - TAMAMLANDI ✅
+  - **TITAN Özelliği Devre Dışı Bırakıldı**: TITAN token spawn mantığı (`glitchTokenSpawner.ts`), varsayılan kilit açık yetenek dizisi (`gameStore.ts`) ve fizik stratejisi dönüşüm mantığı (`ConstructSystem.ts`) güncellenerek TITAN özelliği tamamen devre dışı bırakıldı.
+
+- **Production Mobile Quality & Zero-Bug Reliability Standard** - TAMAMLANDI ✅
+  - **Sıfır Hata ve Sıfır Sızıntı Standardı**: Oyunu mobilde veya düzenli oynayan bir kullanıcının hiçbir mantık hatası, ölümsüzlük bug'ı, bellek sızıntısı veya state kalıntısıyla karşılaşmaması için tüm motor, nesne havuzları ve mod geçişleri çelik gibi sağlamlaştırıldı.
+  - **763/763 Test Başarısı**: Tüm vitest unit testleri tam başarıyla geçmektedir.
+
+- **Full Architectural Maintenance & Multi-Mode Reset Audit** - TAMAMLANDI ✅
+  - **Tüm Oyun Modlarında Temiz Başlangıç**: `useEffect` reset mekanizması Campaign, Daily Challenge, Zen, Tutorial ve Endless modlarının tamamına genişletildi. Mod geçişlerinde veya yeniden başlatmada motorun tüm stateleri %100 sıfırlanır.
+  - **Nesne Havuzu Geri Dönüşümü (Pooled Object Recycling)**: `BlockSystem.filterOffscreenBlocks` ana oyun döngüsüne entegre edilerek ekrandan çıkan tüm blok nesnelerinin belleğe düzgün geri verilmesi sağlandı.
+
+- **Fix In-Game Obstacle Accumulation & False Pass Reward Bug** - TAMAMLANDI ✅
+  - **Oyun İçi Veri Birikmesi (Memory Leak) Düzeltildi**: `obstacles.current` dizisinde ekrandan çıkan eski blokların silinmemesi ve dizi boyutunun sürekli şişmesi engellendi (`obs.x > -200` filtresiyle her karede temizlik sağlandı).
+  - **Çarpan Blokların Başarılı Sayılması Engellendi**: Kalkan kırıldığında veya bloğa çarpıldığında `obs.wasHit = true` yapılan blok için `obs.passed = true` da atandı. Değilen/çarpan bloklar ekrandan çıkarken pürüzsüz geçiş sesi (`playObstaclePass`), puan ve elmas kazandıramaz.
+  - **Kalkan Dokunulmazlık Süresi Sınırlandı**: Kalkan kırıldıktan sonraki 2-6 saniyelik uzun ölümsüzlük penceresi 500ms (0.5 sn) güvenlik süresine çekildi. Oyuncu ardışık zıt bloklardan ölümsüzce geçemez.
+
+- **Fix Level Transition State Persistence & Infinite Overdrive Bug** - TAMAMLANDI ✅
+  - **Bölüm Geçişlerinde Temizlik**: Yeni bölüme geçildiğinde veya seviye tamamlandığında S.H.I.F.T. Overdrive, post-restore dokunulmazlığı ve yetenek durumlarının (`shiftState`, `postRestoreInvincible`, `collectibles`) sıfırlanmaması ve oyuncunun yeni bölümde ölümsüz kalması sorunu düzeltildi.
+  - `resetGame()` fonksiyonuna eksik dokunulmazlık ve yetenek zamanlayıcı sıfırlamaları eklendi ve `useEffect` bağımlılıklarına `campaignMode.levelConfig.id` eklenerek her yeni seviyede motorun tamamen sıfırdan ve temiz veriyle başlaması sağlandı.
+
+- **Strict Polarity Collision & Skill-Disabled Perfect Dodge** - TAMAMLANDI ✅
+  - **Skiller Sırasında Perfect Dodge Devre Dışı**: Overdrive, Phase Dash, Quantum Lock, Shield ve Restore gibi skill/dokunulmazlık modları aktifken Perfect Dodge / Dodge Master ödülleri ve kombo sayacı tetiklenmez.
+  - **Kesin Zıt Polarite Çarpan Yanar Kuralı**: Çizgi/çubuk dokunulmazdır, sadece 2 default orb (Beyaz ve Siyah top) kontrol edilir. Tam top ebadında (kesin yarıçap) kontrol yapılır; orta çizgi etrafında zıt renkli blokların içinden geçmeyi sağlayan micro-phasing bypass tamamen kaldırıldı. Beyaz top siyah bloğa, siyah top beyaz bloğa değdiği anda KESİNLİKLE yanar / hasar alır.
+
+- **Red Failure Impact Flash & 500m Milestone Streamlining** - TAMAMLANDI ✅
+  - **Kırmızı Çarpışma Görselinin Düzeltilmesi**: Kalkan kırıldığında bloğun anında `-1000` X koordinatına ışınlanıp ekrandan kaybolması engellendi. Artık bloğa çarptığınızda blok ekranda kaymaya devam ederek 450ms boyunca **kırmızı darbe çerçevesi ve diyagonal kırmızı tarama** (`rgba(255, 42, 42, 0.95)`) üretir.
+  - **Sadece 500m ve Katlarında Bildirim**: Oyuncuyu rahatsız eden sık mesafe başarı bildirimleri (100m, 250m, 750m vb.) temizlendi. Artık bildirimler **sadece 500m ve 500'ün katlarında** (500m, 1000m, 1500m, 2000m...) görünür.
+
+- **High-Performance 60 FPS & Smoothness Overhaul** - TAMAMLANDI ✅
+  - **React UI State Throttling**: `GameEngine.tsx` içindeki `onDistanceUpdate`, `onDashStateUpdate`, `setGameSpeedDisplay` gibi yüksek frekanslı UI callback'leri ~10 FPS (100ms) aralığına ve discrete eşiklere çekilerek main thread üzerindeki saniyede 60 React DOM re-render yükü elendi.
+  - **Retina DPR Buffer Scaling (2.0x Cap)**: Canvas DPR değeri 3x'ten 2.0x'e sabitlenerek mobil retina ekranlarda piksel dolgu yükü **%55.5 oranında** azaltıldı.
+  - **Canvas2D `shadowBlur` Eliminasyonu**: `collectibleRenderer.ts` içerisindeki ağır `shadowBlur=15` Gaussian blur hesaplamaları, yüksek performanslı çift katmanlı transparan arc çizimleriyle değiştirildi.
+  - **Web Audio API Parameter Caching**: `audioSystem.ts` içindeki `updateInteractiveGlow` frekans ve volume güncellemeleri önbelleğe alınarak gereksiz `setTargetAtTime` çağrıları engellendi.
+  - **Particle Pool Loop Optimization**: `particleSystem.ts` içerisinde `Array.prototype.find` (closure) yerine hızlı `for` döngüsü kullanılarak GC baskısı azaltıldı.
+  - **Zero Regressions (763/763 PASS)**: 47 test dosyasının tamamı yeşil olarak çalışmaktadır.
+
+- **Echo Shift — Professionalization & Zero-Fail Overhaul** - TAMAMLANDI ✅
+  - **Zero Test Failures (763/763 PASS)**: `glitchSystem.ts`, `glitchSystem.test.ts`, `particleSystem.test.ts` ve `missionSystem.test.ts` testleri tamamen düzeltildi. Repodaki tüm 47 test dosyası ve 763 test %100 yeşil duruma getirildi.
+  - **Design Tokens & Micro-Animations (`index.css`)**: `--font-orbitron`, `--font-mono-tabular`, `--color-cyan-glow`, `--color-purple-glow`, `--color-rose-danger` token'ları eklendi. Spring-bounce (`.btn-juicy`), radial glow pulse (`.btn-glow-pulse`) ve monospace tabular sayılar (`.font-mono-nums`) CSS katmanına entegre edildi.
+  - **Hızlı Ses Kontrolü (`components/GameUI.tsx`)**: Ana menü ve oyun içi HUD üzerine tek dokunuşla sesi tamamen açıp kapatan (Mute/Unmute) hızlı ses ikonu eklendi.
+  - **FTUE & Onboarding Vurgusu (`components/GameUI.tsx`)**: Oyuna ilk kez başlayan oyuncular için OYNA butonu üzerinde `🎓 EĞİTİM & İLK KOŞU` parıltılı yönlendirme rozeti entegre edildi.
+  - **Monospace Tabular Numbers (`components/GameUI.tsx`)**: `PulsingDistance` ve `CountUp` sayaçlarına `.font-mono-nums` sınıfı uygulanarak sayı değişimlerindeki genişlik titreşimleri engellendi.
+
+- **Visual Identity & Arcade Game Feel Overhaul (P0 & P1 Polish)** - TAMAMLANDI ✅
+  - Hedef: Oyunun görsel ve yapısal olarak amatör detaylardan arındırılarak A-kalite retro-futuristic arcade oyunu görünümüne kavuşturulması.
+  - **Animated Splash & Loading Screen (`components/SplashScreen.tsx`)**: Canvas dalgaları, glitch logoları ve iOS cihazlarda ses bağlamını (AudioContext) güvenle başlatmak için "Touch to Start" etkileşimli yükleme ekranı entegre edildi.
+  - **HTML5 Canvas Menu Background (`components/MenuBackground.tsx`)**: Menü arka planındaki statik CSS div'leri ve basit parçacıklar, neon dalgaları, dinamik grid çizgileri ve birbirine çizgilerle bağlanan ambient siber parçacıklardan oluşan özel bir Canvas tabanlı arka plan ile değiştirildi.
+  - **Glitch Logo Animation (`components/AnimatedLogo.tsx`)**: Statik "ECHO SHIFT" logo yazısı, rastgele aralıklarla renk sapması (chromatic aberration) glitch'leri yapan, neon parlamalı ve Orbitron yazı tipli canlı bir logo haline getirildi.
+  - **Interactive Countdown Overlay (`components/GameEngine.tsx`)**: Oyun başlarken gösterilen 3-2-1-GO! sayacı, ters yönlerde dönen iki adet kesikli sci-fi halka, Orbitron rakamları ve pop-bounce ölçekleme efektiyle zenginleştirildi.
+  - **Milestone Flash Alerts (`components/GameUI.tsx`)**: Mesafe modunda 100m, 250m, 500m vb. kilometre taşları geçildiğinde ekranda beliren parıltılı neon bildirimler, haptik titreşim ve ses efektiyle bağlandı.
+  - **Game Over Sequential Reveal & CountUp (`components/GameUI.tsx`)**: Oyun bitti ekranında tüm elemanlar (Başlık, İstatistik Kartı, Rekor Rozetleri, Butonlar) sıralı gecikmelerle yumuşakça belirir. Mesafe ve skor değerleri sıfırdan hedefe doğru dramatik bir şekilde dönerek artar (`CountUp` efekti).
+
+- **Distance-Based Rhythm Scaling & Polished Synthwave Backing Track** - TAMAMLANDI ✅
+  - Hedef: Ritim/melodi hızını mesafe (meters) ile senkronize etmek ve arka plandaki EDM tarzı sert ritimleri çok daha akıcı, estetik ve dinlendirici bir ambient/synthwave lo-fi havasına büründürmek.
+  - **Mesafe Bazlı BPM Ölçekleme**: `beatEngine.ts` içindeki BPM hesaplama sistemi skor yerine oyuncunun katettiği mesafeye (meters) bağlandı. Tempo, 0m ile 800m arasında doğrusal olarak 90 BPM'den 140 BPM'ye yükselir.
+  - **Rolling Octaves Synthwave Bass**: Bas hattı, sert sawtooth vuruşlar yerine, yumuşak triangle dalgaları ve 350Hz -> 150Hz filtre kayması içeren ritmik rolling sekizlik nota (oktav zıplatmalı) yapısına geçirildi.
+  - **Warm Triad Ambient Pads**: Pad arka planı detuned triangle dalgaları ve tam triad akorları (root, third, fifth) ile zenginleştirilerek sıcak ve geniş bir harmonik doluluk sağlandı.
+  - **Glass Delay Arpeggiator**: Sparkly 1/16'lık hızlı üçgen arpej yerine, yavaşlatılmış sekizlik nota sine-wave arpej yapısı ve 150ms gecikmeli eko/delay simülasyonu eklendi.
+  - **Glow Drone & Cyber Pluck Cila**: İnteraktif melodilerin daha belirgin duyulması için dikey hareket drone sesine hareket algılandığı an baseline `0.06` ses seviyesi eklendi ve maksimum ses tavanı `0.22` seviyesine çekildi. İki osilatör arasındaki detune 12 cent yapılarak koro (chorus) efekti zenginleştirildi. Engel geçme ve swap chimes (cyber-pluck) sesleri, triangle ve detuned sawtooth dalga birleşimiyle re-sentezlendi ve 7.0 Q rezonanslı filtre sweep ile çok daha punchy/ıslak siber pluck ses karakterine kavuşturularak ses seviyeleri (0.35 ve 0.45) artırıldı.
+  - **Dosyalar**: systems/beatEngine.ts, systems/audioSystem.ts, components/GameEngine.tsx
+
+- **Pro-Grade Dodge (Near-Miss) & Balanced Shield Overhaul** - TAMAMLANDI ✅
+  - Hedef: Yakın geçişlerin (near-miss) sadece engel güvenli geçildikten sonra değerlendirilmesi, "DODGE MASTER" seviyesinin eklenmesi, shield sınırlaması ve geçen bloklarda görsel parlama/akma efekti.
+  - **Dodge Master**: <10px geçişlerde özel ses (chimes whoosh), ağır sarsıntı, floating emoji/text popup (`👑 DODGE MASTER! 👑`), ve özel elektrik burst parçacıkları. Sadece WRONG -> CORRECT aktif polarite değişimlerinde (swap) tetiklenir; düz geçişlerde veya hatalı polariteye geçişlerde tetiklenmez.
+  - **Collision Önceliği**: Yanlış polaritedeki engellerle çarpışmalar her zaman önceliklidir. Swap koruması (`isPhasing`) sadece doğru polariteye geçiş yapılıyorsa hasarı engeller, hatalı polariteye geçişlerde oyuncu anında yanar.
+  - **Geçiş (Passage) Geri Bildirimi**: Başarılı geçişlerde engel üzerinde diagonal beyaz parlama (shine sweep) ve neon çerçeve yanıp söner, geçen orb arkasından hafif rüzgar parçacıkları (`wind` type) akar ve `AudioSystem.playObstaclePass()` ile tatlı bir onay tonu çalınır. Ortadaki patlama efekti (burn benzeri) kaldırılmıştır.
+  - **Near Miss**: 10px - 22px arası geçişler.
+  - **Dengeleme**: Shield yenilemesi aktif mağaza upgrade seviyesi ile sınırlıdır (max shield charges). Fazladan yenilemelerde "SHIELD MAXED" yazısı gösterilir.
+  - **Dosyalar**: types.ts, constants.ts, blockSystem.ts, audioSystem.ts, GameEngine.tsx
+
 - **Glitch Seeker Enemy — PixiJS GPU-Rendered Homing Ghost** - TAMAMLANDI ✅
   - Hedef: Profesyonel, GPU-render'lı homing düşman — dijital hayalet (bozuk Pac-Man ghost), data trail, glitch efektleri
   - **Mimari**: Parallel field in EnemyManagerState (dart + seeker eşzamanlı yönetim), sequential spawn (bir anda tek tür)

@@ -193,7 +193,7 @@ export function updateShake(dt: number): void {
 // ============================================================================
 
 export function resizeRenderer(width: number, height: number): void {
-  if (!app) return;
+  if (!app || !app.renderer) return;
   app.renderer.resize(width, height);
   _width = width;
   _height = height;
@@ -261,6 +261,10 @@ export function createText(
 
 export function destroyRenderer(): void {
   if (app) {
+    try {
+      app.ticker?.stop();
+    } catch (_) { /* ignore */ }
+
     // Clean up layers first (safe — no PixiJS internal calls)
     layers.forEach((container) => {
       container.removeChildren();

@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import * as BlockSystem from "./blockSystem";
+import { createObstaclePool } from "./objectPool";
 
 describe("BlockSystem", () => {
   describe("createBlockSystemState", () => {
@@ -298,6 +299,70 @@ describe("BlockSystem", () => {
       const filtered = BlockSystem.filterOffscreenBlocks(obstacles);
       
       expect(filtered).toHaveLength(0);
+    });
+  });
+
+  describe("Special Feature Mutual Exclusivity & Anti-Streak Cooldown", () => {
+    it("should NEVER spawn a block pair with both Phantom and Inverter properties", () => {
+      const pool = createObstaclePool(20);
+      const state = BlockSystem.createBlockSystemState();
+
+      for (let i = 0; i < 100; i++) {
+        const ctx: BlockSystem.SpawnContext = {
+          canvasHeight: 600,
+          canvasWidth: 400,
+          score: 1000,
+          connectorLength: 100,
+          isGravityFlipped: false,
+          isDashing: false,
+          dashXOffset: 0,
+          phantomEnabled: true,
+          inverterEnabled: true,
+          forcePhantom: false,
+          rng: Math.random,
+          obstaclePool: pool,
+          state,
+        };
+
+        const pair = BlockSystem.spawnObstaclePair(ctx);
+        for (const obs of pair) {
+          // A block can NEVER be both latent (phantom) and inverting
+          const isBoth = obs.isLatent && obs.isInverting;
+          expect(isBoth).toBe(false);
+        }
+      }
+    });
+
+    it("should enforce at least 2 non-phantom pairs between phantom spawns", () => {
+      const pool = createObstaclePool(20);
+      const state = BlockSystem.createBlockSystemState();
+      let lastPhantomIndex = -99;
+
+      for (let i = 0; i < 50; i++) {
+        const ctx: BlockSystem.SpawnContext = {
+          canvasHeight: 600,
+          canvasWidth: 400,
+          score: 1000,
+          connectorLength: 100,
+          isGravityFlipped: false,
+          isDashing: false,
+          dashXOffset: 0,
+          phantomEnabled: true,
+          inverterEnabled: true,
+          forcePhantom: false,
+          rng: () => 0.01, // Force spawn chance if cooldown permits
+          obstaclePool: pool,
+          state,
+        };
+
+        const pair = BlockSystem.spawnObstaclePair(ctx);
+        const isPhantom = pair.some(o => o.isLatent);
+
+        if (isPhantom) {
+          expect(i - lastPhantomIndex).toBeGreaterThanOrEqual(3);
+          lastPhantomIndex = i;
+        }
+      }
     });
   });
 });

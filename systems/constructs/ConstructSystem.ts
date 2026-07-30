@@ -58,7 +58,8 @@ export interface ConstructSystemState {
 export function getStrategyForType(type: ConstructType): PhysicsStrategy {
   switch (type) {
     case 'TITAN':
-      return getTitanPhysics();
+      // TITAN feature is disabled for now - fallback to Standard Physics
+      return getStandardPhysics();
     case 'PHASE':
       return getPhasePhysics();
     case 'BLINK':

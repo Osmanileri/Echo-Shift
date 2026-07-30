@@ -69,12 +69,17 @@ const MissionBanner: React.FC<MissionBannerProps> = ({ mission, onDismiss }) => 
     }
   }, []);
 
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
   useEffect(() => {
     const t1 = setTimeout(() => setPhase('show'), 30);
     const t2 = setTimeout(() => setPhase('exit'), 2800);
-    const t3 = setTimeout(() => onDismiss(), 3400);
+    const t3 = setTimeout(() => onDismissRef.current(), 3400);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [onDismiss]);
+  }, []);
 
   const isWeekly = mission.category === 'WEEKLY';
   const glowRGB = isWeekly ? '168,85,247' : '34,197,94';

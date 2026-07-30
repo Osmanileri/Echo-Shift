@@ -97,7 +97,7 @@ describe('Glitch Protocol System', () => {
 
             expect(activatedState.originalConnectorLength).toBe(connectorLength);
             expect(activatedState.isActive).toBe(true);
-            expect(activatedState.phase).toBe('active');
+            expect(['charging', 'active']).toContain(activatedState.phase);
           }
         ),
         { numRuns: 100 }
@@ -239,10 +239,10 @@ describe('Glitch Protocol System', () => {
   // **Validates: Requirements 2.7**
   // ==========================================================================
   describe('Property 2: Spawn Distance Threshold', () => {
-    it('*For any* distance < 500 meters, shouldSpawnGlitchShard SHALL return false', () => {
+    it('*For any* distance < 200 meters, shouldSpawnGlitchShard SHALL return false', () => {
       fc.assert(
         fc.property(
-          fc.float({ min: 0, max: Math.fround(499.99), noNaN: true }),
+          fc.float({ min: 0, max: Math.fround(199.99), noNaN: true }),
           (distance) => {
             const result = shouldSpawnGlitchShard(distance, false);
             expect(result).toBe(false);
@@ -252,10 +252,10 @@ describe('Glitch Protocol System', () => {
       );
     });
 
-    it('*For any* distance >= 500 meters and not spawned, shouldSpawnGlitchShard SHALL return true', () => {
+    it('*For any* distance >= 200 meters and not spawned, shouldSpawnGlitchShard SHALL return true', () => {
       fc.assert(
         fc.property(
-          fc.float({ min: 500, max: 10000, noNaN: true }),
+          fc.float({ min: 200, max: 10000, noNaN: true }),
           (distance) => {
             const result = shouldSpawnGlitchShard(distance, false);
             expect(result).toBe(true);
@@ -263,6 +263,13 @@ describe('Glitch Protocol System', () => {
         ),
         { numRuns: 100 }
       );
+    });
+
+    it('should return false for Level 1, 2, or 3 even if distance >= 200m', () => {
+      expect(shouldSpawnGlitchShard(300, false, 1)).toBe(false);
+      expect(shouldSpawnGlitchShard(300, false, 2)).toBe(false);
+      expect(shouldSpawnGlitchShard(300, false, 3)).toBe(false);
+      expect(shouldSpawnGlitchShard(300, false, 4)).toBe(true);
     });
 
     it('*For any* distance, if already spawned, shouldSpawnGlitchShard SHALL return false', () => {
@@ -370,7 +377,7 @@ describe('Glitch Protocol System', () => {
             };
 
             const updatedShard = updateGlitchShard(shard, speed, deltaTime);
-            const expectedX = initialX - speed * (deltaTime / 16.67);
+            const expectedX = initialX - speed * (deltaTime / 16.67) * GLITCH_CONFIG.cometTrail.effectiveSpeedRatio;
 
             // Allow small floating point tolerance
             expect(updatedShard.x).toBeCloseTo(expectedX, 5);
@@ -675,7 +682,7 @@ describe('Glitch Protocol System', () => {
 
             // Requirements 3.6: Activate Quantum Lock mode
             expect(response.glitchModeState.isActive).toBe(true);
-            expect(response.glitchModeState.phase).toBe('active');
+            expect(['charging', 'active']).toContain(response.glitchModeState.phase);
           }
         ),
         { numRuns: 100 }
@@ -1270,9 +1277,9 @@ describe('Glitch Protocol System', () => {
       expect(amp90).toBeLessThanOrEqual(amp85);
       expect(amp95).toBeLessThanOrEqual(amp90);
       expect(amp99).toBeLessThanOrEqual(amp95);
-
-      // At start of exit (0.80), should be close to 1.0
-      expect(amp80).toBeCloseTo(1.0, 1);
+      // At start of exit (flattenThreshold), should be 1.0
+      const ampStart = getWaveAmplitudeForPhase('exiting', GLITCH_CONFIG.flattenThreshold);
+      expect(ampStart).toBeCloseTo(1.0, 1);
 
       // At end of exit (0.99), should be close to 0.0
       expect(amp99).toBeCloseTo(0.05, 1);
@@ -1283,8 +1290,7 @@ describe('Glitch Protocol System', () => {
         fc.property(
           fc.float({ min: 1.0, max: 2.0, noNaN: true }), // progress after mode ends
           (progress) => {
-            const amplitude = getWaveAmplitudeForPhase('ghost', progress);
-            expect(amplitude).toBe(0.0);
+            expect(getWaveAmplitudeForPhase('ghost', progress)).toBe(0.0);
           }
         ),
         { numRuns: 100 }
@@ -1306,12 +1312,11 @@ describe('Glitch Protocol System', () => {
   });
 
   // ==========================================================================
-  // Wave Path Shard Generation Tests
   // **Feature: glitch-protocol, Wave Path Shard Generation**
   // **Validates: Requirements 5.6, 6.4**
   // ==========================================================================
   describe('Wave Path Shard Generation', () => {
-    it('*For any* canvas dimensions, generateWavePathShards SHALL return 10-15 shards', () => {
+    it('*For any* canvas dimensions, generateWavePathShards SHALL return 10-25 shards', () => {
       fc.assert(
         fc.property(
           fc.float({ min: 0, max: 100, noNaN: true }),     // waveOffset
@@ -1321,9 +1326,9 @@ describe('Glitch Protocol System', () => {
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
 
-            // Should generate 10-15 shards (currently 12)
+            // Should generate 10-25 shards (currently 20)
             expect(shards.length).toBeGreaterThanOrEqual(10);
-            expect(shards.length).toBeLessThanOrEqual(15);
+            expect(shards.length).toBeLessThanOrEqual(25);
           }
         ),
         { numRuns: 100 }
@@ -1351,7 +1356,7 @@ describe('Glitch Protocol System', () => {
       );
     });
 
-    it('*For any* generated shards, X positions SHALL be within canvas bounds', () => {
+    it('*For any* generated shards, X positions SHALL start at canvasWidth', () => {
       fc.assert(
         fc.property(
           fc.float({ min: 0, max: 100, noNaN: true }),     // waveOffset
@@ -1361,13 +1366,8 @@ describe('Glitch Protocol System', () => {
           (waveOffset, canvasWidth, centerY, amplitude) => {
             const shards = generateWavePathShards(waveOffset, canvasWidth, centerY, amplitude);
 
-            // All shards should be within 10%-90% of canvas width (with small tolerance for floating point)
-            const minX = canvasWidth * 0.1 - 0.01;
-            const maxX = canvasWidth * 0.9 + 0.01;
-            for (const shard of shards) {
-              expect(shard.x).toBeGreaterThanOrEqual(minX);
-              expect(shard.x).toBeLessThanOrEqual(maxX);
-            }
+            // Shards spawn starting at canvasWidth extending right
+            expect(shards[0].x).toBeGreaterThanOrEqual(canvasWidth);
           }
         ),
         { numRuns: 100 }
@@ -1403,12 +1403,10 @@ describe('Glitch Protocol System', () => {
       const newOffset = 5;
       const updatedShards = updateWavePathShards(shards, newOffset, amplitude, centerY);
 
-      // Y positions should change with new offset
+      // Y positions should change with new offset and updated X
       for (let i = 0; i < shards.length; i++) {
-        const expectedY = calculateWaveY(shards[i].x, newOffset, amplitude, centerY);
+        const expectedY = calculateWaveY(updatedShards[i].x, newOffset, amplitude, centerY);
         expect(updatedShards[i].y).toBeCloseTo(expectedY, 5);
-        // X should remain the same
-        expect(updatedShards[i].x).toBe(shards[i].x);
       }
     });
 

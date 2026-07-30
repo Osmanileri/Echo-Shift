@@ -97,9 +97,13 @@ export function renderCollectible(
   ctx.stroke();
   ctx.restore();
 
-  // Draw glow effect
-  ctx.shadowColor = NEON_CYAN;
-  ctx.shadowBlur = 15;
+  // Draw glow effect with high-performance dual arcs (no shadowBlur)
+  ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius + 4, 0, Math.PI * 2);
+  ctx.fillStyle = NEON_CYAN;
+  ctx.fill();
+
   ctx.globalAlpha = 0.6;
   ctx.beginPath();
   ctx.arc(0, 0, radius, 0, Math.PI * 2);
@@ -107,7 +111,6 @@ export function renderCollectible(
   ctx.fill();
 
   // Draw letter fill - Requirements 2.1
-  ctx.shadowBlur = 0;
   ctx.globalAlpha = 1.0;
   ctx.fillStyle = NEON_CYAN;
   ctx.font = 'bold 24px Arial';

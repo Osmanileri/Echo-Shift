@@ -105,14 +105,15 @@ export const GRAVITY_CONFIG = {
 };
 
 // Near Miss System Configuration - Requirements 3.1, 3.7
-// AYNI RENKLİ blok + orbdan yakın geçiş bonusu
 export const NEAR_MISS_CONFIG = {
-  threshold: 8,                 // Yakın geçiş mesafesi (piksel) - düşürüldü
+  threshold: 22,                 // Yakın geçiş mesafesi (piksel) - artırıldı
   bonusMultiplier: 1.5,         // Temel puan çarpanı (15 puan) - düşürüldü
   streakWindow: 3000,           // Streak penceresi (ms) - 3 saniye 
   streakBonusAt: 4,             // Bonus için gereken streak - artırıldı
   streakBonusPoints: 15,        // Streak bonusu - düşürüldü
   maxStreakMultiplier: 2,       // Maksimum combo çarpanı (x2) - düşürüldü
+  dodgeMasterThreshold: 10,     // Dodge Master yakınlık eşiği (piksel)
+  dodgeMasterMultiplier: 3.0,   // Dodge Master puan çarpanı (30 puan)
 };
 
 // Dynamic Midline System Configuration - Requirements 4.2, 4.11, 4.12, 4.13
@@ -132,14 +133,23 @@ export const MIDLINE_CONFIG = {
 
 // Phantom Obstacle System Configuration - Requirements 5.1, 5.2, 5.7, 5.8, 5.10, 5.11
 export const PHANTOM_CONFIG = {
-  activationScore: 0,           // TEST: Phantom spawn'ın aktif olacağı skor (normalde 500)
-  revealDistance: 300,          // Tam görünür olma mesafesi (piksel)
-  baseSpawnProbability: 0.10,   // Temel spawn olasılığı (%10)
-  maxSpawnProbability: 0.40,    // Maksimum spawn olasılığı (%40)
-  probabilityMaxScore: 5000,    // Max olasılığa ulaşılan skor
-  minOpacity: 0.05,             // Minimum saydamlık (hayalet kontur)
-  bonusPoints: 20,              // Phantom geçiş bonusu
-  nearMissMultiplier: 2,        // Near miss çarpanı
+  activationScore: 0,           // Skor threshold for phantom spawning (0 = available from start)
+  revealDistance: 280,          // Distance (px) at which opacity settles near player
+  baseSpawnProbability: 0.08,   // Base spawn probability (%8 - subtle low rate as requested)
+  maxSpawnProbability: 0.25,    // Maximum spawn probability (%25)
+  probabilityMaxScore: 5000,    // Score at which max probability is reached
+  minOpacity: 0.16,             // Minimum opacity (%16) so obstacle is translucent & slightly visible ("az da olsa göründüğü")
+  bonusPoints: 20,              // Bonus points for passing phantom
+  nearMissMultiplier: 2,        // Near miss multiplier
+};
+
+// Inverter / Color-Shift Obstacle System Configuration
+export const INVERTER_CONFIG = {
+  baseSpawnProbability: 0.10,     // 10% spawn chance for synchronized inverter pairs (subtle & balanced)
+  phantomInvertProbability: 0.20,  // 20% chance for phantom pairs to also invert
+  invertDistance: 280,            // Dynamic fallback X threshold where polarity flips early (px)
+  warningDistance: 60,            // Super fast warning flash before instant inversion (px)
+  bonusPoints: 30,                // Bonus points for passing a synchronized inverter block
 };
 
 // S.H.I.F.T. Protocol Configuration - Requirements 3.1, 3.4, 4.5, 4.6, 9.2, 9.4
@@ -243,8 +253,8 @@ export const GLITCH_SEEKER_CONFIG = {
 // Glitch Protocol Configuration - Requirements 7.1, 6.5, 2.7, 2.6
 export const GLITCH_CONFIG = {
   // Duration - Requirements 7.1
-  duration: 6000,                // Quantum Lock duration (3 seconds)
-  chargingDuration: 1500, // Cinematic slow entry (2 seconds)
+  duration: 8000,                // Quantum Lock duration (8 seconds)
+  chargingDuration: 1500, // Cinematic slow entry (1.5 seconds)
 
   // Connector - Requirements 4.2
   idealConnectorLength: 80,       // Target connector length during Quantum Lock (minimal growth)
@@ -253,8 +263,8 @@ export const GLITCH_CONFIG = {
   waveAmplitude: 120,             // Sinusoidal wave amplitude (pixels)
 
   // Phase Thresholds - Requirements 7.2, 7.3
-  warningThreshold: 0.65,         // Start warning at 65%
-  flattenThreshold: 0.70,         // Start exiting (Snake Out) at 70%
+  warningThreshold: 0.75,         // Start warning at 75%
+  flattenThreshold: 0.80,         // Start exiting (Snake Out) at 80%
 
   // Ghost Mode - Requirements 7.4
   ghostModeDuration: 1500,       // Ghost Mode duration after Quantum Lock (ms)
@@ -264,7 +274,7 @@ export const GLITCH_CONFIG = {
   distanceMultiplier: 3,         // 3x distance accumulation during Quantum Lock
 
   // Spawn Rules - Requirements 2.7, 2.6
-  minSpawnDistance: 0,         // Minimum distance traveled before spawn (meters) - TEST: 100m (was 500)
+  minSpawnDistance: 200,         // Minimum distance traveled before spawn (meters)
   spawnClearance: 150,           // Minimum clearance from obstacles (pixels)
 
   // Visual Effects - Requirements 1.2

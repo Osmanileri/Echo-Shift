@@ -409,12 +409,26 @@ export function createEngineObstaclePool(
       const poolItem = items.find((i) => i.id === item.id);
       if (poolItem && poolItem.active) {
         poolItem.active = false;
+        poolItem.wasHit = false;
+        poolItem.hitTime = undefined;
+        poolItem.passed = false;
+        poolItem.passTime = undefined;
+        poolItem.isLatent = false;
+        poolItem.isInverting = false;
+        poolItem.hasInverted = false;
         activeCount = Math.max(0, activeCount - 1);
       }
     },
     reset(): void {
       for (const item of items) {
         item.active = false;
+        item.wasHit = false;
+        item.hitTime = undefined;
+        item.passed = false;
+        item.passTime = undefined;
+        item.isLatent = false;
+        item.isInverting = false;
+        item.hasInverted = false;
       }
       activeCount = 0;
     },

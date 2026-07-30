@@ -57,7 +57,7 @@ export function activateQuantumLock(
     ...state,
     isActive: true,
     startTime: Date.now(),
-    duration: GLITCH_CONFIG.chargingDuration, // Start with charging duration
+    duration: GLITCH_CONFIG.duration, // 8000ms - Requirements 7.1
     originalConnectorLength: currentConnectorLength,
     waveOffset: 0,
     wavePattern: selectRandomWavePattern(), // Random pattern each activation
@@ -212,14 +212,20 @@ export function createGlitchShard(
  */
 export function shouldSpawnGlitchShard(
   distanceTraveled: number,
-  hasSpawnedThisLevel: boolean
+  hasSpawnedThisLevel: boolean,
+  currentLevelId?: number
 ): boolean {
   // Don't spawn if already spawned this level
   if (hasSpawnedThisLevel) {
     return false;
   }
 
-  // Requirements 2.7: Minimum distance threshold
+  // Level gating: Do NOT spawn in Level 1, 2, or 3 (unlocks after Chapter 3, i.e. Level 4+)
+  if (currentLevelId !== undefined && currentLevelId <= 3) {
+    return false;
+  }
+
+  // Minimum distance threshold
   if (distanceTraveled < GLITCH_CONFIG.minSpawnDistance) {
     return false;
   }
@@ -355,8 +361,6 @@ export function checkGlitchShardCollision(
  * Requirements 6.3, 7.6: Invulnerability during bonus modes
  */
 export function isInvulnerable(glitchState: GlitchModeState): boolean {
-  // Not invulnerable during charging phase
-  if (glitchState.phase === 'charging') return false;
   return glitchState.isActive || glitchState.phase === 'ghost';
 }
 
@@ -365,7 +369,6 @@ export function isInvulnerable(glitchState: GlitchModeState): boolean {
  * Requirements 6.5: 2x during Quantum Lock
  */
 export function getShardMultiplier(glitchState: GlitchModeState): number {
-  if (glitchState.phase === 'charging') return 1;
   return glitchState.isActive ? GLITCH_CONFIG.shardMultiplier : 1;
 }
 
@@ -374,7 +377,6 @@ export function getShardMultiplier(glitchState: GlitchModeState): number {
  * 3x during Quantum Lock for faster progress
  */
 export function getDistanceMultiplier(glitchState: GlitchModeState): number {
-  if (glitchState.phase === 'charging') return 1;
   return glitchState.isActive ? GLITCH_CONFIG.distanceMultiplier : 1;
 }
 
@@ -383,7 +385,6 @@ export function getDistanceMultiplier(glitchState: GlitchModeState): number {
  * Requirements 5.7: Stabilize game speed during Quantum Lock
  */
 export function shouldStabilizeSpeed(glitchState: GlitchModeState): boolean {
-  if (glitchState.phase === 'charging') return false;
   return glitchState.isActive;
 }
 
@@ -392,7 +393,6 @@ export function shouldStabilizeSpeed(glitchState: GlitchModeState): boolean {
  * Requirements 6.1: Stop spawning new obstacles during Quantum Lock
  */
 export function shouldBlockObstacleSpawn(glitchState: GlitchModeState): boolean {
-  if (glitchState.phase === 'charging') return false;
   return glitchState.isActive;
 }
 

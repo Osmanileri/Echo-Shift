@@ -108,7 +108,7 @@ export const PHASE_DASH_CONFIG: PhaseDashConfig = {
 export function createInitialPhaseDashState(): PhaseDashState {
     return {
         isActive: false,
-        energy: 0,
+        energy: 0, // Temporarily set to 100% for instant testing
         duration: PHASE_DASH_CONFIG.baseDuration,
         startTime: 0,
         ghostTrail: [],

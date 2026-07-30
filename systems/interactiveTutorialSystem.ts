@@ -164,7 +164,7 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
     {
         phase: 'SWAP_MECHANIC',
         title: 'Yer Değiştirme',
-        message: 'Ters renk blok geliyor!\nParmağını BIRAK = Yer Değiştir',
+        message: 'Ters renk blok geliyor!\nEkrana TIKLA = 1 Kere Döndür',
         targetGoal: 2,
         speedMultiplier: 0.8,
         waitForInput: true,
@@ -351,7 +351,7 @@ export function advanceToNextPhase(state: TutorialState): TutorialState {
         swapSubPhase: 0,
         swapBlockZoomActive: false,
         swapSuccessTime: 0,
-        swapLocked: nextConfig.phase === 'SWAP_MECHANIC',
+        swapLocked: nextConfig.phase === 'INTRO' || nextConfig.phase === 'NAVIGATION' || nextConfig.phase === 'SWAP_MECHANIC',
         swapSuccessCount: 0,
 
         navigationSubPhase: nextConfig.phase === 'NAVIGATION' ? 0 : state.navigationSubPhase,
@@ -412,7 +412,7 @@ export function failPhase(state: TutorialState): TutorialState {
         swapSubPhase: 0,
         swapBlockZoomActive: false,
         swapSuccessTime: 0,
-        swapLocked: currentConfig.phase === 'SWAP_MECHANIC',
+        swapLocked: currentConfig.phase === 'INTRO' || currentConfig.phase === 'NAVIGATION' || currentConfig.phase === 'SWAP_MECHANIC',
         swapSuccessCount: 0,
         showTimeDistortion: false,
 

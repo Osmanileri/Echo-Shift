@@ -69,6 +69,7 @@ describe('generateDailyMissions', () => {
         fc.date({ min: new Date('2024-01-01'), max: new Date('2030-01-01') }),
         fc.integer({ min: 1, max: 100 }),
         (date, level) => {
+          if (isNaN(date.getTime())) return true;
           const dateStr = date.toISOString().split('T')[0];
           const missions = generateDailyMissions(dateStr, level);
           expect(missions).toHaveLength(3);
@@ -432,5 +433,50 @@ describe('validateMissionState', () => {
   test('returns state for valid data', () => {
     const state = getDefaultMissionState();
     expect(validateMissionState(state)).toEqual(state);
+  });
+});
+
+// ============================================================================
+// Quest Tree Progression
+// ============================================================================
+
+describe('Quest Tree Progression Tests', () => {
+  test('unlocked tree missions progress, locked ones do not', () => {
+    const state = getDefaultMissionState();
+    
+    expect(state.tree).toBeDefined();
+    expect(state.tree!.missions.length).toBe(15);
+    
+    const m1 = state.tree!.missions.find(m => m.id === 'tree-reflex-1');
+    const m2 = state.tree!.missions.find(m => m.id === 'tree-reflex-2');
+    
+    expect(m1).toBeDefined();
+    expect(m2).toBeDefined();
+    expect(m1!.progress).toBe(0);
+    expect(m2!.progress).toBe(0);
+    
+    // Fire a NEAR_MISS event (type of m1)
+    const { newState } = updateMissionProgress(state, { type: 'NEAR_MISS', value: 3 });
+    
+    const updatedM1 = newState.tree!.missions.find(m => m.id === 'tree-reflex-1');
+    expect(updatedM1!.progress).toBe(3);
+    
+    // Fire a SWAP_COUNT event (type of m2)
+    const { newState: newState2 } = updateMissionProgress(newState, { type: 'SWAP_COUNT', value: 5 });
+    
+    // m2 should NOT progress because its prerequisite m1 is not completed & claimed yet!
+    const updatedM2 = newState2.tree!.missions.find(m => m.id === 'tree-reflex-2');
+    expect(updatedM2!.progress).toBe(0);
+    
+    // Complete and claim m1
+    const { newState: completedState } = updateMissionProgress(newState, { type: 'NEAR_MISS', value: 2 });
+    const claimedState = markMissionClaimed(completedState, 'tree-reflex-1');
+    
+    // Now fire SWAP_COUNT event again
+    const { newState: finalState } = updateMissionProgress(claimedState, { type: 'SWAP_COUNT', value: 5 });
+    
+    // m2 should now progress because its prerequisite is claimed!
+    const finalM2 = finalState.tree!.missions.find(m => m.id === 'tree-reflex-2');
+    expect(finalM2!.progress).toBe(5);
   });
 });

@@ -85,13 +85,14 @@ const _onBeatCallbacks: BeatCallback[] = [];
 // ============================================================================
 
 /**
- * Returns the dynamic BPM for a given score.
- * Formula mirrors `getFlowSpeed`: baseBPM + (maxBPM - baseBPM) * log(1 + score/scoreBase) / log(1 + scaleFactor)
+ * Returns the dynamic BPM for a given distance in meters.
+ * Linearly scales from baseBPM to maxBPM over 800 meters.
  */
-export function scaleBPM(score: number): number {
-  const { baseBPM, maxBPM, scaleFactor, scoreBase } = BPM_CONFIG;
-  const t = Math.log(1 + score / scoreBase) / Math.log(1 + scaleFactor);
-  return Math.min(maxBPM, baseBPM + (maxBPM - baseBPM) * Math.min(1, t));
+export function scaleBPM(distance: number): number {
+  const baseBPM = 90;
+  const maxBPM = 140;
+  const progress = Math.min(1.0, distance / 800);
+  return baseBPM + (maxBPM - baseBPM) * progress;
 }
 
 // ============================================================================
@@ -177,11 +178,11 @@ function _runScheduler(): void {
  * Start the beat engine.  Call once when gameplay begins.
  * Initialises the AudioContext clock and starts the scheduler + music layers.
  */
-export function start(initialScore = 0): void {
+export function start(initialDistance = 0): void {
   const ctx = getAudioContext();
   if (!ctx) return;
 
-  _bpm = scaleBPM(initialScore);
+  _bpm = scaleBPM(initialDistance);
   _currentBeat = 0;
   _lastScheduledBeat = -1;
   _startTime = ctx.currentTime;
@@ -189,7 +190,7 @@ export function start(initialScore = 0): void {
   _pauseTime = 0;
   _isPaused = false;
   _isRunning = true;
-  _lastScore = initialScore;
+  _lastScore = initialDistance;
 
   // Start procedural music layers
   startBeatMusic(_bpm);
@@ -279,16 +280,16 @@ export function stop(): void {
  * Call every frame with the current score to keep BPM in sync.
  * Also updates the music layers when BPM changes.
  */
-export function update(score: number): void {
+export function update(distance: number): void {
   if (!_isRunning || _isPaused) return;
 
-  _lastScore = score;
-  const newBPM = scaleBPM(score);
+  _lastScore = distance;
+  const newBPM = scaleBPM(distance);
 
   // Only push a music update when BPM changes noticeably (>0.5)
   if (Math.abs(newBPM - _bpm) > 0.5) {
     _bpm = newBPM;
-    updateBeatMusic(_bpm, score);
+    updateBeatMusic(_bpm, distance);
   }
 
   // Keep _currentBeat in sync for external queries
@@ -368,4 +369,14 @@ export function getState(): BeatState {
     isRunning: _isRunning && !_isPaused,
     isPaused: _isPaused,
   };
+}
+
+/** Start time of the beat engine (in AudioContext time). */
+export function getStartTime(): number {
+  return _startTime;
+}
+
+/** Total paused duration (in AudioContext time). */
+export function getTotalPausedDuration(): number {
+  return _totalPausedDuration;
 }

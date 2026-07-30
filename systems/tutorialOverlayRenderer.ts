@@ -239,4 +239,93 @@ export class TutorialOverlayRenderer {
 
         ctx.restore();
     }
+
+    /**
+     * Renders Lock/Unlock indicator badge for rotation capability (DÖNDÜR KİLİDİ)
+     */
+    static renderSwapLockIndicator(
+        ctx: CanvasRenderingContext2D,
+        state: TutorialState,
+        width: number,
+        height: number
+    ): void {
+        if (state.currentPhase !== 'SWAP_MECHANIC') return;
+
+        const isUnlocked = !state.swapLocked;
+        const now = Date.now();
+        const pulse = Math.sin(now / 150);
+
+        ctx.save();
+
+        const panelWidth = Math.min(width * 0.85, 270);
+        const panelHeight = 44;
+        const panelX = width / 2;
+        // Place badge below main message panel
+        const panelY = height * 0.24;
+
+        ctx.translate(panelX, panelY);
+
+        if (isUnlocked) {
+            // UNLOCKED: Bright glowing cyan badge (1/1 HAK)
+            ctx.fillStyle = 'rgba(0, 30, 45, 0.92)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 22);
+            else ctx.rect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight);
+            ctx.fill();
+
+            ctx.strokeStyle = `rgba(0, 240, 255, ${0.8 + pulse * 0.2})`;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 14 + pulse * 6;
+            ctx.stroke();
+
+            // Lock Icon (Unlocked 🔓)
+            ctx.shadowBlur = 0;
+            ctx.font = 'bold 20px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('🔓', -panelWidth / 2 + 24, 0);
+
+            // Text: DÖNDÜR HAKKI: AÇIK (1/1)
+            ctx.font = 'bold 12px "Courier New", monospace';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'left';
+            ctx.fillText('DÖNDÜR KİLİDİ: AÇIK (1/1 HAK)', -panelWidth / 2 + 44, -5);
+
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillStyle = '#00ffff';
+            ctx.fillText('Ekrana Tıkla / Bırak = 1 Kere Döndür', -panelWidth / 2 + 44, 9);
+        } else {
+            // LOCKED: Translucent Dark Red/Gray badge (0/1 HAK)
+            ctx.fillStyle = 'rgba(25, 20, 25, 0.85)';
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 22);
+            else ctx.rect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(255, 100, 100, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Lock Icon (Locked 🔒)
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ff6b6b';
+            ctx.fillText('🔒', -panelWidth / 2 + 24, 0);
+
+            // Text: DÖNDÜR HAKKI: KİLİTLİ
+            ctx.font = 'bold 12px "Courier New", monospace';
+            ctx.fillStyle = '#cccccc';
+            ctx.textAlign = 'left';
+            ctx.fillText('DÖNDÜR KİLİDİ: KİLİTLİ (0 HAK)', -panelWidth / 2 + 44, -4);
+
+            ctx.font = '10px sans-serif';
+            ctx.fillStyle = '#888888';
+            ctx.fillText('Blok yaklaşınca kilit açılacak', -panelWidth / 2 + 44, 9);
+        }
+
+        ctx.restore();
+    }
 }

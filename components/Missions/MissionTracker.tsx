@@ -141,7 +141,7 @@ const TrackerRow: React.FC<{
 /*  Main Tracker                                                               */
 /* ========================================================================== */
 
-const MissionTracker: React.FC<MissionTrackerProps> = ({ missions, onTap }) => {
+const MissionTracker: React.FC<MissionTrackerProps> = ({ missions }) => {
   const stylesInjected = useRef(false);
 
   useEffect(() => {
@@ -156,9 +156,8 @@ const MissionTracker: React.FC<MissionTrackerProps> = ({ missions, onTap }) => {
   if (missions.length === 0) return null;
 
   return (
-    <button
-      onClick={onTap}
-      className="fixed left-2 top-1/3 w-[148px] p-2 rounded-xl bg-black/65 backdrop-blur-sm border border-white/8 hover:bg-black/75 hover:border-cyan-500/25 active:scale-95 z-20 transition-colors duration-200"
+    <div
+      className="fixed left-2 top-1/3 w-[148px] p-2 rounded-xl bg-black/65 backdrop-blur-sm border border-white/8 pointer-events-none select-none z-20"
       style={{
         paddingTop: 'max(8px, var(--safe-top, 0px))',
         animation: 'trackerSlideIn 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.3s both, trackerBreathing 4s ease-in-out 2s infinite',
@@ -169,7 +168,7 @@ const MissionTracker: React.FC<MissionTrackerProps> = ({ missions, onTap }) => {
           <TrackerRow key={m.id} mission={m} index={i} />
         ))}
       </div>
-    </button>
+    </div>
   );
 };
 

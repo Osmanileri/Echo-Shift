@@ -1,18 +1,10 @@
 /**
- * DailyMissionsPanel — Unified daily missions panel (replaces RitualsPanel)
+ * DailyMissionsPanel — Unified daily missions panel + Quest Tree (Görev Ağacı)
  *
  * Shows:
- *   • 3 daily mission cards (COMBAT / EXPLORER / MASTER) with progress bars
- *   • Daily bonus bar (complete all 3 → bonus reward)
- *   • 1 weekly mission card
- *   • Countdown to next reset
- *   • Sound Check missions if not yet completed
- *
- * Professional enter/exit animations:
- *   • Backdrop fade-in/out
- *   • Panel scale-up from 0.85 + slide-up with spring overshoot
- *   • Cards stagger fade-in
- *   • Claim overlays with glow pulse
+ *   • Tab 1: GÖREV AĞACI (Permanent progression tree: REFLEX / EXPLORER / DISCIPLINE)
+ *   • Tab 2: GÜNLÜK / HAFTALIK (Daily slot-based missions + Weekly + Bonus)
+ *   • Sound Check missions if not yet completed (at the top)
  */
 
 import {
@@ -305,12 +297,12 @@ const WeeklyCard: React.FC<{
           {mission.rewards.xp > 0 && (
             <div className="flex items-center gap-0.5">
               <Zap className="w-3.5 h-3.5 text-yellow-400" />
-              <span className="text-yellow-400 text-xs font-bold">+{mission.rewards.xp}</span>
+              <span className="text-yellow-400 text-xs font-bold font-mono">+{mission.rewards.xp}</span>
             </div>
           )}
           <div className="flex items-center gap-0.5">
             <Gem className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="text-cyan-400 text-xs font-bold">+{mission.rewards.shards}</span>
+            <span className="text-cyan-400 text-xs font-bold font-mono">+{mission.rewards.shards}</span>
           </div>
         </div>
       </div>
@@ -363,7 +355,7 @@ const ResetCountdown: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex items-center justify-center gap-2 text-gray-500 text-xs font-mono">
+    <div className="flex items-center justify-center gap-2 text-gray-500 text-[11px] font-mono">
       <Clock className="w-3.5 h-3.5" />
       <span>Yenilenmeye <span className="text-cyan-400 tabular-nums">{timeLeft}</span> kaldı</span>
     </div>
@@ -460,6 +452,31 @@ const DailyMissionsPanel: React.FC<DailyMissionsPanelProps> = ({
     && dailyMissions.length > 0
     && !missionState.daily.bonusClaimed;
 
+  /* ── Tab state ───────────────────────────────────────────────────────── */
+  const [activeTab, setActiveTab] = useState<'daily' | 'tree'>('tree'); // Default to tree
+  const treeMissions = missionState.tree?.missions || [];
+
+  // Find default selected tree mission: highest unlocked but unclaimed, or ready to claim
+  const defaultSelectedId = useMemo(() => {
+    if (treeMissions.length === 0) return null;
+    const ready = treeMissions.find(m => m.completed && !m.claimed);
+    if (ready) return ready.id;
+    const active = treeMissions.find(m => {
+      if (m.claimed) return false;
+      const isLocked = m.prerequisiteId && !treeMissions.find(prev => prev.id === m.prerequisiteId)?.claimed;
+      return !isLocked;
+    });
+    return active ? active.id : treeMissions[0].id;
+  }, [treeMissions]);
+
+  const [selectedTreeMissionId, setSelectedTreeMissionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedTreeMissionId && defaultSelectedId) {
+      setSelectedTreeMissionId(defaultSelectedId);
+    }
+  }, [selectedTreeMissionId, defaultSelectedId]);
+
   /* ── Animation state ────────────────────────────────────────────────── */
   const [animPhase, setAnimPhase] = useState<'entering' | 'open' | 'exiting'>('entering');
   const stylesInjected = useRef(false);
@@ -500,6 +517,174 @@ const DailyMissionsPanel: React.FC<DailyMissionsPanelProps> = ({
     const delay = 0.06 * cardIndex;
     cardIndex++;
     return delay;
+  };
+
+  // Render a branch column in the Quest Tree
+  const renderBranchColumn = (branch: 'REFLEX' | 'EXPLORER' | 'DISCIPLINE', title: string, color: string) => {
+    const branchMissions = treeMissions.filter(m => m.branch === branch).sort((a, b) => (a.tier || 0) - (b.tier || 0));
+    
+    const themeColors: Record<string, { line: string, nodeBorder: string, glow: string, text: string }> = {
+      cyan: { line: 'bg-cyan-500/25', nodeBorder: 'border-cyan-500/40', glow: 'shadow-[0_0_12px_rgba(6,182,212,0.3)]', text: 'text-cyan-400' },
+      red: { line: 'bg-red-500/25', nodeBorder: 'border-red-500/40', glow: 'shadow-[0_0_12px_rgba(239,68,68,0.3)]', text: 'text-red-400' },
+      amber: { line: 'bg-amber-500/25', nodeBorder: 'border-amber-500/40', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.3)]', text: 'text-amber-400' },
+    };
+    const colors = themeColors[color] || themeColors.cyan;
+
+    return (
+      <div className="flex flex-col items-center flex-1 relative min-w-[90px] py-2">
+        {/* Track Line */}
+        <div className="absolute w-[2px] bg-gray-800 top-10 bottom-6 z-0 pointer-events-none" />
+        
+        {/* Branch Title */}
+        <div className={`text-[10px] font-black tracking-widest ${colors.text} mb-3.5 uppercase text-center`}>
+          {title}
+        </div>
+        
+        {/* Nodes */}
+        <div className="flex flex-col gap-6 items-center relative z-10 w-full">
+          {branchMissions.map((m) => {
+            const isClaimed = m.claimed;
+            const isCompleted = m.completed && !isClaimed;
+            const isLocked = m.prerequisiteId && !treeMissions.find(prev => prev.id === m.prerequisiteId)?.claimed;
+            const isActive = !isLocked && !m.completed && !m.claimed;
+            const isSelected = selectedTreeMissionId === m.id;
+            
+            let nodeStyle = 'bg-gray-900 border-gray-700/50 text-gray-500';
+            let icon = <span>{m.tier}</span>;
+            
+            if (isClaimed) {
+              nodeStyle = 'bg-green-500/10 border-green-500 text-green-400 shadow-[0_0_8px_rgba(34,197,94,0.15)]';
+              icon = <CheckCircle className="w-4 h-4" />;
+            } else if (isCompleted) {
+              nodeStyle = 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-[0_0_15px_rgba(16,185,129,0.5)] cursor-pointer';
+              icon = <span>{m.icon || m.tier}</span>;
+            } else if (isActive) {
+              nodeStyle = `bg-gray-950 border-2 ${colors.nodeBorder} ${colors.text} font-bold cursor-pointer hover:bg-gray-900`;
+              icon = <span>{m.icon || m.tier}</span>;
+            } else if (isLocked) {
+              nodeStyle = 'bg-gray-950/40 border-gray-800/40 text-gray-700 opacity-40';
+              icon = <Clock className="w-3.5 h-3.5" />;
+            }
+
+            return (
+              <button
+                key={m.id}
+                onClick={() => {
+                  if (!isLocked) {
+                    AudioSystem.playButtonClick();
+                    getHapticSystem().trigger('selection');
+                    setSelectedTreeMissionId(m.id);
+                  }
+                }}
+                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-all relative ${nodeStyle} ${
+                  isSelected ? 'ring-2 ring-white scale-110' : 'hover:scale-105 active:scale-95'
+                }`}
+                disabled={isLocked && !isSelected}
+              >
+                {icon}
+                
+                {/* Visual marker for Tier indicator */}
+                <div className="absolute -bottom-1 -right-1 text-[7px] bg-black border border-gray-800 px-1 rounded-full text-gray-400 font-mono scale-90 select-none">
+                  T{m.tier}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const selectedMission = treeMissions.find(m => m.id === selectedTreeMissionId);
+
+  const renderSelectedMissionDetail = () => {
+    if (!selectedMission) return null;
+    
+    const isClaimed = selectedMission.claimed;
+    const isCompleted = selectedMission.completed && !isClaimed;
+    const branchColor = selectedMission.branch === 'REFLEX' ? 'red' : selectedMission.branch === 'EXPLORER' ? 'cyan' : 'amber';
+    
+    const colors: Record<string, { text: string, bg: string, border: string, progress: string }> = {
+      red: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', progress: 'red' },
+      cyan: { text: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', progress: 'cyan' },
+      amber: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', progress: 'amber' },
+    };
+    const c = colors[branchColor];
+
+    return (
+      <div className={`p-4 border rounded-xl bg-gray-900/60 backdrop-blur-sm border-gray-700/40 relative mt-4 mx-1`}>
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-black border tracking-wider bg-black/40 ${
+                selectedMission.branch === 'REFLEX' ? 'text-red-400 border-red-500/30' : 
+                selectedMission.branch === 'EXPLORER' ? 'text-cyan-400 border-cyan-500/30' : 'text-amber-400 border-amber-500/30'
+              }`}>
+                {selectedMission.branch === 'REFLEX' ? 'REFLEKS' : selectedMission.branch === 'EXPLORER' ? 'KEŞİF' : 'DİSİPLİN'} • TIER {selectedMission.tier}
+              </span>
+            </div>
+            <h3 className="font-bold text-white text-sm flex items-center gap-2">
+              {selectedMission.icon && <span>{selectedMission.icon}</span>}
+              {selectedMission.title}
+            </h3>
+          </div>
+          
+          <div className="flex gap-2 shrink-0">
+            {selectedMission.rewards.xp > 0 && (
+              <div className="flex items-center gap-0.5">
+                <Zap className="w-3.5 h-3.5 text-yellow-400" />
+                <span className="text-yellow-400 text-xs font-bold font-mono">+{selectedMission.rewards.xp}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-0.5">
+              <Gem className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-cyan-400 text-xs font-bold font-mono">+{selectedMission.rewards.shards}</span>
+            </div>
+          </div>
+        </div>
+        
+        <p className="text-gray-400 text-xs mb-3 leading-relaxed">
+          {selectedMission.description}
+        </p>
+        
+        {!isClaimed && (
+          <>
+            <ProgressBar
+              current={selectedMission.progress}
+              goal={selectedMission.goal}
+              completed={selectedMission.completed}
+              color={c.progress}
+            />
+            <div className="flex justify-between text-[9px] text-gray-500 font-mono mt-1">
+              <span>İLERLEME</span>
+              <span>{selectedMission.progress} / {selectedMission.goal}</span>
+            </div>
+          </>
+        )}
+        
+        {isCompleted && (
+          <button
+            onClick={() => {
+              AudioSystem.playButtonClick();
+              getHapticSystem().trigger('selection');
+              onClaimMission(selectedMission.id);
+            }}
+            className="w-full mt-2.5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-400 text-black font-black text-xs tracking-[0.15em] rounded-lg hover:shadow-[0_0_15px_rgba(34,197,94,0.4)] transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+            style={{ animation: 'claimGlow 1.5s ease-in-out infinite' }}
+          >
+            <Sparkles className="w-4 h-4 animate-spin" style={{ animationDuration: '3s' }} />
+            ÖDÜLÜ AL
+          </button>
+        )}
+        
+        {isClaimed && (
+          <div className="w-full mt-2.5 py-2 border border-green-500/20 bg-green-500/5 text-green-400 text-xs font-black tracking-widest rounded-lg flex items-center justify-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            ÖDÜL ALINDI
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -552,12 +737,14 @@ const DailyMissionsPanel: React.FC<DailyMissionsPanelProps> = ({
               <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-cyan-400 rounded-full animate-ping" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white tracking-wider">
-                GÜNLÜK GÖREVLER
+              <h2 className="text-lg font-black text-white tracking-wider uppercase">
+                {activeTab === 'tree' ? 'GÖREV AĞACI' : 'RİTÜELLER'}
               </h2>
               <p className="text-cyan-400/70 text-xs font-mono">
-                {completedCount}/{dailyMissions.length} tamamlandı
-                {weeklyMission && !weeklyMission.completed && ' • 1 haftalık aktif'}
+                {activeTab === 'tree' 
+                  ? `${treeMissions.filter(m => m.claimed).length} / ${treeMissions.length} tamamlandı`
+                  : `${completedCount}/${dailyMissions.length} tamamlandı`
+                }
               </p>
             </div>
           </div>
@@ -572,60 +759,115 @@ const DailyMissionsPanel: React.FC<DailyMissionsPanelProps> = ({
           </button>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="flex bg-black/40 border-b border-white/5 p-1 gap-1">
+          <button
+            onClick={() => {
+              AudioSystem.playButtonClick();
+              getHapticSystem().trigger('selection');
+              setActiveTab('tree');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-black tracking-widest rounded-lg transition-all ${
+              activeTab === 'tree'
+                ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                : 'text-gray-500 border border-transparent hover:text-gray-300'
+            }`}
+          >
+            <Award className="w-4 h-4" />
+            GÖREV AĞACI
+          </button>
+          
+          <button
+            onClick={() => {
+              AudioSystem.playButtonClick();
+              getHapticSystem().trigger('selection');
+              setActiveTab('daily');
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-black tracking-widest rounded-lg transition-all ${
+              activeTab === 'daily'
+                ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                : 'text-gray-500 border border-transparent hover:text-gray-300'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            GÜNLÜK / HAFTALIK
+          </button>
+        </div>
+
         {/* Content */}
-        <div className="relative p-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
-          {/* Sound Check (onboarding) */}
+        <div className="relative p-4 flex-1 min-h-0 overflow-y-auto">
+          {/* Sound Check (onboarding) - Always visible at the top if not completed */}
           {soundCheckMissions.length > 0 && (
-            <>
-              <div className="text-green-400 text-[10px] font-bold tracking-widest uppercase mb-1">
-                🎵 Sound Check
+            <div className="mb-4">
+              <div className="text-green-400 text-[10px] font-bold tracking-widest uppercase mb-2">
+                🎵 Sound Check (Başlangıç)
               </div>
-              {soundCheckMissions.map(m => (
-                <div key={m.id} style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
-                  <MissionCard mission={m} onClaim={onClaimMission} />
-                </div>
-              ))}
-              <div className="border-t border-white/5 my-2" />
-            </>
-          )}
-
-          {/* Daily missions */}
-          {dailyMissions.length > 0 && (
-            <>
-              {dailyMissions.map(m => (
-                <div key={m.id} style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
-                  <MissionCard mission={m} onClaim={onClaimMission} />
-                </div>
-              ))}
-            </>
-          )}
-
-          {dailyMissions.length === 0 && missionState.soundCheck.completed && (
-            <div className="text-center text-gray-500 text-sm py-8">
-              Sound Check'i tamamla → günlük görevler açılsın
+              <div className="space-y-2">
+                {soundCheckMissions.map(m => (
+                  <div key={m.id} style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
+                    <MissionCard mission={m} onClaim={onClaimMission} />
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-white/5 my-3" />
             </div>
           )}
 
-          {/* Daily Bonus */}
-          {dailyMissions.length > 0 && (
-            <div style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
-              <DailyBonusBar
-                completedCount={completedCount}
-                total={dailyMissions.length}
-                bonusClaimed={missionState.daily.bonusClaimed}
-                canClaim={canClaimBonus}
-                onClaim={onClaimBonus}
-              />
+          {activeTab === 'tree' ? (
+            /* ─── QUEST TREE TAB ─── */
+            <div className="flex flex-col h-full justify-between">
+              {/* Columns grid */}
+              <div className="flex gap-2 justify-between items-start bg-black/20 p-2 rounded-xl border border-white/5">
+                {renderBranchColumn('REFLEX', 'REFLEKS', 'red')}
+                {renderBranchColumn('EXPLORER', 'KEŞİF', 'cyan')}
+                {renderBranchColumn('DISCIPLINE', 'DİSİPLİN', 'amber')}
+              </div>
+              
+              {/* Detailed Node Information */}
+              {renderSelectedMissionDetail()}
             </div>
-          )}
+          ) : (
+            /* ─── DAILY / WEEKLY TAB ─── */
+            <div className="space-y-3">
+              {/* Daily missions */}
+              {dailyMissions.length > 0 && (
+                <>
+                  {dailyMissions.map(m => (
+                    <div key={m.id} style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
+                      <MissionCard mission={m} onClaim={onClaimMission} />
+                    </div>
+                  ))}
+                </>
+              )}
 
-          {/* Divider */}
-          {weeklyMission && <div className="border-t border-white/5 my-1" />}
+              {dailyMissions.length === 0 && missionState.soundCheck.completed && (
+                <div className="text-center text-gray-500 text-sm py-8">
+                  Yenileme bekleniyor... Günlük görevler yakında yüklenecek.
+                </div>
+              )}
 
-          {/* Weekly mission */}
-          {weeklyMission && (
-            <div style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
-              <WeeklyCard mission={weeklyMission} onClaim={onClaimMission} />
+              {/* Daily Bonus */}
+              {dailyMissions.length > 0 && (
+                <div style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
+                  <DailyBonusBar
+                     completedCount={completedCount}
+                     total={dailyMissions.length}
+                     bonusClaimed={missionState.daily.bonusClaimed}
+                     canClaim={canClaimBonus}
+                     onClaim={onClaimBonus}
+                  />
+                </div>
+              )}
+
+              {/* Divider */}
+              {weeklyMission && <div className="border-t border-white/5 my-1" />}
+
+              {/* Weekly mission */}
+              {weeklyMission && (
+                <div style={{ animation: `cardStagger 0.4s ease-out ${nextStagger()}s both` }}>
+                  <WeeklyCard mission={weeklyMission} onClaim={onClaimMission} />
+                </div>
+              )}
             </div>
           )}
         </div>

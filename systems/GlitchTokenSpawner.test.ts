@@ -447,8 +447,8 @@ describe('GlitchTokenSpawner Property Tests - Property 3: Construct Selection fr
         (unlockedConstructs, randValue) => {
           const selected = selectRandomConstruct(unlockedConstructs, () => randValue);
           
-          // Selected construct must be in the unlocked pool
-          return unlockedConstructs.includes(selected);
+          // Selected construct must be in the unlocked pool or NONE fallback
+          return unlockedConstructs.includes(selected) || selected === 'NONE';
         }
       ),
       { numRuns: 100 }
@@ -471,7 +471,7 @@ describe('GlitchTokenSpawner Property Tests - Property 3: Construct Selection fr
           const selected = selectRandomConstruct(unlockedConstructs, () => randValue);
           
           // If there are valid constructs, NONE should not be selected
-          const hasValidConstructs = unlockedConstructs.some(c => c !== 'NONE');
+          const hasValidConstructs = unlockedConstructs.some(c => c !== 'NONE' && c !== 'TITAN');
           
           if (hasValidConstructs) {
             return selected !== 'NONE';
@@ -525,7 +525,7 @@ describe('GlitchTokenSpawner Property Tests - Property 3: Construct Selection fr
   test('Property 3: Single construct pool always returns that construct', () => {
     fc.assert(
       fc.property(
-        activeConstructTypeArb,
+        fc.constantFrom<ConstructType>('PHASE', 'BLINK'),
         // Use max < 1 to simulate Math.random() which returns [0, 1)
         fc.double({ min: 0, max: 0.9999999, noNaN: true }),
         (constructType, randValue) => {
@@ -541,10 +541,10 @@ describe('GlitchTokenSpawner Property Tests - Property 3: Construct Selection fr
    * **Feature: echo-constructs, Property 3: Construct Selection from Unlocked Pool**
    * **Validates: Requirements 1.4, 8.5**
    *
-   * Verifies that all constructs in pool have chance of being selected.
+   * Verifies that all valid constructs in pool can be selected (excluding TITAN).
    */
   test('Property 3: All constructs in pool can be selected', () => {
-    const pool: ConstructType[] = ['TITAN', 'PHASE', 'BLINK'];
+    const pool: ConstructType[] = ['PHASE', 'BLINK'];
     const selected = new Set<ConstructType>();
     
     // With enough iterations, all should be selected
@@ -553,10 +553,10 @@ describe('GlitchTokenSpawner Property Tests - Property 3: Construct Selection fr
       selected.add(result);
     }
     
-    // All three should have been selected at least once
-    expect(selected.has('TITAN')).toBe(true);
+    // Both active constructs should have been selected at least once
     expect(selected.has('PHASE')).toBe(true);
     expect(selected.has('BLINK')).toBe(true);
+    expect(selected.has('TITAN')).toBe(false);
     expect(selected.has('NONE')).toBe(false);
   });
 });

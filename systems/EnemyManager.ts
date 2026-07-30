@@ -47,6 +47,15 @@ const enemyAnimState: EnemyAnimationState = {
     particleTimer: 0
 };
 
+export function resetAnimationState(): void {
+    enemyAnimState.glowPulse = 0;
+    enemyAnimState.rotationAngle = 0;
+    enemyAnimState.scaleWobble = 1;
+    enemyAnimState.trailPositions.length = 0;
+    enemyAnimState.shieldRotation = 0;
+    enemyAnimState.particleTimer = 0;
+}
+
 export type EnemyState = 'idle' | 'tracking' | 'locked' | 'firing' | 'cooldown';
 
 export interface GlitchDart {

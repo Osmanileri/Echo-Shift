@@ -1,4 +1,5 @@
 export enum GameState {
+  LOADING = 'LOADING',
   MENU = 'MENU',
   PLAYING = 'PLAYING',
   PAUSED = 'PAUSED',
@@ -139,6 +140,10 @@ export interface Obstacle {
   passed: boolean;
   hasPhased?: boolean;
   nearMissChecked?: boolean; // Her engel için sadece bir kez near miss kontrolü
+  minClearance?: number; // Minimum clearance tracked during approach
+  passTime?: number; // Time when obstacle successfully passed player
+  wasHit?: boolean; // True if player collided/failed on this obstacle (even if shield/revive active)
+  hitTime?: number; // Time when collision occurred
   // Phantom Obstacle Properties - Requirements 5.2
   isLatent?: boolean;           // Engelin görünmez modda başlayıp başlamadığı
   revealDistance?: number;      // Tam görünür olacağı mesafe (piksel)
@@ -147,6 +152,11 @@ export interface Obstacle {
   shouldOscillate?: boolean;    // Bu blok sallanacak mı (rastgele belirlenir)
   oscillationIntensity?: number; // Sallanma yoğunluğu (0.5 - 2.0 arası)
   oscillationPhase?: number;    // Sallanma fazı (her blok farklı zamanda sallanır)
+  // Inverter / Color-Shift Obstacle Properties
+  isInverting?: boolean;        // Engelin oyuncuya yaklaşırken renginin/polaritesinin terse dönüp dönmeyeceği
+  hasInverted?: boolean;        // Renk/polarite değişiminin gerçekleşip gerçekleşmediği
+  invertX?: number;             // Rengin terse döneceği X mesafesi (piksel)
+  invertTime?: number;          // Rengin terse döndüğü zaman damgası (ms)
 }
 
 export interface Particle {
@@ -377,7 +387,7 @@ export type MissionDifficulty = 'easy' | 'medium' | 'hard';
 /**
  * Mission category
  */
-export type MissionCategory = 'SOUND_CHECK' | 'DAILY' | 'WEEKLY' | 'MARATHON';
+export type MissionCategory = 'SOUND_CHECK' | 'DAILY' | 'WEEKLY' | 'MARATHON' | 'TREE';
 
 /**
  * Mission interface — unified structure for all mission types.
@@ -400,6 +410,10 @@ export interface Mission {
     shards: number;
     cosmetic?: string;
   };
+  // Quest Tree properties
+  branch?: 'REFLEX' | 'EXPLORER' | 'DISCIPLINE';
+  tier?: number;
+  prerequisiteId?: string;
 }
 
 /**
@@ -419,6 +433,9 @@ export interface MissionState {
   weekly: {
     mission: Mission | null;
     lastResetDate: string;
+  };
+  tree?: {
+    missions: Mission[];
   };
   /** @deprecated kept for migration — use weekly instead */
   marathon?: {

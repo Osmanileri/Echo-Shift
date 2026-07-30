@@ -2,10 +2,50 @@
 
 ## Genel Durum
 
-- **747 test** (720 pass, 27 pre-existing fail in glitchSystem + particleSystem)
-- **10 spec** tamamlandı
+- **Quantum Lock Chapter 3 Gating & 200m Threshold (`glitchSystem.ts`, `constants.ts`, `GameEngine.tsx`)** tamamlandı ✅
+- **Fix Dash Connector Bar Trigonometric Rotation & Disable Inverter/Phantom Spawning During Dash (`phaseDashVFX.ts`, `blockSystem.ts`)** tamamlandı ✅
+- **Inverter 500m+ Gating & Inverted Color High-Contrast Border Suite (`blockSystem.ts`, `inverterSystem.ts`, `GameEngine.tsx`)** tamamlandı ✅
+- **Temporary Instant Dash 100% Energy Override (`systems/phaseDash.ts`)** tamamlandı ✅
+- **Optimal Balanced Dash Block Frequency (`frameId % 8` in `GameEngine.tsx`)** tamamlandı ✅
+- **Fix Uncaught ReferenceError phantomEnabled in Dash Spawn Block (`GameEngine.tsx:2851`)** tamamlandı ✅
+- **Hyper-Dense 12 Pairs/Sec Dash Block Gauntlet (`GameEngine.tsx`)** tamamlandı ✅
+- **Fix Uncaught ReferenceError playerBaseX & PixiJS Ticker Safety (`GameEngine.tsx` & `PixiRenderer.ts`)** tamamlandı ✅
+- **Zero-ShadowBlur Mobile GPU Optimization & Double-Tap Dash Freeze Fix (`phaseDashVFX.ts`)** tamamlandı ✅
+- **Zero-Lag Phase Dash Auto-Smash & Debris Particle Optimization (`GameEngine.tsx` & `phaseDashVFX.ts`)** tamamlandı ✅
+- **Special Feature Mutual Exclusivity & Anti-Streak Cooldown (`blockSystem.ts`)** tamamlandı ✅
+- **Inverter Level 1-3 Gating & Chapter 3 Completion Turkish Unlock Celebration** tamamlandı ✅
+- **Instant Inverter Color Swap & Ultra-Far Reaction Runway (70% Canvas Threshold)** tamamlandı ✅
+- **Hyper-Dense Phase Dash Block Smashing Gauntlet Festival (6-Frame Spawner)** tamamlandı ✅
+- **High-End Quantum Inverter VFX Suite & X-Crossover Laser Conduit** tamamlandı ✅
+- **Fix Phase Dash Screen Freeze & VFX String Replace Bug** tamamlandı ✅
+- **Non-Interactive Mission HUD & Hardcore Mission Goal Scaling** tamamlandı ✅
+- **Phase Dash Obstacle Smashing Gauntlet & Finish Runway Fine-Tuning** tamamlandı ✅
+- **Comprehensive Multi-System Reset Audit & Zero-Leak Quality Standard** tamamlandı ✅
+- **Fix Recycled Obstacle State Leak & False Ghost Collision Bug (150m-200m Fix)** tamamlandı ✅
+- **Inverter / Color-Shift Block System (Renk Terse Dönen Blok Mekaniği)** tamamlandı ✅
+- **Phantom / Fading Block System (Saydamlaşan / Görünmezleşen Blok Sistemi)** tamamlandı ✅
+- **Tutorial System Complete Overhaul & Dynamic Safe Block Heights** tamamlandı ✅
+- **Shield Audio & Impact Explosion Coordinate Alignment** tamamlandı ✅
+- **Synchronized Top & Bottom Block Pass Shine & Hit Red Flash** tamamlandı ✅
+- **Near-Miss Audio Softening (False Burn Noise Fixed)** tamamlandı ✅
+- **TITAN Feature Deactivation** tamamlandı ✅
+- **Production Mobile Quality & Zero-Bug Reliability Standard** tamamlandı ✅
+- **Full Architectural Maintenance & Multi-Mode Reset Audit** tamamlandı ✅
+- **Fix In-Game Obstacle Accumulation & False Pass Reward Bug** tamamlandı ✅
+- **Fix Level Transition State Persistence & Infinite Overdrive Bug** tamamlandı ✅
+- **Strict Polarity Collision & Skill-Disabled Perfect Dodge** tamamlandı ✅
+- **Obstacle Pass Audio Softening & Velvet Chime** tamamlandı ✅
+- **Red Collision Failure Flash & 500m Milestone Streamlining** tamamlandı ✅
+- **High-Performance 60 FPS & Smoothness Overhaul** tamamlandı ✅
+- **763 test (763 PASS / 0 FAIL — %100 Başarı)**
+- **Design Tokens, Micro-Animations & Tabular Numbers** tamamlandı
+- **Quick Mute & FTUE Onboarding Enhancements** tamamlandı
+- **Visual Identity & Arcade Game Feel Overhaul (P0 & P1 Polish)** tamamlandı
+- **12 spec** tamamlandı
 - **Dokümantasyon** güncel
 - **Storage key'ler** standardize
+- **Interactive Melody Mode (İnteraktif Melodi Modu)** tamamlandı
+- **Pro-Grade Dodge (Near-Miss) & Balanced Shield Overhaul** tamamlandı
 - **Performance Optimization for Mobile 60fps** tamamlandı
 - **Tutorial System Complete Rewrite** tamamlandı
 - **Quantum Lock Wave Pattern Variety & VFX Polish** tamamlandı
@@ -27,6 +67,68 @@
 - **Glitch Seeker Enemy (PixiJS GPU-Rendered)** tamamlandı
 
 ## Tamamlanan Spec'ler
+
+### 0-A-pre4. Visual Identity & Arcade Game Feel Overhaul (P0 & P1 Polish) ✅ (YENİ)
+
+**Amaç**: Oyunun görsel kalitesini, FTUE (ilk kullanıcı deneyimi) aşamasını ve oynanış sırasındaki "game feel" hissini en üst seviyeye çıkarmak.
+
+**Değiştirilen ve Eklenen Dosyalar**:
+- `components/SplashScreen.tsx` [NEW]:
+  - Canvas tabanlı retro-futuristic yükleme ekranı.
+  - Mobil cihazlarda Web Audio API bağlamını güvenle aktifleştiren "Touch to Start" kilidini açma mantığı.
+- `components/MenuBackground.tsx` [NEW]:
+  - HTML5 Canvas tabanlı, synthwave neon dalgalı, kayan gridli ve birbirine bağlanan parçacıklı menü arka planı.
+- `components/AnimatedLogo.tsx` [NEW]:
+  - Renk sapması (chromatic aberration) glitch'li ve Orbitron yazı tipli neon parıldayan logo başlığı.
+- `components/GameEngine.tsx`:
+  - 3-2-1-GO! başlangıç sayacı çift yönlü dönen sci-fi halkalar, Orbitron yazı tipi ve pop-bounce ölçekleme animasyonuyla geliştirildi.
+- `components/GameUI.tsx`:
+  - Mesafe kilometre taşlarında (100m, 250m, 500m vb.) ekranda beliren neon "Mesafe Başarısı" overlay'leri, haptik tetikleyiciler ve sesler.
+  - Oyun bitti (Game Over) ekranı sıralı gecikmeli geçişlerle açılır (`animate-fade-in-up`).
+  - Mesafe ve skor haneleri sıfırdan hedefe doğru tıkırdayarak dönen `<CountUp />` efektiyle canlandırıldı.
+- `App.tsx`:
+  - Başlangıç durumunu `GameState.LOADING` olarak ayarlayıp Splash ekranını buraya bağladı.
+- `types.ts`:
+  - `LOADING` state'i `GameState` enum'una eklendi.
+
+### 0-A-pre3. Distance-Based Rhythm Scaling & Polished Synthwave Backing Track ✅ (YENİ)
+
+**Amaç**: Tekrarlayan melodi döngülerinin kafa ütülemesini önlemek, ritmi ve hızı katedilen mesafeye (meters) bağlayarak oyun akışını senkronize etmek, fon müziğini kapatılabilir hale getirmek ve arka plandaki EDM tarzı sert vuruşları estetik/dinlendirici bir lofi ambient/synthwave havasına büründürmek.
+
+**Değiştirilen Dosyalar**:
+- `systems/beatEngine.ts`:
+  - `scaleBPM` fonksiyonu skor yerine mesafe bazlı hesaplama yapacak şekilde güncellendi (0m - 800m arası 90'dan 140 BPM'ye doğrusal tempo artışı).
+  - `start` ve `update` fonksiyon imzaları ve iç değişkenleri mesafeye göre uyarlandı.
+- `systems/audioSystem.ts`:
+  - `interactiveMelody` ve `backingTrackEnabled` kalıcı ayar anahtarları ve durum değişkenleri eklendi.
+  - İlgili getters/setters (`isBackingTrackEnabled`, `setBackingTrackEnabled`, vb.) yazıldı.
+  - Beat scheduler içinde çalmakta olan akor `activeChord` değişkeninde depolandı.
+  - `backingTrackEnabled` pasif olduğunda ritim davulları, bas, pad ve arp döngülerinin planlanması (bypass) devre dışı bırakıldı.
+  - İnteraktif mod aktifken otomatik lead melodi (`_scheduleLeadNote`) devre dışı bırakıldı.
+  - `BASS_HITS` ve `_scheduleBassNote` sekizlik nota zıplayan oktavlı synthwave rolling bass yapısına geçirildi (triangle wave + 350Hz filter lowpass sweep).
+  - `_schedulePadChord` detuned triangle dalgaları ve tam triad akorları (root, third, fifth) ile sıcak ve geniş bir ambient pad katmanına dönüştürüldü.
+  - `_scheduleArpNote` 1/8'lik yavaş ve akan chime arpejlerine dönüştürülerek 150ms gecikmeli spacey delay/echo simülasyonu eklendi.
+  - `_scheduleKick` ve `_scheduleSnare` lofi-chill tonlarına büründürülerek click transientler düşürüldü ve snare beyaz gürültü süresi kısaltıldı.
+  - `updateBeatMusic` içindeki katman açılma kilitleri mesafe bazlı eşiklere (50m, 150m, 300m) çekildi.
+  - İnteraktif melodilerin ve hareket drone seslerinin duyulabilirliğini artırmak için dikey hareket drone sesine `0.06` taban varlığı eklenip tepe sınırı `0.22`ye çıkarıldı (akortlar 12 cent detune ile koro efektine büründürüldü).
+  - Engel geçiş ve swap tınıları, detuned testere dişi ve üçgen dalgalarla re-sentezlenerek resonant bandpass filter (Q=7) sweep ile ıslak siber-pluck haline getirildi; ses şiddetleri (0.35/0.45) ve sönümleme süreleri yükseltildi.
+- `components/GameEngine.tsx`:
+  - Fizik döngüsü (`playerY.current` güncellendikten hemen sonra) continuous glow drone pitch frekansını güncellemek için `AudioSystem.updateInteractiveGlow` metodunu çağıracak şekilde güncellendi.
+  - Update döngüsünde `BeatEngine.update` çağrısına `distanceStateRef.current.currentDistance` bilgisi aktarıldı.
+  - `playObstaclePass` ve `playSwap` çağrılarına parametre olarak `playerY.current` geçildi.
+- `components/GameUI.tsx`:
+  - settings panelinde ses kontrollerinin hemen altına `Music` ikonu eşliğinde glowing cyber-neon tasarımlı "İnteraktif Melodi" açma/kapama switch'i eklendi.
+
+### 0-A-pre2. Pro-Grade Dodge (Near-Miss) & Balanced Shield Overhaul ✅ (YENİ)
+
+**Amaç**: Yakın geçiş refleks ödüllerini ve shield kazanma dengesini profesyonel arcade seviyesine getirmek.
+
+**Değiştirilen Dosyalar**:
+- `types.ts`: `minClearance` ve `passTime` özellikleri `Obstacle` arayüzüne eklendi.
+- `constants.ts`: `NEAR_MISS_CONFIG` güncellendi (threshold: 22, dodgeMasterThreshold: 10, dodgeMasterMultiplier: 3.0).
+- `systems/blockSystem.ts`: `spawnObstaclePair` ve `spawnPatternObstaclePair` içinde yeni alanlar sıfırlandı. `renderBlock` içinde başarılı geçişlerde diagonal linear gradient parlama (shine sweep) ve polarity çerçeve aydınlatması uygulandı.
+- `systems/audioSystem.ts`: `playDodgeMaster` sentezlenmiş ses efekti eklendi ve global `AudioSystem` objesine kaydedildi.
+- `components/GameEngine.tsx`: Clearance takibi, geçiş anı Near Miss / Dodge Master kontrolleri, shield charge sınırlaması ve eski premature kontrollerin temizlenmesi sağlandı. Çarpışma hiyerarşisi düzeltilerek yanlış polarite geçişlerinde invincibility sınırlandırıldı (sadece doğru polariteye swap edilirse korur). Başarılı geçişlerde `playObstaclePass` ve hafif `wind` parçacıkları entegre edildi. Dodge Master sadece WRONG -> CORRECT swaplarında tetiklenecek şekilde kısıtlandı.
 
 ### 0-A-pre. Glitch Seeker Enemy — PixiJS GPU-Rendered Homing Ghost ✅ (YENİ)
 

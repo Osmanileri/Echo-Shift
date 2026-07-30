@@ -10,6 +10,7 @@ import GameEngine, {
     RestoreModeConfig
 } from "./components/GameEngine.tsx";
 import GameUI from "./components/GameUI";
+import GameSplashScreen from "./components/SplashScreen";
 import MissionComplete from "./components/Missions/MissionComplete";
 import MissionPanel from "./components/Missions/MissionPanel";
 import NumbersMissionVictory from "./components/Missions/NumbersMissionVictory";
@@ -87,7 +88,7 @@ export function getRateUsSystem(): RateUsSystem {
 }
 
 const App: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState>(GameState.MENU);
+  const [gameState, setGameState] = useState<GameState>(GameState.LOADING);
   const [score, setScore] = useState<number>(0);
   const [highScore, setHighScore] = useState<number>(0);
   const [gameSpeed, setGameSpeed] = useState<number>(0);
@@ -219,6 +220,7 @@ const App: React.FC = () => {
 
   // Game start notification state
   const [gameStartNotification, setGameStartNotification] = useState<string | null>(null);
+  const [shieldCharges, setShieldCharges] = useState<number>(0);
 
   // Chapter notification state - shows current level at game start
   const [showChapterNotification, setShowChapterNotification] = useState<boolean>(false);
@@ -481,15 +483,23 @@ const App: React.FC = () => {
     AudioSystem.initialize();
     AudioSystem.playGameStart();
 
+    // Reset tutorialCompleted so the tutorial can be re-run
+    useGameStore.getState().setTutorialCompleted(false);
+
     setInteractiveTutorialMode(true);
     setTutorialPhase('NAVIGATION');
     setTutorialPhaseIndex(0);
-    setGameState(GameState.PLAYING);
     setScore(0);
     setEarnedShards(0);
 
     // Reset campaign config (tutorial is Level 0)
     setCampaignLevelConfig(null);
+
+    // Force MENU first to ensure GameEngine's resetGame() re-initializes tutorial state
+    setGameState(GameState.MENU);
+    setTimeout(() => {
+      setGameState(GameState.PLAYING);
+    }, 50);
   }, []);
   const handlePause = () => {
     setGameState(GameState.PAUSED);
@@ -808,11 +818,11 @@ const App: React.FC = () => {
     setChapterNotificationLevel(levelConfig.id);
     setShowChapterNotification(true);
 
-    // Use queueMicrotask instead of requestAnimationFrame to switch to PLAYING
-    // before the browser has a chance to render the MENU state canvas
-    queueMicrotask(() => {
+    // Defer PLAYING transition to ensure MENU state propagates first,
+    // allowing the GameEngine to reset correctly and preventing React 18 batching issues.
+    setTimeout(() => {
       setGameState(GameState.PLAYING);
-    });
+    }, 50);
 
     // Initialize slow motion uses from upgrade
     const effects = getActiveUpgradeEffects();
@@ -1057,6 +1067,9 @@ const App: React.FC = () => {
     if (!mission && missions.weekly?.mission?.id === missionId) {
       mission = missions.weekly.mission;
     }
+    if (!mission && missions.tree?.missions) {
+      mission = missions.tree.missions.find(m => m.id === missionId);
+    }
 
     if (mission && mission.completed) {
       setCompletedMission(mission);
@@ -1110,10 +1123,11 @@ const App: React.FC = () => {
     // Clear campaign mode
     setCampaignLevelConfig(null);
 
-    // Start playing - use queueMicrotask to prevent visible MENU state flash
-    queueMicrotask(() => {
+    // Defer PLAYING transition to ensure MENU state propagates first,
+    // allowing the GameEngine to reset correctly and preventing React 18 batching issues.
+    setTimeout(() => {
       setGameState(GameState.PLAYING);
-    });
+    }, 50);
 
     sessionStartTime.current = Date.now();
   }, []);
@@ -1225,6 +1239,9 @@ const App: React.FC = () => {
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden select-none touch-none">
       <GameCanvas ref={gameCanvasRef} />
+      {gameState === GameState.LOADING && (
+        <GameSplashScreen onComplete={() => setGameState(GameState.MENU)} />
+      )}
       <GameEngine
         gameState={gameState}
         onScoreUpdate={handleScoreUpdate}
@@ -1261,11 +1278,13 @@ const App: React.FC = () => {
         restoreRequested={restoreRequested}
         onRestoreStateUpdate={handleRestoreStateUpdate}
         onMissionEvent={handleMissionEvent}
+        onShieldStateUpdate={setShieldCharges}
         tutorialMode={interactiveTutorialMode ? { enabled: true } : undefined}
         onTutorialComplete={handleInteractiveTutorialComplete}
         onTutorialPhaseChange={handleTutorialPhaseChange}
       />
       <GameUI
+        shieldCharges={shieldCharges}
         gameState={gameState}
         score={score}
         highScore={highScore}

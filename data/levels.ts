@@ -180,7 +180,7 @@ function calculateStarThresholds(targetScore: number): [number, number, number] 
  */
 function getMechanicsForLevel(id: number): LevelMechanics {
   return {
-    phantom: id >= 11,
+    phantom: id >= 3,
     midline: id >= 21,
     rhythm: id >= 31,
     gravity: id >= 41,

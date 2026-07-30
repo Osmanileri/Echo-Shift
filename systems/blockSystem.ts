@@ -9,9 +9,10 @@
  * - Block collision detection helpers
  */
 
-import { INITIAL_CONFIG, PHANTOM_CONFIG } from "../constants";
+import { INITIAL_CONFIG, INVERTER_CONFIG, PHANTOM_CONFIG } from "../constants";
 import { Obstacle } from "../types";
 import { getFlippedLane } from "../utils/gameMath";
+import { shouldSpawnAsInverter } from "../utils/inverterSystem";
 import { calculatePhantomOpacity, createPhantomObstacle, getEffectiveOpacity, shouldSpawnAsPhantom } from "../utils/phantomSystem";
 import * as ObjectPool from "./objectPool";
 import { hasEffect } from "./themeSystem";
@@ -58,6 +59,10 @@ export interface BlockSystemState {
   shardSpawnSequence: number;
   /** Same color streak counter */
   sameColorStreak: number;
+  /** Counter of pairs spawned since last Phantom pair */
+  pairsSinceLastPhantom: number;
+  /** Counter of pairs spawned since last Inverter pair */
+  pairsSinceLastInverter: number;
 }
 
 export function createBlockSystemState(): BlockSystemState {
@@ -68,7 +73,33 @@ export function createBlockSystemState(): BlockSystemState {
     patternPolarity: "white",
     shardSpawnSequence: 0,
     sameColorStreak: 0,
+    pairsSinceLastPhantom: 99,
+    pairsSinceLastInverter: 99,
   };
+}
+
+/**
+ * Resets an obstacle object to clean baseline state.
+ * Prevents recycled pool items from leaking wasHit, hitTime, or ghost flags across runs or spawns.
+ */
+export function resetObstacleState(obs: Obstacle): void {
+  obs.passed = false;
+  obs.nearMissChecked = false;
+  obs.hasPhased = false;
+  obs.minClearance = Infinity;
+  obs.passTime = undefined;
+  obs.wasHit = false;
+  obs.hitTime = undefined;
+  obs.isLatent = false;
+  obs.revealDistance = undefined;
+  obs.initialX = undefined;
+  obs.shouldOscillate = false;
+  obs.oscillationIntensity = 0;
+  obs.oscillationPhase = 0;
+  obs.isInverting = false;
+  obs.hasInverted = false;
+  obs.invertX = undefined;
+  obs.invertTime = undefined;
 }
 
 // ============================================================================
@@ -155,6 +186,8 @@ export interface SpawnContext {
   isDashing: boolean;
   dashXOffset: number;
   phantomEnabled: boolean;
+  inverterEnabled?: boolean;
+  currentLevelId?: number;
   forcePhantom: boolean;
   rng: () => number;
 }
@@ -230,8 +263,14 @@ export function spawnObstaclePair(
     lane: topLane,
     polarity: topPolarity,
     passed: false,
+    minClearance: Infinity,
+    passTime: undefined,
     ...topOscillation,
   };
+  resetObstacleState(topObstacle);
+  topObstacle.shouldOscillate = topOscillation.shouldOscillate;
+  topObstacle.oscillationIntensity = topOscillation.oscillationIntensity;
+  topObstacle.oscillationPhase = topOscillation.oscillationPhase;
 
   let bottomObstacle: Obstacle = {
     id: Math.random().toString(36).substring(2, 11),
@@ -243,15 +282,70 @@ export function spawnObstaclePair(
     lane: bottomLane,
     polarity: bottomPolarity,
     passed: false,
+    minClearance: Infinity,
+    passTime: undefined,
     ...bottomOscillation,
   };
+  resetObstacleState(bottomObstacle);
+  bottomObstacle.shouldOscillate = bottomOscillation.shouldOscillate;
+  bottomObstacle.oscillationIntensity = bottomOscillation.oscillationIntensity;
+  bottomObstacle.oscillationPhase = bottomOscillation.oscillationPhase;
 
-  // Apply phantom if needed
-  if (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG))) {
-    topObstacle = createPhantomObstacle(topObstacle, spawnX, PHANTOM_CONFIG);
+  // ── SPECIAL FEATURE SELECTION (MUTUALLY EXCLUSIVE + ANTI-STREAK COOLDOWN) ──
+  // Rule 1: A block pair can NEVER have both Phantom and Inverter. It is AT MOST one special feature.
+  // Rule 2: Special features CANNOT spawn back-to-back in consecutive pairs (at least 2 normal pairs between spawns).
+
+  if (!ctx.state) {
+    ctx.state = createBlockSystemState();
   }
-  if (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG))) {
-    bottomObstacle = createPhantomObstacle(bottomObstacle, spawnX, PHANTOM_CONFIG);
+  if (ctx.state.pairsSinceLastPhantom === undefined) ctx.state.pairsSinceLastPhantom = 99;
+  if (ctx.state.pairsSinceLastInverter === undefined) ctx.state.pairsSinceLastInverter = 99;
+
+  const canSpawnPhantom = !ctx.isDashing && ctx.state.pairsSinceLastPhantom >= 2;
+  const canSpawnInverter = !ctx.isDashing && ctx.state.pairsSinceLastInverter >= 2;
+
+  let isPhantomPair = false;
+  let isInverterPair = false;
+
+  // 1. Try Phantom (if allowed & probability rolls true)
+  if (canSpawnPhantom && (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG)))) {
+    isPhantomPair = true;
+    ctx.state.pairsSinceLastPhantom = 0;
+    ctx.state.pairsSinceLastInverter++;
+  }
+  // 2. Try Inverter ONLY IF NOT PHANTOM (mutually exclusive) and unlocked & allowed
+  else {
+    ctx.state.pairsSinceLastPhantom++;
+    const isInverterUnlocked = (ctx.score >= 500) && (ctx.inverterEnabled ?? (ctx.currentLevelId === undefined || ctx.currentLevelId > 3));
+    
+    if (canSpawnInverter && isInverterUnlocked && shouldSpawnAsInverter(ctx.score, false, ctx.rng)) {
+      isInverterPair = true;
+      ctx.state.pairsSinceLastInverter = 0;
+    } else {
+      ctx.state.pairsSinceLastInverter++;
+    }
+  }
+
+  // Apply Phantom to pair
+  if (isPhantomPair) {
+    topObstacle.isLatent = true;
+    topObstacle.revealDistance = PHANTOM_CONFIG.revealDistance;
+    topObstacle.initialX = spawnX;
+
+    bottomObstacle.isLatent = true;
+    bottomObstacle.revealDistance = PHANTOM_CONFIG.revealDistance;
+    bottomObstacle.initialX = spawnX;
+  }
+  // Apply Inverter to pair (ONLY IF NOT PHANTOM)
+  else if (isInverterPair) {
+    const responsiveInvertX = Math.round(ctx.canvasWidth * 0.70);
+    topObstacle.isInverting = true;
+    topObstacle.hasInverted = false;
+    topObstacle.invertX = responsiveInvertX;
+
+    bottomObstacle.isInverting = true;
+    bottomObstacle.hasInverted = false;
+    bottomObstacle.invertX = responsiveInvertX;
   }
 
   return [topObstacle, bottomObstacle];
@@ -276,9 +370,7 @@ export function spawnPatternObstaclePair(
 ): Obstacle[] {
   const obsWidth = INITIAL_CONFIG.obstacleWidth;
   const playerBaseX = ctx.canvasWidth / 8;
-  const spawnX = ctx.isDashing
-    ? playerBaseX + ctx.dashXOffset + 150 + ctx.rng() * 200
-    : ctx.canvasWidth + 50;
+  const spawnX = ctx.canvasWidth + 50;
 
   const midY = ctx.canvasHeight / 2;
   const orbRadius = INITIAL_CONFIG.orbRadius;
@@ -345,13 +437,15 @@ export function spawnPatternObstaclePair(
   ctx.state.lastGapCenter = (topBlockHeight + bottomBlockTop) / 2;
   ctx.state.lastHalfGap = (bottomBlockTop - topBlockHeight) / 2;
 
+  const responsiveInvertX = Math.round(ctx.canvasWidth * 0.70);
   const results: Obstacle[] = [];
 
   // Top block
   if (topBlockHeight > 15) {
     const topPooled = ctx.obstaclePool.acquire();
-    const topOscillation = generateOscillationProps(ctx.rng, config);
+    resetObstacleState(topPooled);
 
+    const topOscillation = generateOscillationProps(ctx.rng, config);
     topPooled.x = spawnX;
     topPooled.y = ctx.isDashing ? 0 : -topBlockHeight;
     topPooled.targetY = 0;
@@ -359,28 +453,20 @@ export function spawnPatternObstaclePair(
     topPooled.height = topBlockHeight;
     topPooled.lane = ctx.isGravityFlipped ? "bottom" : "top";
     topPooled.polarity = topPolarity;
-    topPooled.passed = false;
-    topPooled.nearMissChecked = false;
-    topPooled.hasPhased = false;
-    topPooled.isLatent = false;
     topPooled.initialX = spawnX;
     topPooled.shouldOscillate = topOscillation.shouldOscillate;
     topPooled.oscillationIntensity = topOscillation.oscillationIntensity;
     topPooled.oscillationPhase = topOscillation.oscillationPhase;
-
-    if (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG))) {
-      results.push(createPhantomObstacle(topPooled, spawnX, PHANTOM_CONFIG));
-    } else {
-      results.push(topPooled);
-    }
+    results.push(topPooled);
   }
 
   // Bottom block
   const bottomBlockHeight = ctx.canvasHeight - bottomBlockTop;
   if (bottomBlockHeight > 15) {
     const bottomPooled = ctx.obstaclePool.acquire();
-    const bottomOscillation = generateOscillationProps(ctx.rng, config);
+    resetObstacleState(bottomPooled);
 
+    const bottomOscillation = generateOscillationProps(ctx.rng, config);
     bottomPooled.x = spawnX;
     bottomPooled.y = ctx.isDashing ? bottomBlockTop : ctx.canvasHeight;
     bottomPooled.targetY = bottomBlockTop;
@@ -388,19 +474,55 @@ export function spawnPatternObstaclePair(
     bottomPooled.height = bottomBlockHeight;
     bottomPooled.lane = ctx.isGravityFlipped ? "top" : "bottom";
     bottomPooled.polarity = bottomPolarity;
-    bottomPooled.passed = false;
-    bottomPooled.nearMissChecked = false;
-    bottomPooled.hasPhased = false;
-    bottomPooled.isLatent = false;
     bottomPooled.initialX = spawnX;
     bottomPooled.shouldOscillate = bottomOscillation.shouldOscillate;
     bottomPooled.oscillationIntensity = bottomOscillation.oscillationIntensity;
     bottomPooled.oscillationPhase = bottomOscillation.oscillationPhase;
+    results.push(bottomPooled);
+  }
 
-    if (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG))) {
-      results.push(createPhantomObstacle(bottomPooled, spawnX, PHANTOM_CONFIG));
+  // ── SPECIAL FEATURE SELECTION (MUTUALLY EXCLUSIVE + ANTI-STREAK COOLDOWN) ──
+  if (!ctx.state) {
+    ctx.state = createBlockSystemState();
+  }
+  if (ctx.state.pairsSinceLastPhantom === undefined) ctx.state.pairsSinceLastPhantom = 99;
+  if (ctx.state.pairsSinceLastInverter === undefined) ctx.state.pairsSinceLastInverter = 99;
+
+  const canSpawnPhantom = !ctx.isDashing && ctx.state.pairsSinceLastPhantom >= 2;
+  const canSpawnInverter = !ctx.isDashing && ctx.state.pairsSinceLastInverter >= 2;
+
+  let isPhantomPair = false;
+  let isInverterPair = false;
+
+  if (canSpawnPhantom && (ctx.forcePhantom || (ctx.phantomEnabled && shouldSpawnAsPhantom(ctx.score, PHANTOM_CONFIG)))) {
+    isPhantomPair = true;
+    ctx.state.pairsSinceLastPhantom = 0;
+    ctx.state.pairsSinceLastInverter++;
+  } else {
+    ctx.state.pairsSinceLastPhantom++;
+    const isInverterUnlocked = (ctx.score >= 500) && (ctx.inverterEnabled ?? (ctx.currentLevelId === undefined || ctx.currentLevelId > 3));
+    
+    if (canSpawnInverter && isInverterUnlocked && shouldSpawnAsInverter(ctx.score, false, ctx.rng)) {
+      isInverterPair = true;
+      ctx.state.pairsSinceLastInverter = 0;
     } else {
-      results.push(bottomPooled);
+      ctx.state.pairsSinceLastInverter++;
+    }
+  }
+
+  // Apply Phantom or Inverter exclusively to the pattern pair
+  if (isPhantomPair) {
+    for (const obs of results) {
+      obs.isLatent = true;
+      obs.revealDistance = PHANTOM_CONFIG.revealDistance;
+      obs.initialX = spawnX;
+    }
+  } else if (isInverterPair) {
+    const responsiveInvertX = Math.round(ctx.canvasWidth * 0.70);
+    for (const obs of results) {
+      obs.isInverting = true;
+      obs.hasInverted = false;
+      obs.invertX = responsiveInvertX;
     }
   }
 
@@ -536,14 +658,224 @@ export function renderBlock(
     ctx.fillRect(obs.x + obs.width - pixelSize, drawY + obs.height - pixelSize, pixelSize, pixelSize);
   }
 
-  // Phantom ghost outline
-  if (obs.isLatent && obstacleOpacity < 0.5) {
-    ctx.globalAlpha = PHANTOM_CONFIG.minOpacity;
-    ctx.strokeStyle = `${obstacleColor}4D`;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 5]);
-    ctx.strokeRect(obs.x - 2, drawY - 2, obs.width + 4, obs.height + 4);
+  // Phantom sci-fi ghost outline & digital scanlines
+  if (obs.isLatent) {
+    const pulse = Math.sin(currentTime * 0.006 + (obs.x * 0.04)) * 0.25 + 0.75;
+    ctx.globalAlpha = Math.min(1.0, Math.max(0.2, (1 - obstacleOpacity) * 0.8 * pulse));
+    
+    // Cyber-neon dashed outline
+    ctx.strokeStyle = isWhitePolarity ? '#00F0FF' : '#FF00FF';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(obs.x - 1, drawY - 1, obs.width + 2, obs.height + 2);
     ctx.setLineDash([]);
+
+    // Subtle horizontal digital scanlines across block body
+    ctx.fillStyle = isWhitePolarity ? 'rgba(0, 240, 255, 0.25)' : 'rgba(255, 0, 255, 0.25)';
+    const scanlineSpacing = 10;
+    const startY = Math.floor(drawY);
+    const endY = Math.floor(drawY + obs.height);
+    for (let sy = startY + 4; sy < endY - 4; sy += scanlineSpacing) {
+      ctx.fillRect(obs.x + 2, sy, obs.width - 4, 1.5);
+    }
+  }
+
+  // High-End Cyberpunk Inverter Warning & Quantum Flip VFX
+  if (obs.isInverting) {
+    const targetInvertX = obs.invertX ?? INVERTER_CONFIG.invertDistance;
+    const warningX = targetInvertX + INVERTER_CONFIG.warningDistance;
+    
+    // ── PHASE 1: PRE-INVERSION QUANTUM WARNING (Rapid Cybernetic Gauge & Electric Arcs) ──
+    if (!obs.hasInverted && obs.x <= warningX && obs.x > targetInvertX) {
+      const warnPulse = Math.sin(currentTime * 0.05) * 0.5 + 0.5;
+      const primaryGlow = isWhitePolarity ? '#00F0FF' : '#FF00FF';
+
+      // 1. Dual-Tone Cyberpunk Plasma Shield Border
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 0, 85, ${0.6 + warnPulse * 0.4})`;
+      ctx.lineWidth = 3.5 + warnPulse * 1.5;
+      ctx.shadowColor = '#FF0055';
+      ctx.shadowBlur = 14 + warnPulse * 10;
+      ctx.strokeRect(obs.x - 3, drawY - 3, obs.width + 6, obs.height + 6);
+
+      // 2. Corner Electric Plasma Arc Brackets
+      ctx.strokeStyle = primaryGlow;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = primaryGlow;
+      ctx.shadowBlur = 10;
+
+      const cSize = 9;
+      // Top-Left Bracket
+      ctx.beginPath();
+      ctx.moveTo(obs.x - 5, drawY + cSize);
+      ctx.lineTo(obs.x - 5, drawY - 5);
+      ctx.lineTo(obs.x + cSize, drawY - 5);
+      ctx.stroke();
+
+      // Bottom-Right Bracket
+      ctx.beginPath();
+      ctx.moveTo(obs.x + obs.width + 5, drawY + obs.height - cSize);
+      ctx.lineTo(obs.x + obs.width + 5, drawY + obs.height + 5);
+      ctx.lineTo(obs.x + obs.width - cSize, drawY + obs.height + 5);
+      ctx.stroke();
+
+      // 3. Fast-Rotating Cybernetic Gauge with Polarity Swap Emblem
+      const gaugeY = drawY + (obs.height > 80 ? 30 : obs.height / 2);
+      const rot = currentTime * 0.016; // Fast, energetic rotation
+
+      // Outer Spinning Segmented Ring
+      ctx.save();
+      ctx.translate(obsCenterX, gaugeY);
+      ctx.rotate(rot);
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 1.5);
+      ctx.strokeStyle = 'rgba(255, 0, 85, 0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.restore();
+
+      // Inner Counter-Rotating Dashed Ring
+      ctx.save();
+      ctx.translate(obsCenterX, gaugeY);
+      ctx.rotate(-rot * 1.8);
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = primaryGlow;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+
+      // Center Glowing Polarity Swap Icon (⇄)
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '900 13px Orbitron, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = primaryGlow;
+      ctx.shadowBlur = 12;
+      ctx.fillText('⇄', obsCenterX, gaugeY + 0.5);
+
+      ctx.restore();
+    }
+    // ── PHASE 2: POST-INVERSION QUANTUM IMPACT (Ultra-Fast 150ms Crisp Shockwaves) ──
+    else if (obs.hasInverted && obs.invertTime) {
+      const elapsed = currentTime - obs.invertTime;
+      const duration = 150; // Ultra-fast 150ms instant flash
+
+      if (elapsed < duration) {
+        const progress = elapsed / duration;
+        const alpha = 1 - progress;
+
+        ctx.save();
+
+        // 1. Concentric Expanding Quantum Shockwave Rings
+        const maxRadius = Math.max(obs.width, obs.height) * 0.75;
+        const ringRadius = progress * maxRadius;
+
+        ctx.beginPath();
+        ctx.arc(obsCenterX, obsCenterY, ringRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = isWhitePolarity ? `rgba(0, 240, 255, ${alpha * 0.95})` : `rgba(255, 0, 255, ${alpha * 0.95})`;
+        ctx.lineWidth = 3.5 * alpha;
+        ctx.shadowColor = isWhitePolarity ? '#00F0FF' : '#FF00FF';
+        ctx.shadowBlur = 16 * alpha;
+        ctx.stroke();
+
+        // Outer Wavefront Edge
+        if (progress > 0.12) {
+          const outerR = (progress - 0.12) * maxRadius * 1.25;
+          ctx.beginPath();
+          ctx.arc(obsCenterX, obsCenterY, outerR, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+
+        // 2. Chromatic Glitch Aberration Offset Borders
+        const glitchOff = alpha * 5;
+
+        // Cyan Offset
+        ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.85})`;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(obs.x - glitchOff, drawY - glitchOff, obs.width + glitchOff * 2, obs.height + glitchOff * 2);
+
+        // Magenta Offset
+        ctx.strokeStyle = `rgba(255, 0, 255, ${alpha * 0.85})`;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(obs.x + glitchOff, drawY + glitchOff, obs.width - glitchOff * 2, obs.height - glitchOff * 2);
+
+        // Core White Flare Overlay
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.35})`;
+        ctx.fillRect(obs.x, drawY, obs.width, obs.height);
+
+        ctx.restore();
+      }
+    }
+  }
+
+  // Collision Hit / Failure feedback (RED impact flash when player hits block)
+  if (obs.wasHit && obs.hitTime !== undefined) {
+    const elapsed = currentTime - obs.hitTime;
+    const duration = 450; // 450ms red flash duration
+    if (elapsed < duration) {
+      const hitProgress = elapsed / duration;
+      const alpha = 1 - hitProgress;
+
+      // Draw flashing RED border
+      ctx.strokeStyle = `rgba(255, 42, 42, ${alpha * 0.95})`;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#FF2A2A';
+      ctx.shadowBlur = 10;
+      ctx.strokeRect(obs.x, drawY, obs.width, obs.height);
+      ctx.shadowBlur = 0;
+
+      // Draw red diagonal impact sweep
+      const shineX = obs.x - 40 + hitProgress * (obs.width + 80);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(obs.x, drawY, obs.width, obs.height);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(shineX, drawY, shineX + 30, drawY + obs.height);
+      grad.addColorStop(0, 'rgba(255, 42, 42, 0)');
+      grad.addColorStop(0.5, `rgba(255, 42, 42, ${alpha * 0.9})`);
+      grad.addColorStop(1, 'rgba(255, 42, 42, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(obs.x, drawY, obs.width, obs.height);
+      ctx.restore();
+    }
+  }
+  // Successful passage shine/glow sweep feedback (ONLY if NOT hit!)
+  else if (obs.passed && !obs.wasHit && obs.passTime !== undefined) {
+    const elapsed = currentTime - obs.passTime;
+    const duration = 400; // 400ms flash duration
+    if (elapsed < duration) {
+      const passProgress = elapsed / duration;
+      const alpha = 1 - passProgress;
+
+      // Draw flashing neon border
+      ctx.strokeStyle = isWhitePolarity ? `rgba(0, 240, 255, ${alpha * 0.95})` : `rgba(255, 0, 255, ${alpha * 0.95})`;
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = isWhitePolarity ? '#00F0FF' : '#FF00FF';
+      ctx.shadowBlur = 8;
+      ctx.strokeRect(obs.x, drawY, obs.width, obs.height);
+      ctx.shadowBlur = 0; // reset shadowBlur immediately
+
+      // Draw linear gradient diagonal shine sweep
+      const shineX = obs.x - 40 + passProgress * (obs.width + 80);
+      ctx.save();
+      // Clip shine within the block bounds
+      ctx.beginPath();
+      ctx.rect(obs.x, drawY, obs.width, obs.height);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(shineX, drawY, shineX + 30, drawY + obs.height);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+      grad.addColorStop(0.5, `rgba(255, 255, 255, ${alpha * 0.8})`);
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(obs.x, drawY, obs.width, obs.height);
+      ctx.restore();
+    }
   }
 
   ctx.restore();
@@ -551,14 +883,119 @@ export function renderBlock(
 }
 
 /**
- * Render all blocks - PERF: for-loop instead of forEach
+ * Render all blocks with synchronized pair inverter laser conduits
  */
 export function renderAllBlocks(
   obstacles: Obstacle[],
   renderCtx: RenderContext,
   config: BlockSystemConfig = DEFAULT_BLOCK_CONFIG
 ): void {
+  const { ctx, currentTime } = renderCtx;
+
+  // 1. Render individual blocks
   for (let i = 0; i < obstacles.length; i++) {
     renderBlock(obstacles[i], renderCtx, config);
+  }
+
+  // 2. Render Pair Energy Crossover Conduit between matching inverting top & bottom pairs
+  for (let i = 0; i < obstacles.length; i++) {
+    const obsA = obstacles[i];
+    if (!obsA.isInverting) continue;
+
+    for (let j = i + 1; j < obstacles.length; j++) {
+      const obsB = obstacles[j];
+      if (!obsB.isInverting || Math.abs(obsA.x - obsB.x) > 30) continue;
+
+      // Found matching inverting pair!
+      const topObs = obsA.y < obsB.y ? obsA : obsB;
+      const bottomObs = obsA.y < obsB.y ? obsB : obsA;
+
+      const topBottomY = topObs.y + topObs.height;
+      const bottomTopY = bottomObs.y;
+      const midGapX = topObs.x + topObs.width / 2;
+
+      const targetInvertX = topObs.invertX ?? INVERTER_CONFIG.invertDistance;
+      const warningX = targetInvertX + INVERTER_CONFIG.warningDistance;
+
+      // ── WARNING CONDUIT (Electric Plasma Arc Conduit Across Gap) ──
+      if (!topObs.hasInverted && topObs.x <= warningX && topObs.x > targetInvertX) {
+        const warnPulse = Math.sin(currentTime * 0.035) * 0.5 + 0.5;
+        const beamAlpha = 0.6 + warnPulse * 0.4;
+
+        ctx.save();
+        ctx.shadowColor = '#FF0055';
+        ctx.shadowBlur = 15;
+
+        // Central Vertical Plasma Laser Core
+        ctx.strokeStyle = `rgba(255, 0, 85, ${beamAlpha})`;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(midGapX, topBottomY);
+        ctx.lineTo(midGapX, bottomTopY);
+        ctx.stroke();
+
+        // Electric Plasma Jitter Line (Cracking energy stream)
+        const jitter = (Math.random() - 0.5) * 10;
+        ctx.strokeStyle = `rgba(0, 240, 255, ${beamAlpha * 0.85})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(midGapX, topBottomY);
+        ctx.lineTo(midGapX + jitter, (topBottomY + bottomTopY) / 2);
+        ctx.lineTo(midGapX, bottomTopY);
+        ctx.stroke();
+
+        // Pulsing Energy Junction Core at Gap Center
+        const gapCenterY = (topBottomY + bottomTopY) / 2;
+        ctx.beginPath();
+        ctx.arc(midGapX, gapCenterY, 7 + warnPulse * 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 0, 85, ${beamAlpha * 0.8})`;
+        ctx.fill();
+
+        ctx.restore();
+      }
+      // ── FLIP IMPACT CONDUIT (Ultra-Fast 150ms X-Shape Energy Crossover Laser Stream) ──
+      else if (topObs.hasInverted && topObs.invertTime) {
+        const elapsed = currentTime - topObs.invertTime;
+        const duration = 150; // Ultra-fast 150ms laser crossover snap
+        if (elapsed < duration) {
+          const alpha = 1 - (elapsed / duration);
+
+          ctx.save();
+
+          // 1. Diagonal X-Crossover Energy Laser Beams (Explicit Swapping Streams!)
+          ctx.lineWidth = 4 * alpha;
+          ctx.shadowBlur = 20 * alpha;
+
+          // Stream 1: Top-Left to Bottom-Right (Cyan Plasma Stream)
+          ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * 0.95})`;
+          ctx.shadowColor = '#00F0FF';
+          ctx.beginPath();
+          ctx.moveTo(topObs.x, topBottomY);
+          ctx.lineTo(topObs.x + topObs.width, bottomTopY);
+          ctx.stroke();
+
+          // Stream 2: Top-Right to Bottom-Left (Magenta Plasma Stream)
+          ctx.strokeStyle = `rgba(255, 0, 255, ${alpha * 0.95})`;
+          ctx.shadowColor = '#FF00FF';
+          ctx.beginPath();
+          ctx.moveTo(topObs.x + topObs.width, topBottomY);
+          ctx.lineTo(topObs.x, bottomTopY);
+          ctx.stroke();
+
+          // 2. Central Quantum Energy Fusion Core Blast
+          const gapCenterY = (topBottomY + bottomTopY) / 2;
+          const burstRadius = (1 - alpha) * 28 + 6;
+
+          ctx.beginPath();
+          ctx.arc(midGapX, gapCenterY, burstRadius, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.shadowColor = '#FFFFFF';
+          ctx.shadowBlur = 25;
+          ctx.stroke();
+
+          ctx.restore();
+        }
+      }
+    }
   }
 }

@@ -12,19 +12,23 @@ import {
     PlayCircle,
     RotateCcw,
     Settings,
+    Shield,
     ShoppingCart,
     Star,
     Target,
     Trophy,
     Volume2,
     VolumeX,
+    Music,
     X
 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import * as AudioSystem from "../systems/audioSystem";
 import { getHapticSystem } from "../systems/hapticSystem";
 import type { Mission } from "../types";
 import { GameState, GlitchPhase } from "../types";
+import MenuBackground from "./MenuBackground";
+import AnimatedLogo from "./AnimatedLogo";
 import MissionTracker from "./Missions/MissionTracker";
 
 interface GameUIProps {
@@ -68,6 +72,7 @@ interface GameUIProps {
   progressPercent?: number;
   isNearFinish?: boolean;
   shardsCollectedInRun?: number;
+  shieldCharges?: number;
   // Ghost Pace Indicator - Requirements 15.1, 15.3
   previousBestDistance?: number;
   hasPassedGhost?: boolean;
@@ -80,6 +85,74 @@ interface GameUIProps {
   // Tutorial Mode - Level 0 interactive tutorial
   tutorialMode?: boolean;
 }
+
+const PulsingDistance: React.FC<{ distance: number; dashActive: boolean }> = ({ distance, dashActive }) => {
+  const rounded = Math.floor(distance);
+  const prevDistanceRef = useRef(rounded);
+  const [pulse, setPulse] = useState(false);
+
+  useEffect(() => {
+    if (rounded !== prevDistanceRef.current) {
+      prevDistanceRef.current = rounded;
+      setPulse(true);
+      const timer = setTimeout(() => setPulse(false), 80);
+      return () => clearTimeout(timer);
+    }
+  }, [rounded]);
+
+  return (
+    <span
+      className={`text-3xl md:text-4xl font-black font-mono-nums tracking-widest transition-all duration-300 inline-block ${
+        dashActive
+          ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent animate-pulse'
+          : 'text-white'
+      } ${pulse ? 'scale-108 text-cyan-300' : ''}`}
+      style={{
+        textShadow: dashActive
+          ? '0 0 20px rgba(0,240,255,0.8)'
+          : '0 0 8px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1), 0 0 16px rgba(0,0,0,0.6)',
+        fontFamily: 'Orbitron, system-ui, -apple-system, sans-serif'
+      }}
+    >
+      {rounded}m
+    </span>
+  );
+};
+
+const CountUp: React.FC<{ value: number; duration?: number; delay?: number; suffix?: string }> = ({
+  value,
+  duration = 800,
+  delay = 300,
+  suffix = '',
+}) => {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp: number | null = null;
+    let animationFrameId: number;
+
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      setDisplayValue(Math.floor(progress * value));
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(step);
+      }
+    };
+
+    const startTimer = setTimeout(() => {
+      animationFrameId = requestAnimationFrame(step);
+    }, delay);
+
+    return () => {
+      clearTimeout(startTimer);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [value, duration, delay]);
+
+  return <span className="font-mono-nums">{displayValue}{suffix}</span>;
+};
 
 const GameUI: React.FC<GameUIProps> = ({
   gameState,
@@ -124,6 +197,7 @@ const GameUI: React.FC<GameUIProps> = ({
   // Ghost Pace Indicator
   previousBestDistance = 0,
   hasPassedGhost = false,
+  shieldCharges = 0,
   // Phase Dash
   dashEnergy = 0,
   dashActive = false,
@@ -138,7 +212,49 @@ const GameUI: React.FC<GameUIProps> = ({
   // Audio volume state
   const [sfxVolume, setSfxVolume] = useState(() => AudioSystem.getVolume());
   const [sfxEnabled, setSfxEnabled] = useState(() => AudioSystem.isEnabled());
+  const [interactiveMelody, setInteractiveMelody] = useState(() => AudioSystem.isInteractiveMelodyEnabled());
+  const [backingTrackEnabled, setBackingTrackEnabled] = useState(() => AudioSystem.isBackingTrackEnabled());
   const [showSettings, setShowSettings] = useState(false);
+
+  const lastMilestoneRef = useRef<number>(0);
+  const [milestoneMessage, setMilestoneMessage] = useState<string | null>(null);
+
+  // Reset milestone ref when game starts or restarts
+  useEffect(() => {
+    if (gameState !== GameState.PLAYING) {
+      lastMilestoneRef.current = 0;
+      setMilestoneMessage(null);
+    }
+  }, [gameState]);
+
+  // Track milestones (Only at 500m and multiples of 500m)
+  useEffect(() => {
+    if (gameState !== GameState.PLAYING || !distanceMode || !currentDistance) return;
+
+    const currentDistInt = Math.floor(currentDistance);
+    const current500 = Math.floor(currentDistInt / 500) * 500;
+
+    if (current500 >= 500 && current500 > lastMilestoneRef.current) {
+      lastMilestoneRef.current = current500;
+      setMilestoneMessage(`${current500}m`);
+      
+      // Play sound
+      AudioSystem.playMultiplierUp();
+      
+      // Haptic
+      getHapticSystem().trigger('medium');
+    }
+  }, [currentDistance, gameState, distanceMode]);
+
+  // Clear milestone message after 2 seconds
+  useEffect(() => {
+    if (milestoneMessage) {
+      const timer = setTimeout(() => {
+        setMilestoneMessage(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [milestoneMessage]);
 
   const handleButtonClick = (callback: () => void) => {
     getHapticSystem().trigger("selection");
@@ -247,19 +363,7 @@ const GameUI: React.FC<GameUIProps> = ({
               {/* Distance Counter - Requirements 6.1 */}
               {/* During dash, show bonus effect with cyan-to-purple gradient and x4 indicator */}
               <div className="relative">
-                <span
-                  className={`text-3xl md:text-4xl font-black tracking-widest transition-all duration-300 ${dashActive
-                    ? 'bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent animate-pulse'
-                    : 'text-white'
-                    }`}
-                  style={{
-                    textShadow: dashActive
-                      ? '0 0 20px rgba(0,240,255,0.8)'
-                      : '0 0 8px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,1), 0 0 16px rgba(0,0,0,0.6)'
-                  }}
-                >
-                  {Math.floor(currentDistance)}m
-                </span>
+                <PulsingDistance distance={currentDistance} dashActive={dashActive} />
                 {/* Bonus multiplier badge during dash */}
                 {dashActive && (
                   <span className="absolute -right-10 top-1 px-1.5 py-0.5 bg-cyan-500/30 border border-cyan-400/50 rounded text-[10px] font-black text-cyan-300 animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.5)]">
@@ -290,15 +394,47 @@ const GameUI: React.FC<GameUIProps> = ({
               </span>
             </div>
           )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleButtonClick(onPause);
-            }}
-            className="pointer-events-auto p-2 bg-black/30 backdrop-blur-sm rounded-full border border-white/20 hover:bg-white/20 transition-colors"
-          >
-            <Pause className="w-5 h-5 md:w-6 md:h-6 text-white" />
-          </button>
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {/* Shield & Health HUD Badge */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full backdrop-blur-md border transition-all duration-300 ${
+              shieldCharges > 0
+                ? 'bg-cyan-950/60 border-cyan-400/60 text-cyan-300 shadow-[0_0_12px_rgba(0,240,255,0.4)]'
+                : 'bg-black/30 border-white/15 text-white/40'
+            }`}>
+              <Shield className={`w-3.5 h-3.5 ${
+                shieldCharges > 0
+                  ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,240,255,0.9)] animate-pulse'
+                  : 'text-white/30'
+              }`} />
+              <span className="text-[11px] font-black tracking-wider uppercase font-mono-nums">
+                {shieldCharges > 0 ? `${shieldCharges} KALKAN` : '0 KALKAN'}
+              </span>
+            </div>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleSfx();
+              }}
+              className={`p-2 rounded-full backdrop-blur-sm border btn-juicy transition-colors ${
+                sfxEnabled
+                  ? 'bg-black/30 border-white/20 hover:bg-white/20 text-white'
+                  : 'bg-rose-950/40 border-rose-500/40 text-rose-400'
+              }`}
+              title={sfxEnabled ? "Sesi Kapat" : "Sesi Aç"}
+            >
+              {sfxEnabled ? <Volume2 className="w-5 h-5 md:w-6 md:h-6" /> : <VolumeX className="w-5 h-5 md:w-6 md:h-6" />}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleButtonClick(onPause);
+              }}
+              className="p-2 bg-black/30 backdrop-blur-sm rounded-full border border-white/20 hover:bg-white/20 transition-colors btn-juicy"
+            >
+              <Pause className="w-5 h-5 md:w-6 md:h-6 text-white" />
+            </button>
+          </div>
           <div className="flex flex-col items-end">
             <span
               className="text-lg md:text-xl font-bold text-white/70"
@@ -567,6 +703,53 @@ const GameUI: React.FC<GameUIProps> = ({
             onTap={onOpenRituals}
           />
         )}
+
+        {/* Milestone Flash Overlay */}
+        {milestoneMessage && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+            <div className="bg-black/80 border border-cyan-500/30 backdrop-blur-md px-8 py-4 rounded-2xl animate-milestone-flash flex flex-col items-center shadow-[0_0_30px_rgba(0,240,255,0.2)]">
+              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-[0.25em] mb-1.5 animate-pulse">
+                MESAFE BAŞARISI
+              </span>
+              <span 
+                className="text-4xl font-black text-white tracking-widest drop-shadow-[0_0_15px_rgba(0,240,255,0.6)]"
+                style={{ fontFamily: 'Orbitron, sans-serif' }}
+              >
+                {milestoneMessage}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <style>{`
+          .animate-milestone-flash {
+            animation: milestoneFlash 1.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+          }
+          @keyframes milestoneFlash {
+            0% {
+              transform: scale(0.6);
+              opacity: 0;
+              filter: brightness(2);
+            }
+            15% {
+              transform: scale(1.1);
+              opacity: 1;
+              filter: brightness(1.5);
+            }
+            25% {
+              transform: scale(0.98);
+              filter: brightness(1);
+            }
+            80% {
+              transform: scale(1);
+              opacity: 1;
+            }
+            100% {
+              transform: scale(0.9) translateY(-30px);
+              opacity: 0;
+            }
+          }
+        `}</style>
       </>
     );
   }
@@ -671,29 +854,8 @@ const GameUI: React.FC<GameUIProps> = ({
   if (gameState === GameState.MENU) {
     return (
       <div className="absolute inset-0 z-20 text-white overflow-hidden select-none">
-        {/* Background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0a1628] via-[#0d1117] to-black" />
-
-        {/* Animated particles/glow */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-cyan-500/10 blur-[150px] rounded-full" />
-          <div className="absolute bottom-0 left-0 w-[400px] h-[300px] bg-purple-500/5 blur-[100px] rounded-full" />
-          <div className="absolute bottom-1/3 right-0 w-[300px] h-[200px] bg-blue-500/5 blur-[80px] rounded-full" />
-
-          {/* Floating particles */}
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-1 h-1 bg-cyan-400/40 rounded-full animate-pulse"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-                animationDuration: `${2 + Math.random() * 2}s`,
-              }}
-            />
-          ))}
-        </div>
+        {/* Animated grid/particle background */}
+        <MenuBackground />
 
         {/* Content */}
         <div
@@ -704,14 +866,30 @@ const GameUI: React.FC<GameUIProps> = ({
             paddingBottom: 'max(1.25rem, var(--safe-bottom, 0px))',
           }}
         >
-          {/* ===== SETTINGS BUTTON (Top Right) ===== */}
-          <div className="absolute right-5 z-30" style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}>
+          {/* ===== TOP CONTROLS (Top Right) ===== */}
+          <div className="absolute right-5 z-30 flex items-center gap-2" style={{ top: 'max(1.5rem, var(--safe-top, 0px))' }}>
+            {/* Quick Mute Toggle */}
+            <button
+              onClick={() => {
+                handleToggleSfx();
+              }}
+              className={`p-2.5 rounded-full backdrop-blur-sm border btn-juicy transition-all duration-300 ${
+                sfxEnabled
+                  ? 'bg-black/40 border-white/10 hover:bg-white/10 text-cyan-400'
+                  : 'bg-rose-950/40 border-rose-500/30 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
+              }`}
+              title={sfxEnabled ? "Sesi Kapat" : "Sesi Aç"}
+            >
+              {sfxEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+
+            {/* Settings Toggle */}
             <button
               onClick={() => {
                 AudioSystem.playButtonClick();
                 setShowSettings(!showSettings);
               }}
-              className={`p-2.5 rounded-full backdrop-blur-sm border transition-all duration-300 ${showSettings
+              className={`p-2.5 rounded-full backdrop-blur-sm border btn-juicy transition-all duration-300 ${showSettings
                 ? 'bg-cyan-500/20 border-cyan-500/50 shadow-[0_0_15px_rgba(0,240,255,0.3)]'
                 : 'bg-black/40 border-white/10 hover:bg-white/10'
                 }`}
@@ -781,18 +959,65 @@ const GameUI: React.FC<GameUIProps> = ({
                     `}
                   />
                 </div>
+
+                {/* Backing Track Toggle */}
+                <div className="flex items-center justify-between border-t border-white/10 pt-3 mt-3">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className={`w-3.5 h-3.5 ${backingTrackEnabled ? 'text-cyan-400' : 'text-white/40'}`} />
+                    <span className="text-[11px] text-white/60">Fon Müziği</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newMode = !backingTrackEnabled;
+                      setBackingTrackEnabled(newMode);
+                      AudioSystem.setBackingTrackEnabled(newMode);
+                      getHapticSystem().trigger("selection");
+                      AudioSystem.playButtonClick();
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                      backingTrackEnabled ? 'bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'bg-white/10'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-300 ${
+                        backingTrackEnabled ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Interactive Melody Toggle */}
+                <div className="flex items-center justify-between border-t border-white/10 pt-3 mt-3">
+                  <div className="flex items-center gap-2">
+                    <Music className={`w-3.5 h-3.5 ${interactiveMelody ? 'text-cyan-400' : 'text-white/40'}`} />
+                    <span className="text-[11px] text-white/60">İnteraktif Melodi</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newMode = !interactiveMelody;
+                      setInteractiveMelody(newMode);
+                      AudioSystem.setInteractiveMelodyEnabled(newMode);
+                      getHapticSystem().trigger("selection");
+                      AudioSystem.playButtonClick();
+                    }}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                      interactiveMelody ? 'bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'bg-white/10'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform duration-300 ${
+                        interactiveMelody ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
-          {/* ===== HEADER: Logo + Slogan ===== */}
-          <div className="text-center mb-2">
-            <h1 className="text-[2rem] sm:text-5xl font-black tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-b from-white via-cyan-100 to-cyan-300 drop-shadow-[0_0_30px_rgba(0,240,255,0.3)]">
-              ECHO SHIFT
-            </h1>
-            <p className="text-[10px] text-cyan-400/70 tracking-[0.25em] uppercase font-medium mt-1">
-              ÇUBUK UZAR • HIZ ARTAR • HAYATTA KAL
-            </p>
+          {/* ===== HEADER: Animated Logo ===== */}
+          <div className="text-center mb-2 select-none pointer-events-none">
+            <AnimatedLogo />
           </div>
 
           {/* ===== STATS - Clean Display ===== */}
@@ -972,11 +1197,17 @@ const GameUI: React.FC<GameUIProps> = ({
           </div>
 
           {/* ===== START BUTTON - Campaign First Flow ===== */}
-          {/* Campaign Update v2.5 - Requirements 1.1, 1.2: "Start Game" opens level selection directly */}
           <div className="w-full max-w-xs mx-auto">
+            {highScore === 0 && (
+              <div className="flex items-center justify-center mb-1.5 animate-bounce">
+                <span className="px-2.5 py-0.5 bg-gradient-to-r from-amber-500/20 to-cyan-500/20 border border-cyan-400/40 rounded-full text-[10px] font-black text-cyan-300 tracking-wider uppercase shadow-[0_0_10px_rgba(0,240,255,0.3)]">
+                  🎓 EĞİTİM & İLK KOŞU
+                </span>
+              </div>
+            )}
             <button
               onClick={() => handleButtonClick(onStart)}
-              className="group relative w-full py-5 rounded-2xl overflow-hidden active:scale-[0.97] transition-all duration-200 shadow-[0_10px_40px_-10px_rgba(6,182,212,0.5)] hover:shadow-[0_20px_50px_-10px_rgba(6,182,212,0.7)]"
+              className="group relative w-full py-5 rounded-2xl overflow-hidden btn-juicy btn-glow-pulse active:scale-[0.97] transition-all duration-200 shadow-[0_10px_40px_-10px_rgba(6,182,212,0.5)] hover:shadow-[0_20px_50px_-10px_rgba(6,182,212,0.7)]"
             >
               {/* Multi-layer gradient background */}
               <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600" />
@@ -1008,8 +1239,8 @@ const GameUI: React.FC<GameUIProps> = ({
             </button>
 
             {/* Subtitle hint */}
-            <p className="text-center text-[11px] text-white/30 mt-2 tracking-wider uppercase">
-              Seviye Seç ve Başla
+            <p className="text-center text-[11px] text-white/40 mt-2 tracking-wider uppercase font-medium">
+              {highScore === 0 ? 'İlk Seviyeni Seç ve Öğren' : 'Seviye Seç ve Başla'}
             </p>
           </div>
         </div>
@@ -1035,86 +1266,96 @@ const GameUI: React.FC<GameUIProps> = ({
         </div>
 
         <div className="relative z-10 flex flex-col items-center w-full max-w-xs my-auto">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-1 tracking-[0.15em] text-white relative">
-            OYUN
-            <span className="absolute -right-1 top-0 text-red-500 opacity-50 blur-sm">
+          {/* Title Area - Fades in first */}
+          <div className="animate-fade-in-up flex flex-col items-center">
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-1 tracking-[0.15em] text-white relative">
               OYUN
-            </span>
-          </h2>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-4 tracking-[0.15em] text-red-500 relative">
-            BİTTİ
-            <span className="absolute -left-1 top-0 text-white opacity-30 blur-sm">
+              <span className="absolute -right-1 top-0 text-red-500 opacity-50 blur-sm">
+                OYUN
+              </span>
+            </h2>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-4 tracking-[0.15em] text-red-500 relative">
               BİTTİ
-            </span>
-          </h2>
+              <span className="absolute -left-1 top-0 text-white opacity-30 blur-sm">
+                BİTTİ
+              </span>
+            </h2>
+          </div>
 
-          {/* Campaign Update v2.5 - Distance Mode Game Over - Requirements 6.1 */}
-          {distanceMode ? (
-            <div className="flex flex-col items-center gap-3 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
-              {/* Distance traveled / Target distance */}
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl sm:text-4xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
-                    {Math.floor(currentDistance)}m
-                  </span>
-                  <span className="text-lg text-white/40">/</span>
-                  <span className="text-lg text-white/60 font-bold">
-                    {Math.floor(targetDistance)}m
+          {/* Stats Card Area - Fades in second (delay 300ms) */}
+          <div className="w-full animate-fade-in-up delay-300">
+            {/* Campaign Update v2.5 - Distance Mode Game Over - Requirements 6.1 */}
+            {distanceMode ? (
+              <div className="flex flex-col items-center gap-3 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
+                {/* Distance traveled / Target distance */}
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl sm:text-4xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
+                      <CountUp value={Math.floor(currentDistance)} suffix="m" delay={300} />
+                    </span>
+                    <span className="text-lg text-white/40">/</span>
+                    <span className="text-lg text-white/60 font-bold">
+                      {Math.floor(targetDistance)}m
+                    </span>
+                  </div>
+                  <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
+                    Gidilen Mesafe / Hedef Mesafe
                   </span>
                 </div>
+
+                {/* Progress percentage */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                  <span className="text-sm font-bold text-cyan-400">
+                    %<CountUp value={Math.floor(progressPercent)} delay={600} /> tamamlandı
+                  </span>
+                </div>
+
+                {/* Shards collected during run */}
+                {shardsCollectedInRun > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Gem className="w-4 h-4 text-cyan-400" />
+                    <span className="text-sm text-cyan-400 font-bold">
+                      <CountUp value={shardsCollectedInRun} delay={800} /> parça toplandı
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
+                <span className="text-4xl sm:text-5xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
+                  <CountUp value={score} delay={300} />
+                </span>
                 <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
-                  Gidilen Mesafe / Hedef Mesafe
+                  Final Skor
                 </span>
               </div>
+            )}
+          </div>
 
-              {/* Progress percentage */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
-                <span className="text-sm font-bold text-cyan-400">
-                  %{Math.floor(progressPercent)} tamamlandı
+          {/* Badges Area - Fades in third (delay 600ms) */}
+          <div className="flex flex-col items-center gap-2 mb-4 w-full animate-fade-in-up delay-600">
+            {score >= highScore && score > 0 && (
+              <div className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-full border border-yellow-500/30 animate-pulse w-fit">
+                <Trophy className="w-4 h-4 text-yellow-500" />
+                <span className="text-xs font-bold text-yellow-500 tracking-wider">
+                  YENİ REKOR!
+                </span>
+                <Trophy className="w-4 h-4 text-yellow-500" />
+              </div>
+            )}
+
+            {earnedShards > 0 && (
+              <div className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500/20 to-cyan-400/20 rounded-full border border-cyan-500/30 w-fit">
+                <Gem className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-bold text-cyan-400 tracking-wider">
+                  +<CountUp value={earnedShards} delay={800} /> SHARDS
                 </span>
               </div>
+            )}
+          </div>
 
-              {/* Shards collected during run */}
-              {shardsCollectedInRun > 0 && (
-                <div className="flex items-center gap-2">
-                  <Gem className="w-4 h-4 text-cyan-400" />
-                  <span className="text-sm text-cyan-400 font-bold">
-                    {shardsCollectedInRun} parça toplandı
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-1 mb-4 p-4 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm w-full">
-              <span className="text-4xl sm:text-5xl font-black tracking-tighter bg-gradient-to-b from-white to-gray-500 bg-clip-text text-transparent">
-                {score}
-              </span>
-              <span className="text-[10px] sm:text-xs text-white/50 uppercase tracking-[0.2em]">
-                Final Skor
-              </span>
-            </div>
-          )}
-
-          {score >= highScore && score > 0 && (
-            <div className="flex items-center gap-2 mb-3 px-4 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-full border border-yellow-500/30 animate-pulse">
-              <Trophy className="w-4 h-4 text-yellow-500" />
-              <span className="text-xs font-bold text-yellow-500 tracking-wider">
-                YENİ REKOR!
-              </span>
-              <Trophy className="w-4 h-4 text-yellow-500" />
-            </div>
-          )}
-
-          {earnedShards > 0 && (
-            <div className="flex items-center gap-2 mb-4 px-4 py-2 bg-gradient-to-r from-cyan-500/20 to-cyan-400/20 rounded-full border border-cyan-500/30">
-              <Gem className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold text-cyan-400 tracking-wider">
-                +{earnedShards} SHARDS
-              </span>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3 w-full">
+          {/* Buttons Area - Fades in fourth (delay 900ms) */}
+          <div className="flex flex-col gap-3 w-full animate-fade-in-up delay-900">
             <button
               onClick={() => handleButtonClick(onRestart)}
               className="group flex items-center justify-center gap-2 w-full py-3.5 bg-gradient-to-r from-white to-gray-200 text-black font-bold text-sm tracking-widest active:scale-[0.98] transition-all duration-300 rounded-xl"
@@ -1134,6 +1375,31 @@ const GameUI: React.FC<GameUIProps> = ({
             </button>
           </div>
         </div>
+
+        <style>{`
+          .animate-fade-in-up {
+            animation: fadeInUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+          }
+          .delay-300 {
+            animation-delay: 250ms;
+          }
+          .delay-600 {
+            animation-delay: 500ms;
+          }
+          .delay-900 {
+            animation-delay: 750ms;
+          }
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}</style>
       </div>
     );
   }
