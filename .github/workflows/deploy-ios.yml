@@ -32,13 +32,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
-          bundler-cache: true
 
       - name: Install Fastlane & Dependencies
-        run: |
-          gem install bundler
-          bundle update fastlane
-          bundle install
+        run: bundle install
 
       - name: Decode Certificate and Profile
         env:
